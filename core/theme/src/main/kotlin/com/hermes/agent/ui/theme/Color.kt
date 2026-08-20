@@ -1,6 +1,4 @@
 package com.hermes.agent.ui.theme
-import com.hermes.agent.domain.settings.*
-
 import androidx.compose.ui.graphics.Color
 
 // ╔══════════════════════════════════════════════════════════════════╗
