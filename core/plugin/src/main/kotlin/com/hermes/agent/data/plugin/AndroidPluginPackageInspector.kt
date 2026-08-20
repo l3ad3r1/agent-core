@@ -12,11 +12,14 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 internal data class PluginApkArchiveMetadata(
     val packageName: String,
@@ -86,7 +89,7 @@ class AndroidPluginPackageInspector @Inject internal constructor(
 ) : PluginPackageInspector {
     override suspend fun inspect(apkPath: String): Result<PluginPackageEvidence> =
         withContext(dispatchers.io) {
-            runCatching {
+            resultPreservingInspectionCancellation {
                 val apk = File(apkPath).canonicalFile
                 require(apk.isFile) { "Plugin APK does not exist" }
                 require(apk.extension.equals("apk", ignoreCase = true)) { "Plugin package must be an APK" }
@@ -106,11 +109,12 @@ class AndroidPluginPackageInspector @Inject internal constructor(
             }
         }
 
-    private fun sha256(file: File): String {
+    private suspend fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().buffered().use { input ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             while (true) {
+                currentCoroutineContext().ensureActive()
                 val count = input.read(buffer)
                 if (count < 0) break
                 digest.update(buffer, 0, count)
@@ -123,6 +127,14 @@ class AndroidPluginPackageInspector @Inject internal constructor(
         MessageDigest.getInstance("SHA-256").digest(bytes).toHex()
 
     private fun ByteArray.toHex(): String = joinToString(separator = "") { "%02X".format(it) }
+}
+
+private inline fun <T> resultPreservingInspectionCancellation(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (cancellation: CancellationException) {
+    throw cancellation
+} catch (failure: Exception) {
+    Result.failure(failure)
 }
 
 @Module

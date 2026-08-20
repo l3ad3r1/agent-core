@@ -6,6 +6,8 @@ import com.hermes.agent.domain.plugin.PluginManifest
 import com.hermes.agent.domain.plugin.PluginPermission
 import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.util.DispatcherProvider
+import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -14,7 +16,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.security.MessageDigest
 
 class AndroidPluginPackageInspectorTest {
     @get:Rule
@@ -123,6 +124,25 @@ class AndroidPluginPackageInspectorTest {
 
         assertTrue(result.isFailure)
         assertEquals(0, archiveReads)
+    }
+
+    @Test
+    fun `inspector preserves archive reader cancellation`() = runTest {
+        val apk = temporaryFolder.newFile("weather.apk").apply { writeBytes(byteArrayOf(1)) }
+        val inspector = AndroidPluginPackageInspector(
+            PluginApkArchiveReader { throw CancellationException("stop inspection") },
+            PluginManifestCodec(),
+            TestDispatchers(StandardTestDispatcher(testScheduler)),
+        )
+
+        var cancellation: CancellationException? = null
+        try {
+            inspector.inspect(apk.path)
+        } catch (failure: CancellationException) {
+            cancellation = failure
+        }
+
+        assertEquals("stop inspection", cancellation?.message)
     }
 
     private fun sha256(bytes: ByteArray): String =

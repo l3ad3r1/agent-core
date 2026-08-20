@@ -69,12 +69,29 @@ renames the staged file to an immutable, digest-qualified `.apk` name. Failed, p
 oversized, or digest-mismatched transfers leave no promoted package. A previously
 downloaded immutable package is reused only after its size and digest are checked again.
 
+## Android installer handoff
+
+Shared core exposes the app-private plugin download directory and the Android package
+installer boundary. Before opening the system installer it binds the downloaded
+artifact, verified package evidence, and user authorization to the same plugin ID,
+version, APK digest, signer, and catalog entry. It then inspects the APK again to reject
+a file changed after approval and refuses files outside the private plugin directory.
+
+If Android has not granted the host permission to request package installation, the
+handoff returns `PermissionRequired`; the host can explicitly open Android's per-app
+unknown-sources settings. Platform launch and settings failures are returned to the
+caller so install UI can present an actionable error instead of failing silently.
+
+Each host must declare `REQUEST_INSTALL_PACKAGES`, provide a non-exported `FileProvider`
+at `${applicationId}.fileprovider`, and expose `<files-path name="plugins"
+path="plugins/" />`. Hermes and Jeeves both carry this host-only manifest resource;
+the installer implementation and private directory contract remain shared.
+
 ## Still required
 
-- Android package-installer handoff;
 - persistent trusted-publisher and approval storage;
 - the exported Android service contract and concrete gRPC transport;
 - permission-review and install UI in both products.
 
-Until these layers exist, a catalog and its immutable APK can be retrieved and verified,
-but modules cannot yet be installed or executed from the repository.
+Until these layers exist, an approved APK can be handed to Android's installer, but the
+products do not yet expose the review flow or activate an installed module.

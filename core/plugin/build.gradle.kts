@@ -30,6 +30,7 @@ dependencies {
     api(libs.kotlinx.coroutines.android)
     api(libs.kotlinx.serialization.json)
     api(libs.timber)
+    implementation(libs.androidx.core.ktx)
     implementation(libs.okhttp)
 
     testImplementation(libs.junit)
