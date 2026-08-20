@@ -107,10 +107,20 @@ package to `INSTALLED`. Completion records are replace-based and restart-safe, s
 duplicate broadcasts do not create duplicate history and unrelated package installs
 cannot mark a plugin complete.
 
+## Current host integration
+
+Hermes and Jeeves expose the catalog downloader under **Settings → Features → Modules**.
+The screen accepts a catalog URL, displays validated entries, and downloads an immutable
+APK into the host's private plugin directory. Both products consume the same
+`PluginModuleDownloadCoordinator`, catalog codec, verifier, and artifact downloader.
+
+The download screen intentionally stops at verified staging; installer approval and
+Android package handoff remain separate security-gated steps.
+
 ## Still required
 
 - the exported Android service contract and concrete gRPC transport;
-- permission-review and install UI in both products.
+- a complete permission-review and install UI in both products.
 
-Until these layers exist, an approved APK can be handed to Android's installer, but the
-products do not yet expose the review flow or activate an installed module.
+Until these layers are completed, downloaded APKs are staged and verified but are not
+automatically activated as installed modules.
