@@ -39,9 +39,16 @@ that signer when either:
 2. the user explicitly trusts the publisher while approving the installation.
 
 Before approval, the host extracts package facts from the downloaded APK and compares
-the embedded manifest, package name, version, size, APK digest, and signing certificate
-against the catalog. Approval is then bound to the exact digest, signer, version, and
-permission list. A changed package or permission request requires a new review.
+the embedded manifest, package name, version, size, APK digest, signing certificate,
+and exported plugin service against the catalog. Approval is then bound to the exact
+digest, signer, version, and permission list. A changed package or permission request
+requires a new review.
+
+Android plugin APKs embed the schema-v1 manifest as a JSON string in application
+metadata named `com.hermes.agent.PLUGIN_MANIFEST_V1`. The service named by the catalog
+must be declared exported in the APK. The inspector rejects non-APK files, packages
+Android cannot parse, missing metadata, invalid manifests, unsupported version codes,
+and packages that do not have exactly one current signer.
 
 The catalog codec and fail-closed verifier live in `:core:plugin`; shared data contracts
 live in `:core:domain`. See [`samples/plugin-catalog-v1.json`](../samples/plugin-catalog-v1.json)
@@ -50,7 +57,7 @@ for a minimal document.
 ## Still required
 
 - authenticated catalog fetching and artifact downloading;
-- Android APK inspection and package-installer handoff;
+- Android package-installer handoff;
 - persistent trusted-publisher and approval storage;
 - the exported Android service contract and concrete gRPC transport;
 - permission-review and install UI in both products.

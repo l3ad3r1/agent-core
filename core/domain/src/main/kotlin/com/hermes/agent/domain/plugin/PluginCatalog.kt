@@ -44,7 +44,13 @@ data class PluginPackageEvidence(
     val packageName: String,
     val versionCode: Int,
     val signerCertificateSha256: String,
+    val exportedServiceClassNames: Set<String>,
 )
+
+/** Android-facing boundary that turns a downloaded APK into verifier input. */
+fun interface PluginPackageInspector {
+    suspend fun inspect(apkPath: String): Result<PluginPackageEvidence>
+}
 
 /** Verified immutable package facts safe to present in an approval screen. */
 data class VerifiedPluginPackage(

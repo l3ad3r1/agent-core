@@ -76,6 +76,7 @@ class PluginPackageVerifierTest {
         packageName = entry.artifact.packageName,
         versionCode = entry.manifest.versionCode,
         signerCertificateSha256 = entry.manifest.signatureFingerprint,
+        exportedServiceClassNames = setOf(entry.artifact.serviceClassName),
     )
 
     @Test
@@ -143,6 +144,7 @@ class PluginPackageVerifierTest {
             packageName = "com.attacker.weather",
             versionCode = 99,
             signerCertificateSha256 = "D".repeat(64),
+            exportedServiceClassNames = emptySet(),
         )
 
         val result = verifier.verifyPackage(entry, tampered, 10, setOf(signerSha))
@@ -155,6 +157,7 @@ class PluginPackageVerifierTest {
         assertTrue(reasons.contains("size"))
         assertTrue(reasons.contains("APK SHA-256"))
         assertTrue(reasons.contains("signing certificate"))
+        assertTrue(reasons.contains("export"))
     }
 
     @Test

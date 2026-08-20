@@ -51,6 +51,9 @@ class PluginPackageVerifier @Inject constructor() {
         }
         if (evidence.manifest != entry.manifest) reasons += "APK manifest does not match catalog manifest"
         if (evidence.packageName != entry.artifact.packageName) reasons += "APK package name does not match catalog"
+        if (entry.artifact.serviceClassName !in evidence.exportedServiceClassNames) {
+            reasons += "APK does not export the catalog plugin service"
+        }
         if (evidence.versionCode != entry.manifest.versionCode) reasons += "APK version does not match catalog"
         if (evidence.sizeBytes != entry.artifact.sizeBytes) reasons += "APK size does not match catalog"
         if (!secureSha256Equals(entry.artifact.apkSha256, evidence.apkSha256)) {
