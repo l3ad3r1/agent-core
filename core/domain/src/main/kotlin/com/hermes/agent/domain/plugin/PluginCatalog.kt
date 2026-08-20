@@ -33,6 +33,7 @@ data class PluginArtifact(
 ) {
     companion object {
         const val CURRENT_PROTOCOL_VERSION = 1
+        const val MAX_SIZE_BYTES = 256L * 1024L * 1024L
     }
 }
 

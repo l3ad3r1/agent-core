@@ -36,6 +36,8 @@ class PluginPackageVerifier @Inject constructor() {
         catalog.plugins.forEach { entry -> addAll(validateEntry(entry)) }
     }.distinct()
 
+    fun verifyEntry(entry: PluginCatalogEntry): List<String> = validateEntry(entry)
+
     fun verifyPackage(
         entry: PluginCatalogEntry,
         evidence: PluginPackageEvidence,
@@ -86,7 +88,9 @@ class PluginPackageVerifier @Inject constructor() {
         if (manifest.capabilities.isEmpty()) add("Plugin must declare at least one capability")
         if (!isSha256(manifest.signatureFingerprint)) add("Invalid signing certificate SHA-256")
         if (!isSha256(artifact.apkSha256)) add("Invalid APK SHA-256")
-        if (artifact.sizeBytes <= 0) add("APK size must be positive")
+        if (artifact.sizeBytes !in 1..PluginArtifact.MAX_SIZE_BYTES) {
+            add("APK size must be between 1 and ${PluginArtifact.MAX_SIZE_BYTES} bytes")
+        }
         if (artifact.protocolVersion != PluginArtifact.CURRENT_PROTOCOL_VERSION) {
             add("Unsupported plugin protocol ${artifact.protocolVersion}")
         }

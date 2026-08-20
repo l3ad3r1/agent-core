@@ -1,8 +1,8 @@
 # Hermes plugin repository contract
 
 This document defines catalog schema version 1 for modules that Hermes and Jeeves can
-discover from the same public repository. It is a package and trust contract, not yet a
-complete downloader or Android service transport.
+discover from the same public repository. It is a package, delivery, and trust contract,
+but not yet an Android package-installer or service transport.
 
 ## Repository layout
 
@@ -54,13 +54,27 @@ The catalog codec and fail-closed verifier live in `:core:plugin`; shared data c
 live in `:core:domain`. See [`samples/plugin-catalog-v1.json`](../samples/plugin-catalog-v1.json)
 for a minimal document.
 
+## Catalog and artifact delivery
+
+Shared core fetches catalogs only over HTTPS, caps catalog responses at 1 MiB and
+declared APK artifacts at 256 MiB, and runs the strict codec before returning any entry.
+A caller may provide a request authorizer for a public-repository API token without
+transferring credential ownership to shared core. Catalog and artifact authorization
+are requested separately, so credentials do not have to be shared across different
+hosts.
+
+APK downloads are streamed into a temporary file inside a caller-owned private
+directory. The downloader requires the exact catalog byte count and SHA-256 before it
+renames the staged file to an immutable, digest-qualified `.apk` name. Failed, partial,
+oversized, or digest-mismatched transfers leave no promoted package. A previously
+downloaded immutable package is reused only after its size and digest are checked again.
+
 ## Still required
 
-- authenticated catalog fetching and artifact downloading;
 - Android package-installer handoff;
 - persistent trusted-publisher and approval storage;
 - the exported Android service contract and concrete gRPC transport;
 - permission-review and install UI in both products.
 
-Until these layers exist, a catalog can be parsed and verified in tests but modules
-cannot yet be installed or executed from the network.
+Until these layers exist, a catalog and its immutable APK can be retrieved and verified,
+but modules cannot yet be installed or executed from the repository.
