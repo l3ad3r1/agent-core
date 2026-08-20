@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "generatedAtEpochSeconds": 1775000000,
+  "plugins": [
+    {
+      "manifest": {
+        "id": "com.example.weather",
+        "displayName": "Weather",
+        "versionCode": 7,
+        "versionName": "1.2.0",
+        "author": "Example Publisher",
+        "signatureFingerprint": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "capabilities": [
+          {
+            "name": "weather",
+            "description": "Look up current weather",
+            "toolDescriptors": [
+              {
+                "name": "weather_lookup",
+                "description": "Look up weather for a location",
+                "parameters": []
+              }
+            ]
+          }
+        ],
+        "permissions": [
+          {
+            "type": "NETWORK",
+            "rationale": "Fetch weather data from the configured provider"
+          }
+        ],
+        "minAppVersion": 5
+      },
+      "artifact": {
+        "apkUrl": "https://plugins.example/com.example.weather/7/plugin.apk",
+        "apkSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "sizeBytes": 42000,
+        "packageName": "com.example.weather",
+        "serviceClassName": "com.example.weather.PluginService",
+        "protocolVersion": 1
+      }
+    }
+  ]
+}

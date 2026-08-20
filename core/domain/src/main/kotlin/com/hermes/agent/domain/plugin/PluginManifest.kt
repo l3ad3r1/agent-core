@@ -1,6 +1,7 @@
 package com.hermes.agent.domain.plugin
 
 import com.hermes.agent.domain.tool.ToolDescriptor
+import kotlinx.serialization.Serializable
 
 /**
  * Phase 3 plugin system — Section 3.3 of the technical plan.
@@ -22,6 +23,7 @@ import com.hermes.agent.domain.tool.ToolDescriptor
  * might advertise both "read_calendar" and "write_calendar" so the user
  * can grant them independently.
  */
+@Serializable
 data class PluginCapability(
     val name: String,
     val description: String,
@@ -36,12 +38,14 @@ data class PluginCapability(
  * resources not in this enum must declare a [custom] permission with a
  * human-readable description.
  */
+@Serializable
 data class PluginPermission(
     val type: PermissionType,
     val rationale: String,
     val custom: String? = null,
 )
 
+@Serializable
 enum class PermissionType {
     CALENDAR,
     CAMERA,
@@ -82,6 +86,7 @@ enum class PermissionType {
  * @property minAppVersion Minimum Hermes app versionCode that supports
  *   this plugin's API surface.
  */
+@Serializable
 data class PluginManifest(
     val id: String,
     val displayName: String,
