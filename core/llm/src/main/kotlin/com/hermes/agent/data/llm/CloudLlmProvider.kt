@@ -71,6 +71,7 @@ class CloudLlmProvider @Inject constructor(
     private val dispatchers: DispatcherProvider,
     private val json: Json,
     private val modelSource: CloudModelSource,
+    private val productConfig: LlmProductConfig,
 ) : LlmProvider {
 
     private var fixedProfile: CloudProviderProfile? = null
@@ -81,7 +82,8 @@ class CloudLlmProvider @Inject constructor(
         dispatchers: DispatcherProvider,
         json: Json,
         profile: CloudProviderProfile,
-    ) : this(api, settings, dispatchers, json, CloudModelSource.PRIMARY) {
+        productConfig: LlmProductConfig,
+    ) : this(api, settings, dispatchers, json, CloudModelSource.PRIMARY, productConfig) {
         fixedProfile = profile
     }
 
@@ -92,7 +94,11 @@ class CloudLlmProvider @Inject constructor(
 
     override val name: String
         get() = fixedProfile?.name
-            ?: if (modelSource == CloudModelSource.AUX) "Hermes-Cloud-Specialised" else "Hermes-Cloud"
+            ?: if (modelSource == CloudModelSource.AUX) {
+                "${productConfig.assistantName}-Cloud-Specialised"
+            } else {
+                "${productConfig.assistantName}-Cloud"
+            }
     override val isOnDevice: Boolean = false
     override val model: String
         get() = settings.currentBlocking().selectedModel().cleaned()

@@ -4,6 +4,7 @@ import com.hermes.agent.domain.settings.*
 
 import android.content.Context
 import com.arm.aichat.InferenceEngine
+import com.arm.aichat.InferenceEngine.State
 import com.hermes.agent.domain.settings.SettingsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -12,6 +13,8 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -29,6 +32,7 @@ class LocalLlmManagerLifecycleTest {
         settingsRepository = settingsRepository,
         downloadCoordinator = downloadCoordinator,
         engine = engine,
+        productConfig = LlmProductConfig("Hermes"),
     )
 
     @Test
@@ -75,5 +79,15 @@ class LocalLlmManagerLifecycleTest {
                     message.contains("native engine busy")
             })
         }
+    }
+
+    @Test
+    fun `blank system prompt uses product composition`() = runTest {
+        every { engine.state } returns MutableStateFlow(State.ModelReady)
+        every { engine.sendUserPrompt("hello", any()) } returns flowOf("hi")
+
+        manager.generateResponse(systemPrompt = "", userPrompt = "hello").toList()
+
+        coVerify { engine.setSystemPrompt("You are Hermes, a helpful on-device assistant.") }
     }
 }

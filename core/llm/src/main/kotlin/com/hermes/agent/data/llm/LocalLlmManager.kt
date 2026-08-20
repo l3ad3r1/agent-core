@@ -34,6 +34,7 @@ class LocalLlmManager @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val downloadCoordinator: LocalModelDownloadCoordinator,
     private val engine: InferenceEngine,
+    private val productConfig: LlmProductConfig,
 ) {
     private val modelMutex = Mutex()
 
@@ -115,7 +116,11 @@ class LocalLlmManager @Inject constructor(
             if (!engine.state.value.isModelLoaded) initializeLocked()
             // Always reset native chat state: the provider supplies a bounded transcript
             // on every call, including internal calls that have no explicit system message.
-            engine.setSystemPrompt(systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT })
+            engine.setSystemPrompt(
+                systemPrompt.ifBlank {
+                    "You are ${productConfig.assistantName}, a helpful on-device assistant."
+                },
+            )
             engine.sendUserPrompt(userPrompt).collect { emit(it) }
         }
     }.flowOn(Dispatchers.IO)
@@ -153,8 +158,6 @@ class LocalLlmManager @Inject constructor(
     }
 
     companion object {
-        private const val DEFAULT_SYSTEM_PROMPT = "You are Hermes, a helpful on-device assistant."
-
         fun hasStorageAccess(context: Context): Boolean =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 Environment.isExternalStorageManager()

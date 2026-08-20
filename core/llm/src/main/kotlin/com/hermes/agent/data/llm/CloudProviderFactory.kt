@@ -16,9 +16,10 @@ class CloudProviderFactory @Inject constructor(
     private val settings: SettingsRepository,
     private val dispatchers: DispatcherProvider,
     private val json: Json,
+    private val productConfig: LlmProductConfig,
 ) : ProfileCloudProviderFactory {
     override fun create(profile: CloudProviderProfile): CloudLlmProvider =
-        CloudLlmProvider(api, settings, dispatchers, json, profile)
+        CloudLlmProvider(api, settings, dispatchers, json, profile, productConfig)
 }
 
 interface ProfileCloudProviderFactory {

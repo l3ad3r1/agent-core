@@ -61,10 +61,22 @@ class CloudLlmProviderTest {
         io.mockk.every { dispatchers.default } returns testDispatcher
         io.mockk.every { dispatchers.main } returns testDispatcher
 
-        provider = CloudLlmProvider(api, settings, dispatchers, json, CloudModelSource.PRIMARY)
+        provider = CloudLlmProvider(
+            api,
+            settings,
+            dispatchers,
+            json,
+            CloudModelSource.PRIMARY,
+            LlmProductConfig("Hermes"),
+        )
     }
 
     // ── isAvailable ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `provider name uses product composition`() {
+        assertEquals("Hermes-Cloud", provider.name)
+    }
 
     @Test
     fun `isAvailable returns true when cloud enabled and key set`() = runTest {
