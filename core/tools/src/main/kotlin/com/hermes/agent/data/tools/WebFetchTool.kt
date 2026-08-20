@@ -47,7 +47,7 @@ class WebFetchTool @Inject constructor(
             ),
         ),
         category = "information",
-        capabilities = setOf("web", "information"),
+        capabilities = setOf("web"),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {
@@ -63,7 +63,7 @@ class WebFetchTool @Inject constructor(
         return try {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android) HermesAgent/1.0")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android) AgentCore/1.0")
                 .header("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8")
                 .build()
 

@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.os.Build
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.hermes.agent.domain.product.ProductIdentity
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
@@ -30,6 +31,7 @@ import kotlin.coroutines.resume
 @Singleton
 class TermuxCommandRunner @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val productIdentity: ProductIdentity,
 ) {
     fun isTermuxInstalled(): Boolean = runCatching {
         context.packageManager.getPackageInfo(TERMUX_PACKAGE, 0); true
@@ -41,7 +43,7 @@ class TermuxCommandRunner @Inject constructor(
     /**
      * Launches [command] in a **foreground** Termux session (opens Termux and
      * shows it running) — fire-and-forget, for long/interactive flows like the
-     * Hermes installer or starting the agent. Returns null on success, or a
+     * product installer or starting the agent. Returns null on success, or a
      * human-readable error explaining what to fix.
      */
     fun launchSession(command: String): String? {
@@ -56,7 +58,7 @@ class TermuxCommandRunner @Inject constructor(
             putExtra(EXTRA_WORKDIR, "$TERMUX_FILES/home")
             putExtra(EXTRA_BACKGROUND, false) // foreground: visible Termux session
             putExtra(EXTRA_SESSION_ACTION, "0") // open Termux & switch to new session
-            putExtra(EXTRA_COMMAND_LABEL, "Hermes")
+            putExtra(EXTRA_COMMAND_LABEL, productIdentity.displayName)
         }
         return try {
             ContextCompat.startForegroundService(context, service)
@@ -109,7 +111,7 @@ class TermuxCommandRunner @Inject constructor(
                     putExtra(EXTRA_WORKDIR, "$TERMUX_FILES/home")
                     putExtra(EXTRA_BACKGROUND, true)
                     putExtra(EXTRA_PENDING_INTENT, pendingIntent)
-                    putExtra(EXTRA_COMMAND_LABEL, "Hermes")
+                    putExtra(EXTRA_COMMAND_LABEL, productIdentity.displayName)
                 }
 
                 try {

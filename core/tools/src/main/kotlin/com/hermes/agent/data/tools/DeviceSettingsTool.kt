@@ -62,7 +62,7 @@ class DeviceSettingsTool @Inject constructor(
             ),
         ),
         category = "device",
-        capabilities = setOf("device:settings", "device"),
+        capabilities = setOf("device_settings"),
         requiresConfirmation = true,
     )
 

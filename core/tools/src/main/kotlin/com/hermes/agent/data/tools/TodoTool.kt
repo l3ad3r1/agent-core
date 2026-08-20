@@ -64,7 +64,7 @@ class TodoTool @Inject constructor(
             ),
         ),
         category = "productivity",
-        capabilities = setOf("common", "productivity"),
+        capabilities = setOf("common", "todo"),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

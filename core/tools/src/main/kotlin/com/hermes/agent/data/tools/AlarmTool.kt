@@ -30,7 +30,7 @@ class AlarmTool @Inject constructor(
             ToolParameter("message", ToolParameterType.STRING, "Optional alarm or timer label.", required = false),
         ),
         category = "device",
-        capabilities = setOf("device:alarm", "device"),
+        capabilities = setOf("device_alarm"),
         requiresConfirmation = true,
     )
 

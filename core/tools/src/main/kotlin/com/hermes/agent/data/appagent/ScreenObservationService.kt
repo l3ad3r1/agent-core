@@ -1,5 +1,6 @@
 package com.hermes.agent.data.appagent
 
+import com.hermes.agent.domain.product.ProductIdentity
 import kotlinx.coroutines.delay
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,6 +16,7 @@ class ScreenObservationService @Inject constructor(
     private val automation: AppAutomationGateway,
     private val snapshots: ScreenSnapshotStore,
     private val interactionSession: AppInteractionSession,
+    private val productIdentity: ProductIdentity,
 ) {
     suspend fun capture(
         settleDelayMs: Long = 0L,
@@ -23,7 +25,7 @@ class ScreenObservationService @Inject constructor(
         if (settleDelayMs > 0) delay(settleDelayMs)
         val root = automation.activeWindowRoot()
             ?: return ScreenObservation.Unavailable(
-                "App control is unavailable. Enable the Hermes accessibility service, " +
+                "App control is unavailable. Enable the ${productIdentity.displayName} accessibility service, " +
                     "then unlock the device and try again.",
             )
         val visiblePackage = runCatching { root.packageName?.toString().orEmpty() }

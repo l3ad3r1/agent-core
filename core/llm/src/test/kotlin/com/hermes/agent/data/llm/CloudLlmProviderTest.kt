@@ -9,6 +9,7 @@ import com.hermes.agent.data.remote.dto.ChatCompletionResponse
 import com.hermes.agent.data.remote.dto.ChatMessage
 import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.settings.UserSettings
+import com.hermes.agent.domain.product.ProductIdentity
 import com.hermes.agent.util.DispatcherProvider
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -67,7 +68,7 @@ class CloudLlmProviderTest {
             dispatchers,
             json,
             CloudModelSource.PRIMARY,
-            LlmProductConfig("Hermes"),
+            ProductIdentity("Hermes", "hermes_notify"),
         )
     }
 

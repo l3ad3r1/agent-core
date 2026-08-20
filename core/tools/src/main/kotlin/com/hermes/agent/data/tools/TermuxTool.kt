@@ -49,7 +49,7 @@ class TermuxTool @Inject constructor(
             ),
         ),
         category = "device",
-        capabilities = setOf("system:termux", "device"),
+        capabilities = setOf("termux"),
         requiresConfirmation = true,
         maxResultSizeChars = MAX_OUTPUT_CHARS,
     )

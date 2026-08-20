@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -25,6 +26,7 @@ dependencies {
     api(project(":core:memory"))
     api(project(":core:llm"))
     implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
     api(libs.okhttp)
     api(libs.nanohttpd)
     api(libs.jsch)

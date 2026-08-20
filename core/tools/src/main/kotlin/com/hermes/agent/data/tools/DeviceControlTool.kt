@@ -34,7 +34,7 @@ class DeviceControlTool @Inject constructor(
             ToolParameter("auto", ToolParameterType.BOOLEAN, "Enable automatic brightness.", required = false),
         ),
         category = "device",
-        capabilities = setOf("device:control", "device"),
+        capabilities = setOf("device_control"),
         requiresConfirmation = true,
     )
 

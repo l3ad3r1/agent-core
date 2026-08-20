@@ -6,6 +6,7 @@ import android.content.Context
 import com.arm.aichat.InferenceEngine
 import com.arm.aichat.InferenceEngine.State
 import com.hermes.agent.domain.settings.SettingsRepository
+import com.hermes.agent.domain.product.ProductIdentity
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
@@ -32,7 +33,7 @@ class LocalLlmManagerLifecycleTest {
         settingsRepository = settingsRepository,
         downloadCoordinator = downloadCoordinator,
         engine = engine,
-        productConfig = LlmProductConfig("Hermes"),
+        productIdentity = ProductIdentity("Hermes", "hermes_notify"),
     )
 
     @Test

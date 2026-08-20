@@ -28,7 +28,7 @@ class ContactLookupTool @Inject constructor(
         description = "Find contacts by name and return their phone numbers.",
         parameters = listOf(ToolParameter("query", ToolParameterType.STRING, "Contact name to search for.")),
         category = "communication",
-        capabilities = setOf("contacts", "communication"),
+        capabilities = setOf("contacts"),
         requiresConfirmation = false,
     )
 

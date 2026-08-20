@@ -6,6 +6,7 @@ import com.hermes.agent.data.appagent.AppAutomationGateway
 import com.hermes.agent.data.appagent.AppInteractionSession
 import com.hermes.agent.data.appagent.ScreenObservationService
 import com.hermes.agent.data.appagent.ScreenSnapshotStore
+import com.hermes.agent.domain.product.ProductIdentity
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -22,6 +23,8 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class AppAgentToolsTest {
 
+    private val productIdentity = ProductIdentity("Hermes", "hermes_notify")
+
     @Test
     fun `AppSwipeTool derives its gesture from actual screen bounds`() = runTest {
         val automation = mockk<AppAutomationGateway>()
@@ -34,6 +37,7 @@ class AppAgentToolsTest {
             automation,
             snapshots,
             AppInteractionSession().apply { authorize("com.example") },
+            productIdentity,
         )
         val snapshot = snapshots.capture(rootNode, emptyList())
 
@@ -56,6 +60,7 @@ class AppAgentToolsTest {
             automation,
             snapshots,
             AppInteractionSession().apply { authorize("com.example") },
+            productIdentity,
         )
 
         assertFalse(AppAnalyzeScreenTool(observations).descriptor.requiresConfirmation)
@@ -105,6 +110,7 @@ class AppAgentToolsTest {
             automation,
             snapshots,
             AppInteractionSession().apply { authorize("com.example") },
+            productIdentity,
         )
         val snapshot = snapshots.capture(
             rootNode,
@@ -156,6 +162,7 @@ class AppAgentToolsTest {
             automation,
             snapshots,
             AppInteractionSession().apply { authorize("com.example") },
+            productIdentity,
         )
         val snapshot = snapshots.capture(
             rootNode,

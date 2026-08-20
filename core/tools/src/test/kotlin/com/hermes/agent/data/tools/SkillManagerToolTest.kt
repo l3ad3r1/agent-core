@@ -4,6 +4,7 @@ import com.hermes.agent.domain.model.Skill
 
 import com.hermes.agent.domain.repository.SkillRepository
 import com.hermes.agent.domain.skill.SkillUsageListener
+import com.hermes.agent.domain.product.ProductIdentity
 import com.hermes.agent.domain.tool.ToolRegistry
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -21,7 +22,12 @@ class SkillManagerToolTest {
     private val repo = mockk<SkillRepository>(relaxed = true)
     private val registry = mockk<ToolRegistry>(relaxed = true)
     private val scheduler = mockk<SkillUsageListener>(relaxed = true)
-    private val tool = SkillManagerTool(repo, dagger.Lazy { registry }, scheduler)
+    private val tool = SkillManagerTool(
+        repo,
+        dagger.Lazy { registry },
+        scheduler,
+        ProductIdentity("Hermes", "hermes_notify"),
+    )
 
 
     private fun args(vararg pairs: Pair<String, String>): Map<String, JsonElement> =

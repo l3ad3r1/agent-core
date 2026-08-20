@@ -9,6 +9,7 @@ import com.hermes.agent.domain.tool.ToolParameter
 import com.hermes.agent.domain.tool.ToolParameterType
 import com.hermes.agent.domain.tool.ToolRegistry
 import com.hermes.agent.domain.tool.ToolResult
+import com.hermes.agent.domain.product.ProductIdentity
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -21,7 +22,7 @@ import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 
 /**
- * Exposes the Hermes skills library to the LLM.
+ * Exposes the product skills library to the LLM.
  *
  * Mirrors the `skills_list` + `skill_view` tools from NousResearch/hermes-agent
  * using progressive disclosure:
@@ -46,11 +47,12 @@ class SkillManagerTool @Inject constructor(
     // at execute() time, long after wiring completes.
     private val toolRegistry: dagger.Lazy<ToolRegistry>,
     private val refineScheduler: com.hermes.agent.domain.skill.SkillUsageListener,
+    private val productIdentity: ProductIdentity,
 ) : Tool {
 
     override val descriptor = ToolDescriptor(
         name = "skill_manager",
-        description = "Browse, load, and create Hermes skills (reusable instruction sets). " +
+        description = "Browse, load, and create ${productIdentity.displayName} skills (reusable instruction sets). " +
             "Use action='list' to see available skills (name + description only, token-efficient). " +
             "Use action='view' with a skill name to load the full instructions for that skill. " +
             "Use action='create' when the user asks you to create/save a new skill — provide " +
@@ -99,7 +101,7 @@ class SkillManagerTool @Inject constructor(
             ),
         ),
         category = "productivity",
-        capabilities = setOf("skill_manager", "productivity"),
+        capabilities = setOf("skills"),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

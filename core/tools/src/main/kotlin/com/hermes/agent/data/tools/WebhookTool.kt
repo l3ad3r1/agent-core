@@ -13,6 +13,7 @@ import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolParameter
 import com.hermes.agent.domain.tool.ToolParameterType
 import com.hermes.agent.domain.tool.ToolResult
+import com.hermes.agent.domain.product.ProductIdentity
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -39,6 +40,7 @@ class WebhookTool @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val connectorRepository: ConnectorRepository,
     @ApplicationContext private val context: Context,
+    private val productIdentity: ProductIdentity,
 ) : Tool {
 
     override val descriptor = ToolDescriptor(
@@ -51,7 +53,7 @@ class WebhookTool @Inject constructor(
                 required = false),
         ),
         category = "communication",
-        capabilities = setOf("notifications", "communication"),
+        capabilities = setOf("notification"),
     )
 
     private val json = "application/json; charset=utf-8".toMediaType()
@@ -116,12 +118,16 @@ class WebhookTool @Inject constructor(
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
-                android.app.NotificationChannel("hermes_notify", "Hermes Notifications", android.app.NotificationManager.IMPORTANCE_DEFAULT)
+                android.app.NotificationChannel(
+                    productIdentity.notificationChannelId,
+                    "${productIdentity.displayName} Notifications",
+                    android.app.NotificationManager.IMPORTANCE_DEFAULT,
+                )
             )
         }
 
         val remoteInput = androidx.core.app.RemoteInput.Builder("KEY_REPLY")
-            .setLabel("Reply to Hermes...")
+            .setLabel("Reply to ${productIdentity.displayName}...")
             .build()
 
         val replyIntent = android.content.Intent().setClassName(context.packageName, "com.hermes.agent.receiver.NotificationReplyReceiver").apply {
@@ -140,9 +146,9 @@ class WebhookTool @Inject constructor(
             replyPendingIntent
         ).addRemoteInput(remoteInput).build()
 
-        val notification = androidx.core.app.NotificationCompat.Builder(context, "hermes_notify")
+        val notification = androidx.core.app.NotificationCompat.Builder(context, productIdentity.notificationChannelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Hermes")
+            .setContentTitle(productIdentity.displayName)
             .setContentText(message)
             .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(message))
             .addAction(action)

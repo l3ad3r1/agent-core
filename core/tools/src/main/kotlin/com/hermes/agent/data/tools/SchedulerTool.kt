@@ -8,6 +8,7 @@ import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolParameter
 import com.hermes.agent.domain.tool.ToolParameterType
 import com.hermes.agent.domain.tool.ToolResult
+import com.hermes.agent.domain.product.ProductIdentity
 import com.hermes.agent.util.IdGenerator
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.JsonElement
@@ -25,7 +26,7 @@ import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 
 /**
- * LLM-callable tool for managing Hermes scheduled tasks (cron jobs).
+ * LLM-callable tool for managing product scheduled tasks (cron jobs).
  *
  * Actions:
  *   create  — schedule a recurring prompt with a cron expression
@@ -40,11 +41,12 @@ import dagger.multibindings.IntoSet
 @Singleton
 class SchedulerTool @Inject constructor(
     private val cronRepository: CronRepository,
+    private val productIdentity: ProductIdentity,
 ) : Tool {
 
     override val descriptor = ToolDescriptor(
         name = "scheduler",
-        description = "Manage Hermes scheduled tasks (cron jobs). " +
+        description = "Manage ${productIdentity.displayName} scheduled tasks (cron jobs). " +
             "Use action='create' to schedule a recurring prompt. " +
             "Use action='list' to see all scheduled tasks. " +
             "Use action='delete' with task_id to remove a task. " +
@@ -65,7 +67,7 @@ class SchedulerTool @Inject constructor(
             ToolParameter(
                 name = "prompt",
                 type = ToolParameterType.STRING,
-                description = "The prompt Hermes will run on schedule (required for action='create').",
+                description = "The prompt ${productIdentity.displayName} will run on schedule (required for action='create').",
                 required = false,
             ),
             ToolParameter(
@@ -84,7 +86,7 @@ class SchedulerTool @Inject constructor(
             ),
         ),
         category = "productivity",
-        capabilities = setOf("scheduler", "productivity"),
+        capabilities = setOf("scheduler"),
         requiresConfirmation = false,
     )
 

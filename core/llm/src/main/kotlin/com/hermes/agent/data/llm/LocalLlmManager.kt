@@ -13,6 +13,7 @@ import com.arm.aichat.InferenceEngine
 import com.arm.aichat.InferenceEngine.State
 import com.arm.aichat.isModelLoaded
 import com.hermes.agent.domain.settings.SettingsRepository
+import com.hermes.agent.domain.product.ProductIdentity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -34,7 +35,7 @@ class LocalLlmManager @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val downloadCoordinator: LocalModelDownloadCoordinator,
     private val engine: InferenceEngine,
-    private val productConfig: LlmProductConfig,
+    private val productIdentity: ProductIdentity,
 ) {
     private val modelMutex = Mutex()
 
@@ -118,7 +119,7 @@ class LocalLlmManager @Inject constructor(
             // on every call, including internal calls that have no explicit system message.
             engine.setSystemPrompt(
                 systemPrompt.ifBlank {
-                    "You are ${productConfig.assistantName}, a helpful on-device assistant."
+                    "You are ${productIdentity.displayName}, a helpful on-device assistant."
                 },
             )
             engine.sendUserPrompt(userPrompt).collect { emit(it) }

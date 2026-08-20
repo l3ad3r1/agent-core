@@ -13,6 +13,7 @@ import com.hermes.agent.domain.tool.ToolParameter
 import com.hermes.agent.domain.tool.ToolParameterType
 import com.hermes.agent.domain.tool.ToolRegistry
 import com.hermes.agent.domain.tool.ToolResult
+import com.hermes.agent.domain.product.ProductIdentity
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
@@ -64,6 +65,7 @@ class DelegateTool @Inject constructor(
     private val toolRegistry: dagger.Lazy<ToolRegistry>,
     private val toolCallExecutor: dagger.Lazy<ToolCallExecutor>,
     private val agentTaskRepository: dagger.Lazy<AgentTaskRepository>,
+    private val productIdentity: ProductIdentity,
 ) : Tool {
 
     override val descriptor = ToolDescriptor(
@@ -101,7 +103,7 @@ class DelegateTool @Inject constructor(
             ),
         ),
         category = "productivity",
-        capabilities = setOf("delegate", "productivity"),
+        capabilities = setOf("delegate"),
         maxResultSizeChars = 12_000,
     )
 
@@ -162,7 +164,7 @@ class DelegateTool @Inject constructor(
         var messages = listOf(
             LlmMessage(
                 role = "system",
-                content = SUBAGENT_SYSTEM_PROMPT + com.hermes.agent.data.agent.ToolCallPrompt.INSTRUCTION,
+                content = subagentSystemPrompt() + com.hermes.agent.data.agent.ToolCallPrompt.INSTRUCTION,
             ),
             LlmMessage(role = "user", content = goal),
         )
@@ -220,19 +222,19 @@ class DelegateTool @Inject constructor(
             .take(CHILD_TOOL_OUTPUT_CAP)
     }
 
+    private fun subagentSystemPrompt(): String =
+        "You are a focused ${productIdentity.displayName} subagent. You have been given a single, self-contained task " +
+            "by a parent agent. You have a limited set of read/research tools (web search and " +
+            "fetch, calculator, current date/time, conversation search) and cannot ask follow-up " +
+            "questions, so make reasonable assumptions where needed. Use tools only when they " +
+            "materially help. Return only the result — concise, directly usable by the parent, " +
+            "with no preamble or meta-commentary."
+
     private companion object {
         const val MAX_SUBAGENTS = 4
         const val MAX_TOOL_ROUNDS = 4
         const val MAX_RESULT_CHARS = 4000
         const val CHILD_TOOL_OUTPUT_CAP = 2000
-
-        const val SUBAGENT_SYSTEM_PROMPT =
-            "You are a focused Hermes subagent. You have been given a single, self-contained task " +
-                "by a parent agent. You have a limited set of read/research tools (web search and " +
-                "fetch, calculator, current date/time, conversation search) and cannot ask follow-up " +
-                "questions, so make reasonable assumptions where needed. Use tools only when they " +
-                "materially help. Return only the result — concise, directly usable by the parent, " +
-                "with no preamble or meta-commentary."
     }
 }
 

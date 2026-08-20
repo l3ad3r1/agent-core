@@ -15,6 +15,7 @@ import com.hermes.agent.domain.tool.Tool
 import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolRegistry
 import com.hermes.agent.domain.tool.ToolResult
+import com.hermes.agent.domain.product.ProductIdentity
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -121,6 +122,7 @@ class DelegateChildCapabilitiesTest {
             toolRegistry = dagger.Lazy { registry },
             toolCallExecutor = dagger.Lazy { executor },
             agentTaskRepository = dagger.Lazy { mockk<AgentTaskRepository>(relaxed = true) },
+            productIdentity = ProductIdentity("Hermes", "hermes_notify"),
         )
 
         val result = delegate.execute(mapOf("prompt" to JsonPrimitive("Calculate 2+2")))
@@ -146,6 +148,7 @@ class DelegateChildCapabilitiesTest {
             toolRegistry = dagger.Lazy { registry },
             toolCallExecutor = dagger.Lazy { executor },
             agentTaskRepository = dagger.Lazy { tasks },
+            productIdentity = ProductIdentity("Hermes", "hermes_notify"),
         )
 
         val result = delegate.execute(

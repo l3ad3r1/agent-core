@@ -11,6 +11,7 @@ import com.hermes.agent.data.remote.dto.FunctionCallDto
 import com.hermes.agent.domain.settings.CloudProviderProfile
 import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.settings.UserSettings
+import com.hermes.agent.domain.product.ProductIdentity
 import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.util.DispatcherProvider
 import kotlinx.coroutines.delay
@@ -71,7 +72,7 @@ class CloudLlmProvider @Inject constructor(
     private val dispatchers: DispatcherProvider,
     private val json: Json,
     private val modelSource: CloudModelSource,
-    private val productConfig: LlmProductConfig,
+    private val productIdentity: ProductIdentity,
 ) : LlmProvider {
 
     private var fixedProfile: CloudProviderProfile? = null
@@ -82,8 +83,8 @@ class CloudLlmProvider @Inject constructor(
         dispatchers: DispatcherProvider,
         json: Json,
         profile: CloudProviderProfile,
-        productConfig: LlmProductConfig,
-    ) : this(api, settings, dispatchers, json, CloudModelSource.PRIMARY, productConfig) {
+        productIdentity: ProductIdentity,
+    ) : this(api, settings, dispatchers, json, CloudModelSource.PRIMARY, productIdentity) {
         fixedProfile = profile
     }
 
@@ -95,9 +96,9 @@ class CloudLlmProvider @Inject constructor(
     override val name: String
         get() = fixedProfile?.name
             ?: if (modelSource == CloudModelSource.AUX) {
-                "${productConfig.assistantName}-Cloud-Specialised"
+                "${productIdentity.displayName}-Cloud-Specialised"
             } else {
-                "${productConfig.assistantName}-Cloud"
+                "${productIdentity.displayName}-Cloud"
             }
     override val isOnDevice: Boolean = false
     override val model: String

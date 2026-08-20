@@ -30,7 +30,7 @@ class MediaControlTool @Inject constructor(
             ToolParameter("query", ToolParameterType.STRING, "Song, artist, album, or playlist to play.", required = false),
         ),
         category = "device",
-        capabilities = setOf("device:media", "device"),
+        capabilities = setOf("media"),
         requiresConfirmation = true,
     )
 
