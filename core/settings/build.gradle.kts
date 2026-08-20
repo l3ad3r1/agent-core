@@ -1,6 +1,13 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
+}
+
+val localProps = Properties().apply {
+    val file = rootProject.file("hermes.local.properties")
+    if (file.exists()) file.inputStream().use(::load)
 }
 
 android {
@@ -9,9 +16,9 @@ android {
 
     defaultConfig {
         minSdk = 29
-        buildConfigField("String", "CLOUD_API_KEY", "\"\"")
-        buildConfigField("String", "CLOUD_BASE_URL", "\"https://api.together.xyz/v1\"")
-        buildConfigField("String", "CLOUD_MODEL", "\"meta-llama/Llama-3.3-70B-Instruct-Turbo\"")
+        buildConfigField("String", "CLOUD_API_KEY", "\"${localProps.getProperty("hermes.cloudApiKey") ?: ""}\"")
+        buildConfigField("String", "CLOUD_BASE_URL", "\"${project.findProperty("hermes.cloudBaseUrl") ?: "https://api.openai.com/v1"}\"")
+        buildConfigField("String", "CLOUD_MODEL", "\"${project.findProperty("hermes.cloudModel") ?: "gpt-4o-mini"}\"")
     }
 
     compileOptions {

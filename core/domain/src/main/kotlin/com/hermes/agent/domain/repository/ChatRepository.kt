@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
  *
  * The default implementation composes [ConversationRepository] (persistence),
  * the [com.hermes.agent.domain.agent.Orchestrator] (multi-agent execution),
- * and the [com.hermes.agent.data.settings.SettingsRepository] (cloud toggle,
+ * and the [com.hermes.agent.domain.settings.SettingsRepository] (cloud toggle,
  * API key).
  *
  * Two streaming APIs are exposed:
