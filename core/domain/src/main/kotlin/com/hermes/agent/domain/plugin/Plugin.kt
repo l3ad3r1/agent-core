@@ -16,11 +16,9 @@ import kotlinx.coroutines.flow.Flow
  *   - [com.hermes.agent.data.plugin.InProcessPluginSandbox] — loads
  *     plugins in-process (no IPC). Used for first-party plugins that
  *     ship inside the main APK. Fast, no isolation.
- *   - [com.hermes.agent.data.plugin.GrpcPluginSandbox] — stub for
- *     loading third-party plugins from standalone APKs via gRPC over
- *     local UNIX-domain sockets. Real implementation deferred to a
- *     Phase 3.x point release once the gRPC Android server-side
- *     bindings are validated on a Samsung device.
+ *   - [com.hermes.agent.data.plugin.GrpcPluginSandbox] — transport-backed
+ *     boundary for third-party plugins hosted by standalone APKs. The
+ *     Android discovery and gRPC transport are separate host contributions.
  *
  * Lifecycle hooks:
  *   - [onLoad]    — called once when the plugin enters ACTIVE state.

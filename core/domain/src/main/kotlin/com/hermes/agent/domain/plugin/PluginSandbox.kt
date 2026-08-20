@@ -12,10 +12,9 @@ package com.hermes.agent.domain.plugin
  *   - [com.hermes.agent.data.plugin.InProcessPluginSandbox] — runs
  *     first-party plugins in-process. No isolation, but zero IPC
  *     overhead. Used for everything shipped inside the main APK.
- *   - [com.hermes.agent.data.plugin.GrpcPluginSandbox] — interface
- *     stub for third-party APK plugins loaded via gRPC over a local
- *     UNIX-domain socket. Real implementation deferred until the
- *     gRPC server-side bindings are validated on a Samsung device.
+ *   - [com.hermes.agent.data.plugin.GrpcPluginSandbox] — transport-backed
+ *     boundary for third-party APK plugins. It is unavailable until the
+ *     host contributes an Android discovery/gRPC transport.
  */
 interface PluginSandbox {
 
@@ -41,8 +40,8 @@ interface PluginSandbox {
 
     /**
      * Whether this sandbox is available on the current device. The
-     * gRPC sandbox reports `false` on devices that lack the gRPC
-     * native libs; the in-process sandbox always reports `true`.
+     * gRPC sandbox reports `false` when no contributed remote transport
+     * is available; the in-process sandbox always reports `true`.
      */
     suspend fun isAvailable(): Boolean
 }

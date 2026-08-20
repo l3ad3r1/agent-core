@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonElement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -36,7 +37,9 @@ class PluginRegistryImplTest {
         override fun all(): List<Tool> = map.values.toList()
     }
 
-    private fun makePlugin(id: String): Plugin = object : Plugin {
+    private class FakePlugin(private val id: String) : Plugin {
+        var resumeCalls = 0
+
         override val manifest = PluginManifest(
             id = id,
             displayName = id,
@@ -67,14 +70,53 @@ class PluginRegistryImplTest {
 
         override suspend fun onLoad(context: PluginContext) = PluginLifecycleResult.Success
         override suspend fun onSuspend() = PluginLifecycleResult.Success
-        override suspend fun onResume() = PluginLifecycleResult.Success
+        override suspend fun onResume(): PluginLifecycleResult {
+            resumeCalls++
+            return PluginLifecycleResult.Success
+        }
         override suspend fun onUnload() = PluginLifecycleResult.Success
     }
 
-    private fun makeRegistry(): Pair<PluginRegistryImpl, FakeToolRegistry> {
+    private fun makePlugin(id: String) = FakePlugin(id)
+
+    private class FakeGrpcTransport(
+        private val available: Boolean,
+        override val name: String = "fake",
+        private val availabilityFailure: Throwable? = null,
+    ) : GrpcPluginTransport {
+        var loadCalls = 0
+        var suspendCalls = 0
+        var resumeCalls = 0
+        var unloadCalls = 0
+
+        override suspend fun isAvailable(): Boolean {
+            availabilityFailure?.let { throw it }
+            return available
+        }
+        override suspend fun load(plugin: Plugin, context: PluginContext): PluginLifecycleResult {
+            loadCalls++
+            return plugin.onLoad(context)
+        }
+        override suspend fun suspend_(plugin: Plugin): PluginLifecycleResult {
+            suspendCalls++
+            return plugin.onSuspend()
+        }
+        override suspend fun resume(plugin: Plugin): PluginLifecycleResult {
+            resumeCalls++
+            return plugin.onResume()
+        }
+        override suspend fun unload(plugin: Plugin): PluginLifecycleResult {
+            unloadCalls++
+            return plugin.onUnload()
+        }
+    }
+
+    private fun makeRegistry(
+        remoteTransport: GrpcPluginTransport? = null,
+    ): Pair<PluginRegistryImpl, FakeToolRegistry> {
         val toolRegistry = FakeToolRegistry()
         val sandbox = InProcessPluginSandbox(toolRegistry)
-        val grpc = GrpcPluginSandbox()
+        val grpc = GrpcPluginSandbox(toolRegistry, setOfNotNull(remoteTransport))
         val monitor = PluginResourceMonitor()
         val registry = PluginRegistryImpl(sandbox, grpc, dummyContext, monitor)
         return registry to toolRegistry
@@ -118,6 +160,8 @@ class PluginRegistryImplTest {
 
         val suspended = registry.observePlugins().value.first { it.manifest.id == "test.three" }
         assertEquals(PluginState.SUSPENDED, suspended.state)
+        assertTrue(registry.activePlugins().isEmpty())
+        assertTrue(registry.activeToolDescriptors().isEmpty())
     }
 
     @Test
@@ -153,5 +197,78 @@ class PluginRegistryImplTest {
 
         registry.activate("test.six")
         assertEquals(2, registry.activeToolDescriptors().size)
+    }
+
+    @Test
+    fun `remote plugin lifecycle stays on its grpc transport`() = runTest {
+        val transport = FakeGrpcTransport(available = true)
+        val (registry, toolRegistry) = makeRegistry(transport)
+        val plugin = makePlugin("remote.one")
+
+        registry.install(plugin)
+        val result = registry.activate("remote.one")
+
+        assertTrue(result is PluginLifecycleResult.Success)
+        assertEquals(1, transport.loadCalls)
+        assertEquals(PluginState.ACTIVE, registry.byId("remote.one")?.state)
+        assertNotNull(toolRegistry.byName("tool_remote.one"))
+
+        registry.suspend_("remote.one")
+        registry.activate("remote.one")
+        registry.uninstall("remote.one")
+
+        assertEquals(1, transport.suspendCalls)
+        assertEquals(1, transport.resumeCalls)
+        assertEquals(1, transport.unloadCalls)
+        assertNull(toolRegistry.byName("tool_remote.one"))
+    }
+
+    @Test
+    fun `remote plugin activation fails honestly when transport is unavailable`() = runTest {
+        val (registry, toolRegistry) = makeRegistry()
+        registry.install(makePlugin("remote.offline"))
+
+        val result = registry.activate("remote.offline")
+
+        assertTrue(result is PluginLifecycleResult.Failure)
+        assertTrue((result as PluginLifecycleResult.Failure).recoverable)
+        assertEquals(PluginState.ERROR, registry.byId("remote.offline")?.state)
+        assertFalse(registry.byId("remote.offline")?.lastError.isNullOrBlank())
+        assertNull(toolRegistry.byName("tool_remote.offline"))
+    }
+
+    @Test
+    fun `failed availability probe falls through to next transport`() = runTest {
+        val toolRegistry = FakeToolRegistry()
+        val broken = FakeGrpcTransport(
+            available = false,
+            name = "a-broken",
+            availabilityFailure = IllegalStateException("probe failed"),
+        )
+        val healthy = FakeGrpcTransport(available = true, name = "b-healthy")
+        val sandbox = GrpcPluginSandbox(toolRegistry, setOf(healthy, broken))
+        val plugin = makePlugin("remote.fallback")
+
+        val result = sandbox.load(plugin, dummyContext)
+
+        assertTrue(result is PluginLifecycleResult.Success)
+        assertEquals(0, broken.loadCalls)
+        assertEquals(1, healthy.loadCalls)
+        assertNotNull(toolRegistry.byName("tool_remote.fallback"))
+    }
+
+    @Test
+    fun `activating suspended plugin resumes its owning sandbox`() = runTest {
+        val (registry, _) = makeRegistry()
+        val plugin = makePlugin("test.resume")
+        registry.registerFirstParty(plugin)
+        registry.activate("test.resume")
+        registry.suspend_("test.resume")
+
+        val result = registry.activate("test.resume")
+
+        assertTrue(result is PluginLifecycleResult.Success)
+        assertEquals(1, plugin.resumeCalls)
+        assertEquals(PluginState.ACTIVE, registry.byId("test.resume")?.state)
     }
 }

@@ -5,11 +5,9 @@ import com.hermes.agent.domain.plugin.PluginContext
 import com.hermes.agent.domain.plugin.PluginInstance
 import com.hermes.agent.domain.plugin.PluginLifecycleResult
 import com.hermes.agent.domain.plugin.PluginRegistry
-import com.hermes.agent.domain.plugin.PluginResourceUsage
 import com.hermes.agent.domain.plugin.PluginSandbox
 import com.hermes.agent.domain.plugin.PluginState
 import com.hermes.agent.domain.tool.ToolDescriptor
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,14 +39,33 @@ class PluginRegistryImpl @Inject constructor(
     private val _plugins = MutableStateFlow<List<PluginInstance>>(emptyList())
     override fun observePlugins(): StateFlow<List<PluginInstance>> = _plugins.asStateFlow()
 
-    private val loadedPlugins = mutableMapOf<String, Plugin>()
+    private data class RegisteredPlugin(
+        val plugin: Plugin,
+        val sandbox: PluginSandbox,
+    )
+
+    private val registeredPlugins = mutableMapOf<String, RegisteredPlugin>()
+    private val loadedPlugins = mutableMapOf<String, RegisteredPlugin>()
 
     override suspend fun activePlugins(): List<Plugin> = mutex.withLock {
-        loadedPlugins.values.toList()
+        val activeIds = _plugins.value
+            .filter { it.state == PluginState.ACTIVE }
+            .mapTo(mutableSetOf()) { it.manifest.id }
+        loadedPlugins.filterKeys { it in activeIds }.values.map { it.plugin }
     }
 
     override suspend fun activeToolDescriptors(): List<ToolDescriptor> = mutex.withLock {
-        loadedPlugins.values.flatMap { it.manifest.capabilities.flatMap { c -> c.toolDescriptors } }
+        val activeIds = _plugins.value
+            .filter { it.state == PluginState.ACTIVE }
+            .mapTo(mutableSetOf()) { it.manifest.id }
+        loadedPlugins
+            .filterKeys { it in activeIds }
+            .values
+            .flatMap { registration ->
+                registration.plugin.manifest.capabilities.flatMap { capability ->
+                    capability.toolDescriptors
+                }
+            }
     }
 
     override suspend fun byId(id: String): PluginInstance? = mutex.withLock {
@@ -56,6 +73,7 @@ class PluginRegistryImpl @Inject constructor(
     }
 
     override suspend fun install(plugin: Plugin): PluginInstance = mutex.withLock {
+        registeredPlugins[plugin.manifest.id] = RegisteredPlugin(plugin, grpcSandbox)
         val instance = PluginInstance(
             manifest = plugin.manifest,
             state = PluginState.INSTALLED,
@@ -67,22 +85,29 @@ class PluginRegistryImpl @Inject constructor(
     }
 
     override suspend fun activate(id: String): PluginLifecycleResult = mutex.withLock {
-        val plugin = loadedPlugins[id]
         val instance = _plugins.value.firstOrNull { it.manifest.id == id }
             ?: return@withLock PluginLifecycleResult.Failure("unknown plugin: $id")
+        val registered = registeredPlugins[id]
+            ?: return@withLock PluginLifecycleResult.Failure("plugin $id not registered")
+        val loaded = loadedPlugins[id]
 
-        if (plugin != null) {
-            // Already loaded — resume instead.
-            return@withLock updateState(id, PluginState.ACTIVE)
+        if (loaded != null) {
+            if (instance.state == PluginState.ACTIVE) {
+                return@withLock PluginLifecycleResult.Success
+            }
+            val result = loaded.sandbox.resume(loaded.plugin)
+            if (result is PluginLifecycleResult.Success) {
+                updateState(id, PluginState.ACTIVE)
+                resourceMonitor.startMonitoring(id)
+            } else {
+                updateState(id, PluginState.ERROR, lastError = (result as PluginLifecycleResult.Failure).message)
+            }
+            return@withLock result
         }
 
-        // First-party plugins (those shipped in-process) use the in-process sandbox.
-        // Phase 3.x: route to grpcSandbox for plugins with manifest.id not in the
-        // first-party set.
-        val sandbox = inProcessSandbox
-        val result = sandbox.load(loadedPluginFor(id) ?: return@withLock PluginLifecycleResult.Failure("plugin $id not registered"), pluginContext)
+        val result = registered.sandbox.load(registered.plugin, pluginContext)
         if (result is PluginLifecycleResult.Success) {
-            loadedPlugins[id] = loadedPluginFor(id)!!
+            loadedPlugins[id] = registered
             updateState(id, PluginState.ACTIVE, loadedAt = System.currentTimeMillis())
             resourceMonitor.startMonitoring(id)
         } else {
@@ -93,8 +118,8 @@ class PluginRegistryImpl @Inject constructor(
     }
 
     override suspend fun suspend_(id: String): PluginLifecycleResult = mutex.withLock {
-        val plugin = loadedPlugins[id] ?: return@withLock PluginLifecycleResult.Failure("plugin $id not active")
-        val result = inProcessSandbox.suspend_(plugin)
+        val loaded = loadedPlugins[id] ?: return@withLock PluginLifecycleResult.Failure("plugin $id not active")
+        val result = loaded.sandbox.suspend_(loaded.plugin)
         if (result is PluginLifecycleResult.Success) {
             updateState(id, PluginState.SUSPENDED)
             resourceMonitor.stopMonitoring(id)
@@ -103,27 +128,21 @@ class PluginRegistryImpl @Inject constructor(
     }
 
     override suspend fun uninstall(id: String) = mutex.withLock {
-        val plugin = loadedPlugins.remove(id)
-        if (plugin != null) {
-            inProcessSandbox.unload(plugin)
+        val loaded = loadedPlugins.remove(id)
+        if (loaded != null) {
+            loaded.sandbox.unload(loaded.plugin)
             resourceMonitor.stopMonitoring(id)
         }
+        registeredPlugins.remove(id)
         _plugins.value = _plugins.value.filterNot { it.manifest.id == id }
         Timber.tag("PluginRegistry").i("uninstalled %s", id)
     }
 
     // --- helpers ---
 
-    /**
-     * Map manifest id → live Plugin instance. Phase 3 only has the
-     * first-party set; Phase 3.x will add a discovery mechanism for
-     * third-party APKs.
-     */
-    private val firstPartyPlugins = mutableMapOf<String, Plugin>()
-
     /** Called by [com.hermes.agent.di.PluginsModule] at app startup. */
     fun registerFirstParty(plugin: Plugin) {
-        firstPartyPlugins[plugin.manifest.id] = plugin
+        registeredPlugins[plugin.manifest.id] = RegisteredPlugin(plugin, inProcessSandbox)
         // Auto-install on registration so the Plugins UI shows it immediately.
         val instance = PluginInstance(
             manifest = plugin.manifest,
@@ -132,8 +151,6 @@ class PluginRegistryImpl @Inject constructor(
         _plugins.value = (_plugins.value.filterNot { it.manifest.id == plugin.manifest.id } + instance)
             .sortedBy { it.manifest.displayName }
     }
-
-    private fun loadedPluginFor(id: String): Plugin? = firstPartyPlugins[id]
 
     private fun updateState(
         id: String,

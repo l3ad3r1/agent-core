@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -24,6 +25,7 @@ dependencies {
     api(project(":core:util"))
     api(project(":core:domain"))
     implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
     api("javax.inject:javax.inject:1")
     api(libs.kotlinx.coroutines.android)
     api(libs.kotlinx.serialization.json)
