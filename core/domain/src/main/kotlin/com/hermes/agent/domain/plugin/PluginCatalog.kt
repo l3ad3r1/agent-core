@@ -72,6 +72,7 @@ data class VerifiedPluginPackage(
 }
 
 /** Exact review snapshot shown to the user before installation is authorized. */
+@Serializable
 data class PluginInstallApprovalRequest(
     val pluginId: String,
     val displayName: String,

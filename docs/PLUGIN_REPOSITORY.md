@@ -69,7 +69,7 @@ renames the staged file to an immutable, digest-qualified `.apk` name. Failed, p
 oversized, or digest-mismatched transfers leave no promoted package. A previously
 downloaded immutable package is reused only after its size and digest are checked again.
 
-## Android installer handoff
+## Android installer handoff and durable decisions
 
 Shared core exposes the app-private plugin download directory and the Android package
 installer boundary. Before opening the system installer it binds the downloaded
@@ -87,9 +87,15 @@ at `${applicationId}.fileprovider`, and expose `<files-path name="plugins"
 path="plugins/" />`. Hermes and Jeeves both carry this host-only manifest resource;
 the installer implementation and private directory contract remain shared.
 
+The shared plugin layer also persists publisher trust and approved install snapshots in
+app-private, versioned storage. Trust is keyed by plugin ID plus normalized signer
+certificate SHA-256 and can be revoked. An approval snapshot includes the complete
+review request (including permissions, digest, version, signer, and trust state), so a
+restart or a changed artifact cannot reuse an earlier approval. Writes are replace-based
+and bounded; storage or decoding failures return an error and never grant trust.
+
 ## Still required
 
-- persistent trusted-publisher and approval storage;
 - the exported Android service contract and concrete gRPC transport;
 - permission-review and install UI in both products.
 
