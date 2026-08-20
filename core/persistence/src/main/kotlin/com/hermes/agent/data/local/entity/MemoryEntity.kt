@@ -11,7 +11,7 @@ import androidx.room.PrimaryKey
  * on-device embedding model is wired in Phase 2. It is nullable for Phase 1
  * so we can store text-only memories immediately.
  *
- * A separate `sqlite_vss` virtual table (created in [com.hermes.agent.data.local.HermesDatabase]
+ * A separate `sqlite_vss` virtual table (created by the host database composition
  * via a migration in Phase 2) will index this column for ANN search.
  */
 @Entity(tableName = "memories")
