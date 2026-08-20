@@ -23,7 +23,7 @@ import kotlin.math.sqrt
  *
  * The model (`model.onnx`) and tokenizer (`vocab.txt`) live in the shared
  * "AI Models/embeddings/all-MiniLM-L6-v2" folder — the same files the
- * Hermes model manager downloads, so a model already on the device
+ * host application's model manager downloads, so a model already on the device
  * is reused with no extra download. Until both files exist we transparently fall
  * back to the deterministic hashing embedder, so the RAG/memory paths keep
  * working (and the test suite stays green) before the model is present.

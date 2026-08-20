@@ -22,7 +22,7 @@ dependencies {
     api(project(":core:domain"))
     api(project(":core:persistence"))
     implementation(libs.hilt.android)
-    api(libs.onnxruntime.android)
+    implementation(libs.onnxruntime.android)
     api(libs.androidx.datastore.preferences)
     api(libs.kotlinx.coroutines.android)
     api(libs.kotlinx.serialization.json)
