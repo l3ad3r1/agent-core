@@ -20,5 +20,6 @@ interface PluginInstallReviewCoordinator {
         artifact: DownloadedPluginArtifact,
         verifiedPackage: VerifiedPluginPackage,
         authorization: PluginInstallAuthorizationResult.Authorized,
+        handedOffAtEpochSeconds: Long,
     ): Result<PluginInstallHandoffResult>
 }

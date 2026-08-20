@@ -100,6 +100,13 @@ post-trust snapshot, and requires that snapshot to still exist before installer 
 Hermes and Jeeves can render different screens, but they share this sequencing and its
 fail-closed behavior.
 
+After a successful installer launch, the coordinator records the exact package as
+`HANDED_OFF`. A shared manifest receiver consumes Android `PACKAGE_ADDED` and
+`PACKAGE_REPLACED` events off the main thread and changes only the matching pending
+package to `INSTALLED`. Completion records are replace-based and restart-safe, so
+duplicate broadcasts do not create duplicate history and unrelated package installs
+cannot mark a plugin complete.
+
 ## Still required
 
 - the exported Android service contract and concrete gRPC transport;

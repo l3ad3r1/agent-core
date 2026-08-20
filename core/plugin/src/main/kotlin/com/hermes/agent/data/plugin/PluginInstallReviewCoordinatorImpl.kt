@@ -9,6 +9,8 @@ import com.hermes.agent.domain.plugin.PluginInstallHandoffResult
 import com.hermes.agent.domain.plugin.PluginInstallReview
 import com.hermes.agent.domain.plugin.PluginInstallReviewCoordinator
 import com.hermes.agent.domain.plugin.PluginInstallApprovalStore
+import com.hermes.agent.domain.plugin.PluginInstallAttempt
+import com.hermes.agent.domain.plugin.PluginInstallStateStore
 import com.hermes.agent.domain.plugin.PluginPackageInstaller
 import com.hermes.agent.domain.plugin.PluginPublisherTrustStore
 import com.hermes.agent.domain.plugin.VerifiedPluginPackage
@@ -25,6 +27,7 @@ class PluginInstallReviewCoordinatorImpl @Inject constructor(
     private val gate: PluginInstallApprovalGate,
     private val trustStore: PluginPublisherTrustStore,
     private val approvalStore: PluginInstallApprovalStore,
+    private val installStateStore: PluginInstallStateStore,
     private val installer: PluginPackageInstaller,
 ) : PluginInstallReviewCoordinator {
     override suspend fun begin(verifiedPackage: VerifiedPluginPackage): Result<PluginInstallReview> = preservingCancellation {
@@ -62,13 +65,28 @@ class PluginInstallReviewCoordinatorImpl @Inject constructor(
         artifact: DownloadedPluginArtifact,
         verifiedPackage: VerifiedPluginPackage,
         authorization: PluginInstallAuthorizationResult.Authorized,
+        handedOffAtEpochSeconds: Long,
     ): Result<PluginInstallHandoffResult> = preservingCancellation {
+        require(handedOffAtEpochSeconds >= 0) { "Handoff timestamp is invalid" }
         val effectivePackage = effectiveVerifiedPackage(verifiedPackage)
         val request = effectivePackage.approvalRequest()
         val persisted = approvalStore.find(request).getOrThrow()
             ?: error("Plugin approval is no longer available; review it again")
         require(persisted.request == request) { "Plugin approval changed; review it again" }
-        installer.handoff(PluginInstallHandoffRequest(artifact, effectivePackage, authorization)).getOrThrow()
+        val result = installer.handoff(PluginInstallHandoffRequest(artifact, effectivePackage, authorization)).getOrThrow()
+        if (result is PluginInstallHandoffResult.Launched) {
+            installStateStore.recordHandoff(
+                PluginInstallAttempt(
+                    pluginId = request.pluginId,
+                    packageName = effectivePackage.evidence.packageName,
+                    versionCode = request.versionCode,
+                    apkSha256 = request.apkSha256,
+                    signerCertificateSha256 = request.signerCertificateSha256,
+                    handedOffAtEpochSeconds = handedOffAtEpochSeconds,
+                ),
+            ).getOrThrow()
+        }
+        result
     }
 
     private suspend fun effectiveVerifiedPackage(

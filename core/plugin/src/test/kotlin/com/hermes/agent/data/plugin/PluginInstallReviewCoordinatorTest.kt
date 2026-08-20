@@ -8,6 +8,9 @@ import com.hermes.agent.domain.plugin.PluginInstallApprovalStore
 import com.hermes.agent.domain.plugin.PluginInstallAuthorizationResult
 import com.hermes.agent.domain.plugin.PluginInstallHandoffResult
 import com.hermes.agent.domain.plugin.PluginInstallReviewCoordinator
+import com.hermes.agent.domain.plugin.PluginInstallAttempt
+import com.hermes.agent.domain.plugin.PluginInstallRecord
+import com.hermes.agent.domain.plugin.PluginInstallStateStore
 import com.hermes.agent.domain.plugin.PluginArtifact
 import com.hermes.agent.domain.plugin.PluginCatalogEntry
 import com.hermes.agent.domain.plugin.PluginManifest
@@ -66,7 +69,8 @@ class PluginInstallReviewCoordinatorTest {
         val trust = FakeTrustStore()
         val approvals = FakeApprovalStore()
         val installer = FakeInstaller()
-        val coordinator = coordinator(trust, approvals, installer)
+        val state = FakeInstallStateStore()
+        val coordinator = coordinator(trust, approvals, installer, state)
         val verified = verified(request, false)
         val authorization = coordinator.approve(
             verified,
@@ -76,19 +80,21 @@ class PluginInstallReviewCoordinatorTest {
 
         assertEquals(1, trust.saved.size)
         assertEquals(1, approvals.saved.size)
-        val handoff = coordinator.handoff(artifact(request), verified, authorization).getOrThrow()
+        val handoff = coordinator.handoff(artifact(request), verified, authorization, handedOffAtEpochSeconds = 22).getOrThrow()
 
         assertEquals(PluginInstallHandoffResult.Launched(request.pluginId, request.versionCode), handoff)
         assertEquals(1, installer.calls)
+        assertEquals(1, state.records.size)
     }
 
     private fun coordinator(
         trust: FakeTrustStore = FakeTrustStore(),
         approvals: FakeApprovalStore = FakeApprovalStore(),
         installer: PluginPackageInstaller = FakeInstaller(),
-    ): PluginInstallReviewCoordinator = PluginInstallReviewCoordinatorImpl(
-        PluginInstallApprovalGate(), trust, approvals, installer,
-    )
+        state: FakeInstallStateStore = coordinatorState(),
+    ): PluginInstallReviewCoordinator = PluginInstallReviewCoordinatorImpl(PluginInstallApprovalGate(), trust, approvals, state, installer)
+
+    private fun coordinatorState() = FakeInstallStateStore()
 
     private fun verified(request: PluginInstallApprovalRequest, trusted: Boolean): VerifiedPluginPackage =
         VerifiedPluginPackage(
@@ -145,5 +151,13 @@ class PluginInstallReviewCoordinatorTest {
         override fun canInstallPackages() = true
         override suspend fun openInstallPermissionSettings() = Result.success(Unit)
         override suspend fun handoff(request: com.hermes.agent.domain.plugin.PluginInstallHandoffRequest): Result<PluginInstallHandoffResult> { calls++; return Result.success(PluginInstallHandoffResult.Launched("com.example.weather", 7)) }
+    }
+
+    private class FakeInstallStateStore : PluginInstallStateStore {
+        val records = mutableListOf<PluginInstallRecord>()
+        override suspend fun recordHandoff(attempt: PluginInstallAttempt): Result<Unit> { records += PluginInstallRecord(attempt, com.hermes.agent.domain.plugin.PluginInstallStatus.HANDED_OFF); return Result.success(Unit) }
+        override suspend fun pendingForPackage(packageName: String) = Result.success(records.firstOrNull { it.attempt.packageName == packageName && it.status == com.hermes.agent.domain.plugin.PluginInstallStatus.HANDED_OFF })
+        override suspend fun markInstalled(packageName: String, installedAtEpochSeconds: Long) = Result.success(null)
+        override suspend fun latestForPlugin(pluginId: String) = Result.success(records.lastOrNull { it.attempt.pluginId == pluginId })
     }
 }

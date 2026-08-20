@@ -7,6 +7,10 @@ import com.hermes.agent.domain.plugin.PluginInstallApprovalRequest
 import com.hermes.agent.domain.plugin.PluginInstallApprovalStore
 import com.hermes.agent.domain.plugin.PluginPublisherTrust
 import com.hermes.agent.domain.plugin.PluginPublisherTrustStore
+import com.hermes.agent.domain.plugin.PluginInstallAttempt
+import com.hermes.agent.domain.plugin.PluginInstallRecord
+import com.hermes.agent.domain.plugin.PluginInstallStateStore
+import com.hermes.agent.domain.plugin.PluginInstallStatus
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -25,6 +29,7 @@ import kotlinx.serialization.json.Json
 private const val PREFS_NAME = "plugin_decisions_v1"
 private const val TRUST_KEY = "publisher_trust"
 private const val APPROVAL_KEY = "install_approvals"
+private const val INSTALL_ATTEMPTS_KEY = "install_attempts"
 private const val MAX_RECORDS = 128
 
 @Singleton
@@ -87,6 +92,38 @@ internal class AndroidPluginInstallApprovalStore @Inject constructor(
     private fun readApprovals(): List<StoredApproval> = storage.read(APPROVAL_KEY)?.let { storage.json.decodeFromString(it) } ?: emptyList()
 }
 
+@Singleton
+internal class AndroidPluginInstallStateStore @Inject constructor(
+    private val storage: PluginDecisionPreferences,
+) : PluginInstallStateStore {
+    override suspend fun recordHandoff(attempt: PluginInstallAttempt): Result<Unit> = runCatching { storage.mutex.withLock {
+        require(attempt.handedOffAtEpochSeconds >= 0) { "Handoff timestamp is invalid" }
+        val next = readRecords().filterNot { it.attempt.packageName == attempt.packageName } + StoredInstallRecord.fromDomain(PluginInstallRecord(attempt, PluginInstallStatus.HANDED_OFF))
+        storage.write(INSTALL_ATTEMPTS_KEY, storage.json.encodeToString(next.sortedByDescending { it.attempt.handedOffAtEpochSeconds }.take(MAX_RECORDS)))
+    } }
+
+    override suspend fun pendingForPackage(packageName: String): Result<PluginInstallRecord?> = runCatching { storage.mutex.withLock {
+        readRecords().firstOrNull { it.attempt.packageName == packageName && it.status == PluginInstallStatus.HANDED_OFF }?.toDomain()
+    } }
+
+    override suspend fun markInstalled(packageName: String, installedAtEpochSeconds: Long): Result<PluginInstallRecord?> = runCatching { storage.mutex.withLock {
+        require(installedAtEpochSeconds >= 0) { "Install timestamp is invalid" }
+        val records = readRecords()
+        val pending = records.firstOrNull { it.attempt.packageName == packageName && it.status == PluginInstallStatus.HANDED_OFF }
+        if (pending == null) null else {
+            val completed = pending.copy(status = PluginInstallStatus.INSTALLED, installedAtEpochSeconds = installedAtEpochSeconds)
+            storage.write(INSTALL_ATTEMPTS_KEY, storage.json.encodeToString(records.filterNot { it.attempt.packageName == packageName } + completed))
+            completed.toDomain()
+        }
+    } }
+
+    override suspend fun latestForPlugin(pluginId: String): Result<PluginInstallRecord?> = runCatching { storage.mutex.withLock {
+        readRecords().filter { it.attempt.pluginId == pluginId }.maxByOrNull { it.attempt.handedOffAtEpochSeconds }?.toDomain()
+    } }
+
+    private fun readRecords(): List<StoredInstallRecord> = storage.read(INSTALL_ATTEMPTS_KEY)?.let { storage.json.decodeFromString(it) } ?: emptyList()
+}
+
 @Serializable
 private data class StoredTrust(val pluginId: String, val signerCertificateSha256: String, val trustedAtEpochSeconds: Long) {
     fun toDomain() = PluginPublisherTrust(pluginId, signerCertificateSha256, trustedAtEpochSeconds)
@@ -101,6 +138,36 @@ private data class StoredApproval(
     fun sameArtifact(other: StoredApproval): Boolean = request == other.request
     fun toDomain() = PluginInstallApproval(request, approvedAtEpochSeconds)
     companion object { fun fromDomain(value: PluginInstallApproval) = StoredApproval(value.request.normalized(), value.approvedAtEpochSeconds) }
+}
+
+@Serializable
+private data class StoredInstallAttempt(
+    val pluginId: String,
+    val packageName: String,
+    val versionCode: Int,
+    val apkSha256: String,
+    val signerCertificateSha256: String,
+    val handedOffAtEpochSeconds: Long,
+)
+
+@Serializable
+private data class StoredInstallRecord(
+    val attempt: StoredInstallAttempt,
+    val status: PluginInstallStatus,
+    val installedAtEpochSeconds: Long? = null,
+) {
+    fun toDomain() = PluginInstallRecord(
+        PluginInstallAttempt(attempt.pluginId, attempt.packageName, attempt.versionCode, attempt.apkSha256, attempt.signerCertificateSha256, attempt.handedOffAtEpochSeconds),
+        status,
+        installedAtEpochSeconds,
+    )
+    companion object {
+        fun fromDomain(value: PluginInstallRecord) = StoredInstallRecord(
+            StoredInstallAttempt(value.attempt.pluginId, value.attempt.packageName, value.attempt.versionCode, value.attempt.apkSha256, value.attempt.signerCertificateSha256, value.attempt.handedOffAtEpochSeconds),
+            value.status,
+            value.installedAtEpochSeconds,
+        )
+    }
 }
 
 private fun PluginInstallApprovalRequest.normalized() = copy(apkSha256 = normalize(apkSha256), signerCertificateSha256 = normalize(signerCertificateSha256), permissions = permissions.toList())
@@ -120,4 +187,5 @@ internal object PluginDecisionStorageModule {
 internal abstract class PluginDecisionStoreBindings {
     @Binds abstract fun bindTrustStore(value: AndroidPluginPublisherTrustStore): PluginPublisherTrustStore
     @Binds abstract fun bindApprovalStore(value: AndroidPluginInstallApprovalStore): PluginInstallApprovalStore
+    @Binds abstract fun bindInstallStateStore(value: AndroidPluginInstallStateStore): PluginInstallStateStore
 }

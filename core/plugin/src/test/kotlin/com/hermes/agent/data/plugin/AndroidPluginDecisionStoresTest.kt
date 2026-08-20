@@ -5,6 +5,8 @@ import com.hermes.agent.domain.plugin.PluginInstallApproval
 import com.hermes.agent.domain.plugin.PluginInstallApprovalRequest
 import com.hermes.agent.domain.plugin.PluginPermission
 import com.hermes.agent.domain.plugin.PermissionType
+import com.hermes.agent.domain.plugin.PluginInstallAttempt
+import com.hermes.agent.domain.plugin.PluginInstallStatus
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -60,6 +62,20 @@ class AndroidPluginDecisionStoresTest {
         assertEquals(2, approvals.find(request).getOrThrow()!!.approvedAtEpochSeconds)
         val encoded = preferences.getString("install_approvals", "")!!
         assertEquals(1, "pluginId".toRegex().findAll(encoded).count())
+    }
+
+    @Test fun installStateIsIdempotentAndSurvivesCompletion() = runTest {
+        val state = AndroidPluginInstallStateStore(PluginDecisionPreferences(preferences))
+        val attempt = PluginInstallAttempt("com.example.weather", "com.example.weather", 7, "EE".repeat(32), "FF".repeat(32), 30)
+
+        state.recordHandoff(attempt).getOrThrow()
+        state.recordHandoff(attempt.copy(versionCode = 8)).getOrThrow()
+        assertEquals(8, state.pendingForPackage(attempt.packageName).getOrThrow()!!.attempt.versionCode)
+        val completed = state.markInstalled(attempt.packageName, 31).getOrThrow()!!
+        assertEquals(PluginInstallStatus.INSTALLED, completed.status)
+        assertNull(state.pendingForPackage(attempt.packageName).getOrThrow())
+        assertEquals(completed, state.latestForPlugin(attempt.pluginId).getOrThrow())
+        assertNull(state.markInstalled(attempt.packageName, 32).getOrThrow())
     }
 
     private fun request(digest: String, publisherTrusted: Boolean) = PluginInstallApprovalRequest(
