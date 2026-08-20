@@ -9,7 +9,6 @@ android {
 
     defaultConfig {
         minSdk = 29
-        buildConfigField("int", "VERSION_CODE", "1")
     }
 
 
@@ -18,9 +17,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    buildFeatures {
-        buildConfig = true
-    }
 }
 
 

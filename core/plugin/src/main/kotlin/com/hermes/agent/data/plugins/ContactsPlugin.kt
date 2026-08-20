@@ -47,7 +47,7 @@ class ContactsPlugin @Inject constructor(
         displayName = "Contacts",
         versionCode = 1,
         versionName = "1.0.0",
-        author = "Hermes Team",
+        author = "agent-core",
         signatureFingerprint = "(in-process, no signature required)",
         capabilities = listOf(
             PluginCapability(
