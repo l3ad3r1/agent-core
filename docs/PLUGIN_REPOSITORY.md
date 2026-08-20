@@ -94,6 +94,12 @@ review request (including permissions, digest, version, signer, and trust state)
 restart or a changed artifact cannot reuse an earlier approval. Writes are replace-based
 and bounded; storage or decoding failures return an error and never grant trust.
 
+The UI-neutral review coordinator is the only application-layer path that may advance a
+review: it refreshes durable publisher trust, validates the decision, persists the exact
+post-trust snapshot, and requires that snapshot to still exist before installer handoff.
+Hermes and Jeeves can render different screens, but they share this sequencing and its
+fail-closed behavior.
+
 ## Still required
 
 - the exported Android service contract and concrete gRPC transport;
