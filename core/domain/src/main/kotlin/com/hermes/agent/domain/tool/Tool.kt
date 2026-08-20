@@ -1,5 +1,6 @@
 package com.hermes.agent.domain.tool
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -7,6 +8,7 @@ import kotlinx.serialization.json.JsonElement
  * tool definition can be serialized into an OpenAI-compatible
  * `tools` array verbatim.
  */
+@Serializable
 enum class ToolParameterType(val jsonSchemaType: String) {
     STRING("string"),
     INTEGER("integer"),
@@ -15,6 +17,9 @@ enum class ToolParameterType(val jsonSchemaType: String) {
     ARRAY("array"),
     OBJECT("object"),
 }
+
+/** Compatibility name used by optional feature modules. */
+typealias ParameterType = ToolParameterType
 
 /**
  * One declared parameter of a [ToolDescriptor].
@@ -26,6 +31,7 @@ enum class ToolParameterType(val jsonSchemaType: String) {
  * @property required True if the LLM must always supply this parameter.
  * @property enumValues Optional closed set of allowed values.
  */
+@Serializable
 data class ToolParameter(
     val name: String,
     val type: ToolParameterType,
@@ -61,6 +67,7 @@ data class ToolParameter(
  *   this tool to function (e.g. API keys). Used by the settings UI to flag
  *   unconfigured tools.
  */
+@Serializable
 data class ToolDescriptor(
     val name: String,
     val description: String,
@@ -83,9 +90,10 @@ data class ToolDescriptor(
  * @property executionMs Wall-clock duration of the invocation, for
  *   diagnostic display.
  */
+@Serializable
 data class ToolResult(
     val success: Boolean,
-    val output: String,
+    val output: String = "",
     val errorMessage: String? = null,
     val executionMs: Long = 0L,
 ) {
