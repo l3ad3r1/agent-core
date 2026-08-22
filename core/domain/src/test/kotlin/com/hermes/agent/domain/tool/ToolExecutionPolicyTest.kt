@@ -34,7 +34,7 @@ class ToolExecutionPolicyTest {
         val policy = policy()
         val decision = policy.evaluate(
             ExecutionOrigin.BACKGROUND,
-            "calendar_add_event",
+            "calendar",
             requiresConfirmation = true,
         )
         assertTrue(decision is ToolExecutionDecision.Deny)
@@ -86,7 +86,7 @@ class ToolExecutionPolicyTest {
         val policy = policy()
         assertEquals(
             ToolExecutionDecision.Confirm,
-            policy.evaluate(ExecutionOrigin.INTERACTIVE, "calendar_add_event", requiresConfirmation = true),
+            policy.evaluate(ExecutionOrigin.INTERACTIVE, "calendar", requiresConfirmation = true),
         )
     }
 

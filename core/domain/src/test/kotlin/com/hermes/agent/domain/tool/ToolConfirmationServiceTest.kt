@@ -27,7 +27,7 @@ class ToolConfirmationServiceTest {
     @Test
     fun `concurrent confirmations are queued instead of overwriting each other`() = runTest {
         val service = service()
-        val firstCall = ToolCall("first", "calendar_add_event", emptyMap())
+        val firstCall = ToolCall("first", "calendar", emptyMap())
         val secondCall = ToolCall("second", "device_settings", emptyMap())
 
         val first = async { service.awaitConfirmation(firstCall) }
@@ -55,7 +55,7 @@ class ToolConfirmationServiceTest {
     @Test
     fun `a stale request id cannot answer a newer request`() = runTest {
         val service = service()
-        val firstCall = ToolCall("first", "calendar_add_event", emptyMap())
+        val firstCall = ToolCall("first", "calendar", emptyMap())
         val secondCall = ToolCall("second", "navigation", emptyMap())
 
         val first = async { service.awaitConfirmation(firstCall) }

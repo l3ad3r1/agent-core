@@ -99,7 +99,7 @@ class ToolConfirmationService @Inject constructor(
             "communication",
             "media_control",
             "device_control",
-            "calendar_add_event",
+            "calendar",
             "app_launch",
         )
 
