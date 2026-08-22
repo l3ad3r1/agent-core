@@ -110,6 +110,65 @@ internal fun buildLocalPrompt(
 }
 
 /**
+ * Literal fragments of the prompt this provider builds.
+ *
+ * A small model handed a structured prompt will sometimes carry on writing the
+ * document instead of answering it — reproducing the next section heading and
+ * its body. On device that put the whole "How to reply" block into the chat,
+ * including the line telling the model the user cannot see any of it. The user
+ * could, and it was persisted and replayed as history afterwards.
+ *
+ * These strings only ever originate from [buildLocalPrompt] or
+ * `withLocalToolInstructions`, so a reply that reaches one has stopped
+ * answering; everything from that point on is recitation.
+ */
+private val LOCAL_PROMPT_MARKERS = listOf(
+    "## How to reply",
+    "## Conversation so far",
+    "You may use only the tools listed below.",
+    "To call a tool, reply with exactly",
+)
+
+/** Index of the earliest reproduced prompt fragment, or -1 if the reply is clean. */
+private fun leakedScaffoldingIndex(text: CharSequence): Int =
+    LOCAL_PROMPT_MARKERS.mapNotNull { marker -> text.indexOf(marker).takeIf { it >= 0 } }.minOrNull() ?: -1
+
+/**
+ * Drops a reproduced prompt section and everything after it.
+ *
+ * Truncating rather than removing: once the model starts reciting its context
+ * it does not return to answering, so the text after the marker is never worth
+ * keeping.
+ */
+fun stripLeakedPromptScaffolding(text: String): String {
+    val cut = leakedScaffoldingIndex(text)
+    return if (cut < 0) text else text.take(cut).trimEnd()
+}
+
+/**
+ * How many trailing characters might be the start of a marker.
+ *
+ * Streaming cannot retract what it has already emitted, so a tail that could
+ * still grow into a marker is held back until the next token settles it.
+ */
+private fun heldBackLength(text: CharSequence): Int {
+    var longest = 0
+    for (marker in LOCAL_PROMPT_MARKERS) {
+        val longestPossible = minOf(marker.length - 1, text.length)
+        for (length in longestPossible downTo longest + 1) {
+            if (text.regionMatches(text.length - length, marker, 0, length)) {
+                longest = length
+                break
+            }
+        }
+    }
+    return longest
+}
+
+/** Signals that the reply reached prompt scaffolding and generation can stop. */
+private class ScaffoldingReached : Exception(null, null, false, false)
+
+/**
  * Strips role labels the model writes at the start of its own reply.
  *
  * Belt and braces alongside the prompt fix: a small model will still sometimes
@@ -151,7 +210,10 @@ class LocalLlmProvider @Inject constructor(
         return LlmResponse(
             // Stripped here rather than in stream(): the label arrives split
             // across tokens, so only the assembled text can be matched.
-            content = stripLeadingRoleLabel(response.toString()),
+            // stream() already truncates at a reproduced prompt section; this
+            // repeats it for the assembled text, where a marker split across
+            // token boundaries at the very end can still surface.
+            content = stripLeakedPromptScaffolding(stripLeadingRoleLabel(response.toString())),
             tokensUsed = 0,
             model = model,
             finishReason = "stop",
@@ -164,8 +226,30 @@ class LocalLlmProvider @Inject constructor(
             emit(LlmStreamChunk.Error("The local model needs a user or tool message."))
             return@flow
         }
-        localLlmManager.generateResponse(prompt.system, prompt.conversation).collect { token ->
-            emit(LlmStreamChunk.Delta(token))
+        val received = StringBuilder()
+        var emitted = 0
+        try {
+            localLlmManager.generateResponse(prompt.system, prompt.conversation).collect { token ->
+                received.append(token)
+                val cut = leakedScaffoldingIndex(received)
+                if (cut >= 0) {
+                    if (cut > emitted) emit(LlmStreamChunk.Delta(received.substring(emitted, cut)))
+                    emitted = received.length
+                    // Stops the model rather than only hiding its output: the
+                    // rest of the reply is recitation, and generating it costs
+                    // seconds on device.
+                    throw ScaffoldingReached()
+                }
+                val safe = received.length - heldBackLength(received)
+                if (safe > emitted) {
+                    emit(LlmStreamChunk.Delta(received.substring(emitted, safe)))
+                    emitted = safe
+                }
+            }
+            // Nothing held back turned out to be a marker.
+            if (received.length > emitted) emit(LlmStreamChunk.Delta(received.substring(emitted)))
+        } catch (_: ScaffoldingReached) {
+            // Expected end of a contaminated reply, not a failure.
         }
         emit(LlmStreamChunk.Done)
     }
