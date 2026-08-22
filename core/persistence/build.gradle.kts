@@ -27,6 +27,13 @@ dependencies {
     api(libs.kotlinx.coroutines.android)
     api(libs.kotlinx.serialization.json)
 
+    // The repository bindings for the productivity tables live here rather than
+    // in each app: they depend only on the DAOs above and the domain interfaces,
+    // so duplicating them per app is how the two apps drift apart. Each app
+    // still provides its own DAOs, because those come from its own @Database.
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.mockk)
