@@ -90,7 +90,7 @@ private fun recoverLooseToolCall(
         if (declared != null && declared in knownToolNames && declaredArguments != null) {
             return content.removeRange(span).trim() to listOf(
                 ToolCall(
-                    id = "text_call_${TOOL_CALL_ID.incrementAndGet()}",
+                    id = "recovered_call_${TOOL_CALL_ID.incrementAndGet()}",
                     name = declared,
                     arguments = declaredArguments,
                 ),
@@ -107,7 +107,7 @@ private fun recoverLooseToolCall(
             ).trim()
         return cleaned to listOf(
             ToolCall(
-                id = "text_call_${TOOL_CALL_ID.incrementAndGet()}",
+                id = "recovered_call_${TOOL_CALL_ID.incrementAndGet()}",
                 name = named,
                 arguments = obj,
             ),
