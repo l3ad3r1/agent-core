@@ -5,6 +5,7 @@ import com.hermes.agent.domain.settings.*
 import com.hermes.agent.domain.tool.ToolDescriptor
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -236,5 +237,91 @@ class LocalPromptAndToolParserTest {
             ),
         )
         assertEquals("Clean reply.", stripLeakedPromptScaffolding("Clean reply."))
+    }
+
+    @Test
+    fun `a heading and a bare argument object still call the tool`() = runTest {
+        // Verbatim shape from the S24. The object's "name" is the task title,
+        // not the tool, so the tool has to come from the heading.
+        val manager = mockk<LocalLlmManager>()
+        every { manager.generateResponse(any(), any()) } returns flowOf(
+            "## todo\n{\"name\": \"buy milk\", \"action\": \"create\", " +
+                "\"title\": \"Buy milk\", \"priority\": \"low\"}",
+        )
+        val provider = LocalLlmProvider(manager, json)
+
+        val response = provider.completeWithTools(
+            messages = listOf(LlmMessage("user", "add a task to buy milk")),
+            tools = listOf(ToolDescriptor("todo", "Track tasks.", emptyList())),
+        )
+
+        assertEquals("tool_calls", response.finishReason)
+        val call = response.toolCalls.single()
+        assertEquals("todo", call.name)
+        assertEquals("create", call.arguments["action"]?.jsonPrimitive?.content)
+        assertEquals("Buy milk", call.arguments["title"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `an untagged envelope is recovered`() = runTest {
+        val manager = mockk<LocalLlmManager>()
+        every { manager.generateResponse(any(), any()) } returns flowOf(
+            "{\"name\": \"todo\", \"arguments\": {\"action\": \"list\"}}",
+        )
+        val provider = LocalLlmProvider(manager, json)
+
+        val response = provider.completeWithTools(
+            messages = listOf(LlmMessage("user", "what is on my list")),
+            tools = listOf(ToolDescriptor("todo", "Track tasks.", emptyList())),
+        )
+
+        assertEquals("todo", response.toolCalls.single().name)
+        assertEquals("list", response.toolCalls.single().arguments["action"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `json in an ordinary reply is not executed as a tool call`() = runTest {
+        // The guard that makes recovery safe: the name has to be a tool that
+        // was advertised this turn, and a heading alone is not enough.
+        val manager = mockk<LocalLlmManager>()
+        every { manager.generateResponse(any(), any()) } returns flowOf(
+            "Here is an example payload:\n{\"name\": \"widget\", \"size\": 3}",
+        )
+        val provider = LocalLlmProvider(manager, json)
+
+        val response = provider.completeWithTools(
+            messages = listOf(LlmMessage("user", "show me some json")),
+            tools = listOf(ToolDescriptor("todo", "Track tasks.", emptyList())),
+        )
+
+        assertTrue(response.toolCalls.isEmpty())
+        assertTrue(response.content.contains("widget"))
+    }
+
+    @Test
+    fun `recovery is off when no tools were advertised`() {
+        val (content, calls) = extractTextToolCalls(
+            "## todo\n{\"action\": \"create\"}",
+            json,
+        )
+        assertTrue(calls.isEmpty())
+        assertTrue(content.contains("todo"))
+    }
+
+    @Test
+    fun `the tool instructions show a complete call`() = runTest {
+        val manager = mockk<LocalLlmManager>()
+        val systemPrompt = slot<String>()
+        every { manager.generateResponse(capture(systemPrompt), any()) } returns flowOf("ok")
+        val provider = LocalLlmProvider(manager, json)
+
+        provider.completeWithTools(
+            messages = listOf(LlmMessage("user", "add a task")),
+            tools = listOf(ToolDescriptor("todo", "Track tasks.", emptyList())),
+        )
+
+        // A bare schema left the model guessing which arguments were required;
+        // on device it omitted "action" entirely and the call was rejected.
+        assertTrue(systemPrompt.captured.contains("\"action\":\"create\""))
     }
 }

@@ -260,7 +260,9 @@ class LocalLlmProvider @Inject constructor(
     ): LlmToolResponse {
         val augmentedMessages = if (tools.isEmpty()) messages else messages.withLocalToolInstructions(tools)
         val response = complete(augmentedMessages)
-        val (content, toolCalls) = extractTextToolCalls(response.content, json)
+        // The advertised names gate the loose-format recovery: a small model
+        // that writes its call as a heading and a bare object still lands.
+        val (content, toolCalls) = extractTextToolCalls(response.content, json, tools.map { it.name }.toSet())
         return LlmToolResponse(
             content = content,
             toolCalls = toolCalls,
@@ -289,6 +291,11 @@ private fun List<LlmMessage>.withLocalToolInstructions(tools: List<ToolDescripto
         append(
             "To call a tool, reply with exactly " +
                 "<tool_call>{\"name\":\"tool_name\",\"arguments\":{}}</tool_call>. " +
+                "Put every argument the tool lists as required inside `arguments`. " +
+                "For example: " +
+                "<tool_call>{\"name\":\"todo\",\"arguments\":" +
+                "{\"action\":\"create\",\"title\":\"Buy milk\"}}</tool_call>. " +
+                "Write nothing else on that turn — no heading, no explanation. " +
                 "Otherwise answer normally. Never invent a tool name.",
         )
     }
