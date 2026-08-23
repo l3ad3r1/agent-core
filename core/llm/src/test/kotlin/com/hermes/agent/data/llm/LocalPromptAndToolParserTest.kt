@@ -324,4 +324,75 @@ class LocalPromptAndToolParserTest {
         // on device it omitted "action" entirely and the call was rejected.
         assertTrue(systemPrompt.captured.contains("\"action\":\"create\""))
     }
+
+    @Test
+    fun `an unquoted envelope is recovered rather than shown to the user`() {
+        // Captured verbatim from Llama 3.2 1B on device (K16): the key and the
+        // tool name are unquoted, so a strict parse rejects it and the raw text
+        // was persisted as the assistant's reply.
+        val (content, calls) = extractTextToolCalls(
+            """{name:word_count, arguments:{"action":"count","text":"the quick brown fox"}}""",
+            json,
+            setOf("word_count"),
+        )
+
+        assertEquals(1, calls.size)
+        assertEquals("word_count", calls.first().name)
+        assertEquals("count", calls.first().arguments["action"]?.jsonPrimitive?.content)
+        assertTrue("raw call text must not survive into the reply", content.isBlank())
+    }
+
+    @Test
+    fun `an unquoted envelope inside tool_call tags is recovered`() {
+        val (_, calls) = extractTextToolCalls(
+            """<tool_call>{name:word_count, arguments:{text:hello}}</tool_call>""",
+            json,
+            setOf("word_count"),
+        )
+
+        assertEquals(1, calls.size)
+        assertEquals("hello", calls.first().arguments["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `relaxed parsing keeps true false and null as values`() {
+        val (_, calls) = extractTextToolCalls(
+            """{name:todo, arguments:{done:true, note:null, count:3}}""",
+            json,
+            setOf("todo"),
+        )
+
+        assertEquals(1, calls.size)
+        val args = calls.first().arguments
+        assertEquals("true", args["done"].toString())
+        assertEquals("null", args["note"].toString())
+        assertEquals("3", args["count"].toString())
+    }
+
+    @Test
+    fun `a colon inside a string value is not treated as a key`() {
+        val (_, calls) = extractTextToolCalls(
+            """{name:word_count, arguments:{"text":"ratio 3:1, brace { here"}}""",
+            json,
+            setOf("word_count"),
+        )
+
+        assertEquals(1, calls.size)
+        assertEquals(
+            "ratio 3:1, brace { here",
+            calls.first().arguments["text"]?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
+    fun `an unquoted object naming an unknown tool is left alone`() {
+        val (content, calls) = extractTextToolCalls(
+            """{name:some_other_tool, arguments:{"a":1}}""",
+            json,
+            setOf("word_count"),
+        )
+
+        assertTrue(calls.isEmpty())
+        assertTrue(content.contains("some_other_tool"))
+    }
 }

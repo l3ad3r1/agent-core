@@ -24,9 +24,7 @@ internal fun extractTextToolCalls(
     }
     val calls = mutableListOf<ToolCall>()
     TOOL_CALL_TAG.findAll(content).forEach { match ->
-        val element = runCatching {
-            json.parseToJsonElement(match.groupValues[1].trim())
-        }.getOrNull() ?: return@forEach
+        val element = parseRelaxed(match.groupValues[1].trim(), json) ?: return@forEach
         val objects = when (element) {
             is JsonArray -> element.mapNotNull { it as? JsonObject }
             is JsonObject -> listOf(element)
@@ -80,9 +78,8 @@ private fun recoverLooseToolCall(
     if (knownToolNames.isEmpty() || !content.contains('{')) return content to emptyList()
 
     for (span in jsonObjectSpans(content)) {
-        val obj = runCatching {
-            json.parseToJsonElement(content.substring(span.first, span.last + 1)) as? JsonObject
-        }.getOrNull() ?: continue
+        val obj = parseRelaxed(content.substring(span.first, span.last + 1), json) as? JsonObject
+            ?: continue
 
         // Shape 1: the envelope, without its tags.
         val declared = obj["name"]?.jsonPrimitive?.contentOrNull?.trim()
@@ -153,6 +150,106 @@ private fun jsonObjectSpans(text: String): List<IntRange> {
     }
     return spans
 }
+
+/**
+ * Parses [text] as JSON, retrying once with quotes added around bare keys and
+ * values.
+ *
+ * Llama 3.2 1B on device re-states a call it has already made as
+ *
+ *     {name:word_count, arguments:{"action":"count","text":"..."}}
+ *
+ * which is a tool call in every respect except that the key and the tool name
+ * are unquoted, so a strict parse rejects it. The reply then flowed through as
+ * ordinary text and the raw brace soup was shown to the user as the assistant's
+ * answer.
+ *
+ * The strict parse is always tried first, so well-formed output takes the same
+ * path it always did and only malformed output pays for the repair.
+ */
+private fun parseRelaxed(text: String, json: Json): JsonElement? {
+    runCatching { json.parseToJsonElement(text) }.getOrNull()?.let { return it }
+    val normalized = normalizeRelaxedJson(text)
+    if (normalized == text) return null
+    return runCatching { json.parseToJsonElement(normalized) }.getOrNull()
+}
+
+/**
+ * Quotes unquoted object keys and bare identifier values.
+ *
+ * Character-by-character rather than a regex because the repair must not reach
+ * inside string values, where a colon or a brace is ordinary text.
+ */
+private fun normalizeRelaxedJson(text: String): String {
+    val out = StringBuilder(text.length + 16)
+    var index = 0
+    var inString = false
+    var escaped = false
+    while (index < text.length) {
+        val ch = text[index]
+        when {
+            escaped -> {
+                out.append(ch); escaped = false; index++
+            }
+            inString -> {
+                out.append(ch)
+                if (ch == '\\') escaped = true else if (ch == '"') inString = false
+                index++
+            }
+            ch == '"' -> {
+                out.append(ch); inString = true; index++
+            }
+            ch == '{' || ch == ',' -> {
+                out.append(ch); index = appendBareToken(text, index + 1, out, asKey = true)
+            }
+            ch == ':' -> {
+                out.append(ch); index = appendBareToken(text, index + 1, out, asKey = false)
+            }
+            else -> {
+                out.append(ch); index++
+            }
+        }
+    }
+    return out.toString()
+}
+
+/**
+ * Copies whitespace from [start], then quotes the identifier that follows when
+ * it sits where JSON requires a quoted string. Returns the index to resume at.
+ */
+private fun appendBareToken(
+    text: String,
+    start: Int,
+    out: StringBuilder,
+    asKey: Boolean,
+): Int {
+    var cursor = start
+    while (cursor < text.length && text[cursor].isWhitespace()) cursor++
+    val tokenStart = cursor
+    while (cursor < text.length && (text[cursor].isLetterOrDigit() || text[cursor] == '_')) cursor++
+    val tokenEnd = cursor
+
+    val token = text.substring(tokenStart, tokenEnd)
+    val startsIdentifier = token.isNotEmpty() && (token[0].isLetter() || token[0] == '_')
+    // true/false/null are real JSON values; quoting them would change the type.
+    val quotable = startsIdentifier && token !in JSON_LITERALS
+
+    val followed = if (asKey) {
+        var probe = cursor
+        while (probe < text.length && text[probe].isWhitespace()) probe++
+        probe < text.length && text[probe] == ':'
+    } else {
+        true
+    }
+
+    if (!quotable || !followed) return start
+
+    out.append(text, start, tokenStart)
+    out.append('"').append(token).append('"')
+    return tokenEnd
+}
+
+private val JSON_LITERALS = setOf("true", "false", "null")
 
 private val TOOL_CALL_TAG = Regex(
     "<(?:tool_call|toolcall)>(.*?)</(?:tool_call|toolcall)>",
