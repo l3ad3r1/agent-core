@@ -32,6 +32,8 @@ dependencies {
     api(libs.timber)
     implementation(libs.androidx.core.ktx)
     implementation(libs.okhttp)
+    // Sandboxed JS runtime for script modules. Pure Java, no native code.
+    api("org.mozilla:rhino:1.7.14")
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

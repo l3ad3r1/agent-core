@@ -50,6 +50,7 @@ class WebSearchTool @Inject constructor(
                 name = "query",
                 type = ToolParameterType.STRING,
                 description = "The search query.",
+                required = true,
             ),
             ToolParameter(
                 name = "limit",

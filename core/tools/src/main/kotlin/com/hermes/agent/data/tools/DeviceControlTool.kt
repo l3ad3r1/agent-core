@@ -26,7 +26,7 @@ class DeviceControlTool @Inject constructor(
         name = "device_control",
         description = "Control flashlight, audio volume, ringer mode, Do Not Disturb, and screen brightness.",
         parameters = listOf(
-            ToolParameter("action", ToolParameterType.STRING, "Device action.", enumValues = listOf("flashlight", "set_volume", "set_ringer_mode", "set_dnd", "set_brightness")),
+            ToolParameter("action", ToolParameterType.STRING, "Device action.", enumValues = listOf("flashlight", "set_volume", "set_ringer_mode", "set_dnd", "set_brightness"), required = true),
             ToolParameter("enabled", ToolParameterType.BOOLEAN, "Whether a switch-like feature is enabled.", required = false),
             ToolParameter("level", ToolParameterType.INTEGER, "Volume level or brightness from 0 to 255.", required = false),
             ToolParameter("stream", ToolParameterType.STRING, "Audio stream.", required = false, enumValues = listOf("music", "ring", "notification", "alarm", "system")),

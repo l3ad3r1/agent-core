@@ -47,6 +47,7 @@ class MemoryTool @Inject constructor(
                 type = ToolParameterType.STRING,
                 description = "'add', 'search', 'list', or 'delete'.",
                 enumValues = listOf("add", "search", "list", "delete"),
+                required = true,
             ),
             ToolParameter(
                 name = "content",

@@ -23,7 +23,7 @@ class NavigationTool @Inject constructor(
         name = "navigation",
         description = "Navigate to a destination, search nearby places, or display a location on a map.",
         parameters = listOf(
-            ToolParameter("action", ToolParameterType.STRING, "Navigation action.", enumValues = listOf("navigate", "search_nearby", "show_map")),
+            ToolParameter("action", ToolParameterType.STRING, "Navigation action.", enumValues = listOf("navigate", "search_nearby", "show_map"), required = true),
             ToolParameter("query", ToolParameterType.STRING, "Destination, place, address, or nearby search.", required = false),
             ToolParameter("mode", ToolParameterType.STRING, "Travel mode.", required = false, enumValues = listOf("driving", "walking", "bicycling", "transit")),
         ),

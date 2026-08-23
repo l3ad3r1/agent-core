@@ -53,4 +53,7 @@ interface SettingsRepository {
     suspend fun setTelegramBotEnabled(enabled: Boolean)
     suspend fun setTelegramBotToken(token: String)
     suspend fun setTelegramAllowedUserIds(userIds: String)
+
+    // Module repository
+    suspend fun setModuleCatalogUrl(url: String)
 }

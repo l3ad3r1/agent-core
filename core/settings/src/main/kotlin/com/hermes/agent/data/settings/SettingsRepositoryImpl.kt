@@ -3,6 +3,7 @@ import com.hermes.agent.domain.llm.*
 import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.settings.UserSettings
 import com.hermes.agent.domain.settings.CloudProviderProfile
+import com.hermes.agent.domain.settings.DEFAULT_MODULE_CATALOG_URL
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
@@ -63,6 +64,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val TELEGRAM_BOT_ENABLED = booleanPreferencesKey("telegram_bot_enabled")
         val TELEGRAM_BOT_TOKEN = stringPreferencesKey("telegram_bot_token")
         val TELEGRAM_ALLOWED_USER_IDS = stringPreferencesKey("telegram_allowed_user_ids")
+        val MODULE_CATALOG_URL = stringPreferencesKey("module_catalog_url")
     }
 
     override fun observe(): Flow<UserSettings> = context.hermesDataStore.data.map { prefs ->
@@ -205,6 +207,10 @@ class SettingsRepositoryImpl @Inject constructor(
         context.hermesDataStore.edit { it[Keys.TELEGRAM_BOT_TOKEN] = token.trim() }
     }
 
+    override suspend fun setModuleCatalogUrl(url: String) {
+        context.hermesDataStore.edit { it[Keys.MODULE_CATALOG_URL] = url.trim() }
+    }
+
     override suspend fun setTelegramAllowedUserIds(userIds: String) {
         context.hermesDataStore.edit { it[Keys.TELEGRAM_ALLOWED_USER_IDS] = userIds.trim() }
     }
@@ -243,6 +249,7 @@ class SettingsRepositoryImpl @Inject constructor(
             telegramBotEnabled = this[Keys.TELEGRAM_BOT_ENABLED] ?: false,
             telegramBotToken = this[Keys.TELEGRAM_BOT_TOKEN] ?: "",
             telegramAllowedUserIds = this[Keys.TELEGRAM_ALLOWED_USER_IDS] ?: "",
+            moduleCatalogUrl = this[Keys.MODULE_CATALOG_URL] ?: DEFAULT_MODULE_CATALOG_URL,
         )
     }
 

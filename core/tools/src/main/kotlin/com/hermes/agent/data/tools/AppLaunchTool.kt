@@ -38,6 +38,7 @@ class AppLaunchTool @Inject constructor(
                 name = "package_name",
                 type = ToolParameterType.STRING,
                 description = "Android package name, for example com.google.android.calendar.",
+                required = true,
             ),
         ),
         category = "device",

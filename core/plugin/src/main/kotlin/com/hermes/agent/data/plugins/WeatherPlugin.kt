@@ -53,6 +53,7 @@ class WeatherPlugin @Inject constructor() : Plugin {
                                 name = "city",
                                 type = ToolParameterType.STRING,
                                 description = "City name, e.g. 'Tokyo' or 'San Francisco'.",
+                                required = true,
                             ),
                             ToolParameter(
                                 name = "units",

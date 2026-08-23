@@ -38,6 +38,7 @@ class WebFetchTool @Inject constructor(
                 name = "url",
                 type = ToolParameterType.STRING,
                 description = "The full URL to fetch (must start with http:// or https://).",
+                required = true,
             ),
             ToolParameter(
                 name = "max_chars",

@@ -461,7 +461,7 @@ class CloudLlmProvider @Inject constructor(
  * format. Kept here as a private top-level function so the descriptor class
  * stays pure-Kotlin in the domain layer.
  */
-private fun ToolDescriptor.toJsonOpenAiString(): String {
+internal fun ToolDescriptor.toJsonOpenAiString(): String {
     val params = buildString {
         append('{')
         append("\"type\":\"object\",")

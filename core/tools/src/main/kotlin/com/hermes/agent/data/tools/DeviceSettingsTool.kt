@@ -47,12 +47,14 @@ class DeviceSettingsTool @Inject constructor(
                 type = ToolParameterType.STRING,
                 description = "Which setting to operate on.",
                 enumValues = listOf("brightness", "media_volume"),
+                required = true,
             ),
             ToolParameter(
                 name = "action",
                 type = ToolParameterType.STRING,
                 description = "'get' to read the current value, 'set' to change it.",
                 enumValues = listOf("get", "set"),
+                required = true,
             ),
             ToolParameter(
                 name = "value",

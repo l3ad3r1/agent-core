@@ -26,7 +26,7 @@ class ContactLookupTool @Inject constructor(
     override val descriptor = ToolDescriptor(
         name = "contact_lookup",
         description = "Find contacts by name and return their phone numbers.",
-        parameters = listOf(ToolParameter("query", ToolParameterType.STRING, "Contact name to search for.")),
+        parameters = listOf(ToolParameter("query", ToolParameterType.STRING, "Contact name to search for.", required = true)),
         category = "communication",
         capabilities = setOf("contacts"),
         requiresConfirmation = false,

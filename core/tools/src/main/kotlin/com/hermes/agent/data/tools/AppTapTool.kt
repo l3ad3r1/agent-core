@@ -37,11 +37,13 @@ class AppTapTool @Inject constructor(
                 name = "snapshot_id",
                 type = ToolParameterType.INTEGER,
                 description = "The screen snapshot ID returned with the tag.",
+                required = true,
             ),
             ToolParameter(
                 name = "tag",
                 type = ToolParameterType.INTEGER,
                 description = "The numeric Tag ID of the element to tap.",
+                required = true,
             )
         ),
         category = "device",

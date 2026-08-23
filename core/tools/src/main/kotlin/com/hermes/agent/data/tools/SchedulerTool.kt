@@ -57,6 +57,7 @@ class SchedulerTool @Inject constructor(
                 type = ToolParameterType.STRING,
                 description = "'create', 'list', 'delete', or 'toggle'.",
                 enumValues = listOf("create", "list", "delete", "toggle"),
+                required = true,
             ),
             ToolParameter(
                 name = "label",

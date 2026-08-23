@@ -64,6 +64,7 @@ class SkillManagerTool @Inject constructor(
                 description = "'list' to show all skills, 'view' to load one skill's full content, " +
                     "'create' to save a new skill.",
                 enumValues = listOf("list", "view", "create"),
+                required = true,
             ),
             ToolParameter(
                 name = "name",

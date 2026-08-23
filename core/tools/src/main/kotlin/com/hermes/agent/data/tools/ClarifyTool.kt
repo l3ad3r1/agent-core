@@ -47,6 +47,7 @@ class ClarifyTool @Inject constructor(
                 name = "question",
                 type = ToolParameterType.STRING,
                 description = "The question to ask the user.",
+                required = true,
             ),
             ToolParameter(
                 name = "choices",

@@ -58,6 +58,7 @@ class ImageGenerationTool @Inject constructor(
                 name = "prompt",
                 type = ToolParameterType.STRING,
                 description = "A detailed description of the image to generate.",
+                required = true,
             ),
             ToolParameter(
                 name = "size",

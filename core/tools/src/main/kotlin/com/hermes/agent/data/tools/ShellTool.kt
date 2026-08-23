@@ -54,6 +54,7 @@ class ShellTool @Inject constructor(
                 name = "command",
                 type = ToolParameterType.STRING,
                 description = "The shell command to execute, e.g. 'ls /sdcard/Download' or 'date'.",
+                required = true,
             ),
             ToolParameter(
                 name = "target",

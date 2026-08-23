@@ -47,7 +47,7 @@ class WebhookTool @Inject constructor(
         name = "notify",
         description = "Send a message to connected platforms (Telegram, Discord, Signal, WhatsApp, webhook). Use when you need to notify the user via an external channel.",
         parameters = listOf(
-            ToolParameter("message", ToolParameterType.STRING, "The message to send."),
+            ToolParameter("message", ToolParameterType.STRING, "The message to send.", required = true),
             ToolParameter("platform", ToolParameterType.STRING,
                 "Optional: specific platform name to target (e.g. 'Telegram'). Omit to send to all enabled connectors.",
                 required = false),

@@ -46,6 +46,7 @@ class TermuxTool @Inject constructor(
                 type = ToolParameterType.STRING,
                 description = "The bash command to run in Termux, e.g. 'pkg install -y jq' or " +
                     "'python3 -c \"print(1+1)\"' or 'git clone https://… repo'.",
+                required = true,
             ),
         ),
         category = "device",
