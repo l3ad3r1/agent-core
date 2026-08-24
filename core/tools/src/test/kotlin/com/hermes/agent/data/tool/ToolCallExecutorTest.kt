@@ -12,6 +12,7 @@ import com.hermes.agent.domain.tool.ToolResult
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -223,5 +224,43 @@ class ToolCallExecutorTest {
         assertEquals("A", results[0].second.output)
         assertEquals("B", results[1].second.output)
         assertTrue(!results[2].second.success)
+    }
+
+    /**
+     * K17: a cancelled coroutine is not a tool failure. runCatching used to
+     * catch CancellationException along with everything else, so the coroutine's
+     * own message was persisted as the tool's result and shown in the activity
+     * ledger, and the cancellation stopped propagating.
+     */
+    @Test
+    fun `cancellation propagates instead of becoming a tool result`() = runTest {
+        val registry = ToolRegistryImpl()
+        registry.register(
+            StubTool(descriptor("slow")) {
+                throw CancellationException("StandaloneCoroutine was cancelled")
+            },
+        )
+        val executor = ToolCallExecutor(registry, fakeRedactor())
+
+        var thrown: Throwable? = null
+        try {
+            executor.execute(com.hermes.agent.domain.llm.ToolCall("c1", "slow", emptyMap()))
+        } catch (t: CancellationException) {
+            thrown = t
+        }
+
+        assertTrue("cancellation must propagate, not be swallowed", thrown is CancellationException)
+    }
+
+    @Test
+    fun `a genuine tool failure is still reported as a result`() = runTest {
+        val registry = ToolRegistryImpl()
+        registry.register(StubTool(descriptor("boom")) { throw IllegalStateException("disk full") })
+        val executor = ToolCallExecutor(registry, fakeRedactor())
+
+        val result = executor.execute(com.hermes.agent.domain.llm.ToolCall("c1", "boom", emptyMap()))
+
+        assertTrue(!result.success)
+        assertEquals("disk full", result.errorMessage)
     }
 }

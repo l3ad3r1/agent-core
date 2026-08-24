@@ -42,6 +42,31 @@ interface MessageDao {
     suspend fun deleteByConversation(conversationId: String): Int
 
     /**
+     * Drops a message and everything sent after it in the same conversation.
+     *
+     * Backs "rewind": the timestamp rather than the row id is the cut point,
+     * because the transcript the user is looking at is ordered by time, and a
+     * recovered or backfilled row can carry an id that does not match that order.
+     */
+    @Query(
+        """
+        DELETE FROM messages
+        WHERE conversation_id = :conversationId AND timestamp >= :fromTimestamp
+        """,
+    )
+    suspend fun deleteFrom(conversationId: String, fromTimestamp: Long): Int
+
+    /** The transcript up to and including [throughTimestamp], for forking. */
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE conversation_id = :conversationId AND timestamp <= :throughTimestamp
+        ORDER BY timestamp ASC
+        """,
+    )
+    suspend fun messagesThrough(conversationId: String, throughTimestamp: Long): List<MessageEntity>
+
+    /**
      * Global full-text search across ALL conversations ordered by recency.
      * Replaces the per-conversation linear scan in [ConversationSearchTool].
      */
