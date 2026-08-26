@@ -3,7 +3,7 @@
     <application>
         <receiver
             android:name="com.hermes.agent.data.plugin.PluginPackageInstallReceiver"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.PACKAGE_ADDED" />
                 <action android:name="android.intent.action.PACKAGE_REPLACED" />

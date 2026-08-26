@@ -5,6 +5,8 @@ import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolParameter
 import com.hermes.agent.domain.tool.ToolParameterType
 import com.hermes.agent.domain.tool.ToolResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -31,18 +33,20 @@ class WebFetchTool @Inject constructor(
 
     override val descriptor = ToolDescriptor(
         name = "web_fetch",
-        description = "Fetch the content of a web page and return its readable text. " +
-            "Use this to read articles, documentation, or any URL the user shares.",
+        description = "Fetch the text content of a web page at a given URL. " +
+            "Use this when you have a specific URL (from web_search results or user input) " +
+            "and need to read its full content.",
         parameters = listOf(
             ToolParameter(
                 name = "url",
                 type = ToolParameterType.STRING,
-                description = "The full URL to fetch (must start with http:// or https://).",
+                description = "The HTTP or HTTPS URL to fetch.",
+                required = true,
             ),
             ToolParameter(
                 name = "max_chars",
                 type = ToolParameterType.INTEGER,
-                description = "Maximum characters to return (default 8000).",
+                description = "Maximum characters of readable text to return (default 8000, max 32000).",
                 required = false,
             ),
         ),
@@ -50,17 +54,17 @@ class WebFetchTool @Inject constructor(
         capabilities = setOf("web"),
     )
 
-    override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {
+    override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult = withContext(Dispatchers.IO) {
         val start = System.currentTimeMillis()
         val url = (arguments["url"] as? JsonPrimitive)?.contentOrNull?.trim()
-            ?: return ToolResult.error("missing required parameter: url")
+            ?: return@withContext ToolResult.error("missing required parameter: url")
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            return ToolResult.error("url must start with http:// or https://")
+            return@withContext ToolResult.error("url must start with http:// or https://")
         }
         val maxChars = (arguments["max_chars"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
             ?.coerceIn(500, 32_000) ?: 8_000
 
-        return try {
+        return@withContext try {
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android) AgentCore/1.0")
@@ -69,13 +73,13 @@ class WebFetchTool @Inject constructor(
 
             val raw = okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    return ToolResult.error("HTTP ${response.code} fetching $url")
+                    throw java.io.IOException("HTTP ${response.code} fetching $url")
                 }
-                response.body?.string() ?: return ToolResult.error("Empty response body from $url")
+                response.body?.string() ?: throw java.io.IOException("Empty response body from $url")
             }
 
             val text = extractText(raw, maxChars)
-            if (text.isBlank()) return ToolResult.error("No readable content found at $url")
+            if (text.isBlank()) return@withContext ToolResult.error("No readable content found at $url")
 
             ToolResult.ok("URL: $url\n\n$text", System.currentTimeMillis() - start)
         } catch (e: Exception) {

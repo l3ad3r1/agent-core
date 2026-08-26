@@ -51,13 +51,13 @@ class SkillActivationTest {
 
     @Test
     fun `fallback skill is hidden while the primary tool is available`() {
-        val s = skill(fallbackFor = listOf("calendar_add_event"))
-        assertFalse(SkillActivation.isVisible(s, setOf("calendar_add_event", "memory")))
+        val s = skill(fallbackFor = listOf("calendar"))
+        assertFalse(SkillActivation.isVisible(s, setOf("calendar", "memory")))
     }
 
     @Test
     fun `fallback skill shows when the primary tool is missing`() {
-        val s = skill(fallbackFor = listOf("calendar_add_event"))
+        val s = skill(fallbackFor = listOf("calendar"))
         assertTrue(SkillActivation.isVisible(s, setOf("memory", "notes")))
     }
 
@@ -75,9 +75,9 @@ class SkillActivationTest {
 
     @Test
     fun `requires and fallback combine - fallback wins when primary present`() {
-        val s = skill(requires = listOf("web_search"), fallbackFor = listOf("calendar_add_event"))
+        val s = skill(requires = listOf("web_search"), fallbackFor = listOf("calendar"))
         // Primary present → hidden despite requires being satisfied.
-        assertFalse(SkillActivation.isVisible(s, setOf("web_search", "calendar_add_event")))
+        assertFalse(SkillActivation.isVisible(s, setOf("web_search", "calendar")))
         // Primary absent + requires satisfied → visible.
         assertTrue(SkillActivation.isVisible(s, setOf("web_search")))
     }

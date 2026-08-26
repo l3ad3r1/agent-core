@@ -23,7 +23,7 @@ class AlarmTool @Inject constructor(
         name = "alarm",
         description = "Set alarms and timers, dismiss a ringing alarm, or show the alarm list.",
         parameters = listOf(
-            ToolParameter("action", ToolParameterType.STRING, "Alarm action.", enumValues = listOf("set_alarm", "set_timer", "dismiss_alarm", "show_alarms")),
+            ToolParameter("action", ToolParameterType.STRING, "Alarm action.", enumValues = listOf("set_alarm", "set_timer", "dismiss_alarm", "show_alarms"), required = true),
             ToolParameter("hour", ToolParameterType.INTEGER, "Alarm hour from 0 to 23.", required = false),
             ToolParameter("minute", ToolParameterType.INTEGER, "Alarm minute from 0 to 59.", required = false),
             ToolParameter("duration_seconds", ToolParameterType.INTEGER, "Timer duration from 1 to 86400 seconds.", required = false),

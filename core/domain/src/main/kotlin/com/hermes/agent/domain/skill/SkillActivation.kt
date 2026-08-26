@@ -13,7 +13,7 @@ import com.hermes.agent.domain.model.SkillLifecycle
  *    available (e.g. a research skill that needs `web_search`).
  *  - `fallbackForTools`: the skill is a manual fallback and is hidden while
  *    ANY of the listed tools IS available (e.g. a "manual calendar entry"
- *    skill that only matters when `calendar_add_event` is missing).
+ *    skill that only matters when `calendar` is missing).
  *
  * Archived skills are never offered regardless of gates (curator lifecycle);
  * stale skills still show — staleness only affects curator prioritization.

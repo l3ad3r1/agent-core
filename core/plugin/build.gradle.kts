@@ -20,6 +20,13 @@ android {
 
 }
 
+kotlin {
+    compilerOptions {
+        // Carried over from Octo Jotter's build: its annotated constructor properties
+        // rely on the pre-2.2 default annotation target.
+        freeCompilerArgs.add("-Xannotation-default-target=param-property")
+    }
+}
 
 dependencies {
     api(project(":core:util"))
@@ -32,6 +39,8 @@ dependencies {
     api(libs.timber)
     implementation(libs.androidx.core.ktx)
     implementation(libs.okhttp)
+    // Sandboxed JS runtime for script modules. Pure Java, no native code.
+    api("org.mozilla:rhino:1.7.14")
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

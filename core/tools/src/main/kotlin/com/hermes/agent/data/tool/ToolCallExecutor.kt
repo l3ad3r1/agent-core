@@ -5,6 +5,7 @@ import com.hermes.agent.data.security.OutputRedactor
 import com.hermes.agent.domain.tool.ToolResult
 import com.hermes.agent.domain.tool.ToolRegistry
 import timber.log.Timber
+import kotlin.coroutines.cancellation.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -62,6 +63,13 @@ class ToolCallExecutor @Inject constructor(
                 result.copy(executionMs = result.executionMs + (System.currentTimeMillis() - start))
             }
             .getOrElse { t ->
+                // Cancellation is not a tool failure. runCatching catches
+                // CancellationException like anything else, which both broke
+                // structured concurrency (the cancel stopped propagating) and
+                // persisted the coroutine's own message — the user saw
+                // "StandaloneCoroutine was cancelled" in the activity ledger as
+                // if the tool had returned it.
+                if (t is CancellationException) throw t
                 Timber.tag("ToolExec").w(t, "tool '%s' threw", call.name)
                 ToolResult.error(
                     message = t.message ?: "tool '${call.name}' threw ${t::class.simpleName}",

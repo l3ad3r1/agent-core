@@ -41,6 +41,7 @@ class CalculatorTool @Inject constructor() : Tool {
                 name = "expression",
                 type = ToolParameterType.STRING,
                 description = "The arithmetic expression to evaluate, e.g. '(2 + 3) * 4'.",
+                required = true,
             ),
         ),
         category = "productivity",

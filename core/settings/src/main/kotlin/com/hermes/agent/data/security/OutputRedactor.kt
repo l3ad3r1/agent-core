@@ -34,11 +34,18 @@ class OutputRedactor @Inject constructor(
         // Layer 1: literal configured secrets.
         val settings = runCatching { settingsRepository.current() }.getOrNull()
         if (settings != null) {
-            listOf(
-                settings.cloudApiKey to "cloud-api-key",
-                settings.auxApiKey to "aux-api-key",
-                settings.githubPat to "github-pat",
-            ).forEach { (secret, label) ->
+            val configuredSecrets = mutableListOf<Pair<String, String>>()
+            if (settings.cloudApiKey.isNotBlank()) configuredSecrets += settings.cloudApiKey to "cloud-api-key"
+            if (settings.auxApiKey.isNotBlank()) configuredSecrets += settings.auxApiKey to "aux-api-key"
+            if (settings.apiServerKey.isNotBlank()) configuredSecrets += settings.apiServerKey to "api-server-key"
+            if (settings.sshPassword.isNotBlank()) configuredSecrets += settings.sshPassword to "ssh-password"
+            if (settings.telegramBotToken.isNotBlank()) configuredSecrets += settings.telegramBotToken to "telegram-bot-token"
+            settings.cloudProviderProfiles.forEach { profile ->
+                if (profile.apiKey.isNotBlank()) {
+                    configuredSecrets += profile.apiKey to "${profile.name.lowercase().replace(" ", "-")}-api-key"
+                }
+            }
+            configuredSecrets.forEach { (secret, label) ->
                 if (secret.length >= MIN_SECRET_LENGTH && out.contains(secret)) {
                     out = out.replace(secret, "[redacted:$label]")
                 }

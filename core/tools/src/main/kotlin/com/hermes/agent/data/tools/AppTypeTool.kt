@@ -39,16 +39,19 @@ class AppTypeTool @Inject constructor(
                 name = "snapshot_id",
                 type = ToolParameterType.INTEGER,
                 description = "The screen snapshot ID returned with the tag.",
+                required = true,
             ),
             ToolParameter(
                 name = "tag",
                 type = ToolParameterType.INTEGER,
                 description = "The numeric Tag ID of the editable element.",
+                required = true,
             ),
             ToolParameter(
                 name = "text",
                 type = ToolParameterType.STRING,
                 description = "The text to input.",
+                required = true,
             )
         ),
         category = "device",

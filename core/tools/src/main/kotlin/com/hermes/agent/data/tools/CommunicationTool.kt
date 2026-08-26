@@ -24,7 +24,7 @@ class CommunicationTool @Inject constructor(
         name = "communication",
         description = "Open the dialer, compose an SMS or email, or open the add-contact screen. Does not place calls or send messages automatically.",
         parameters = listOf(
-            ToolParameter("action", ToolParameterType.STRING, "Communication action.", enumValues = listOf("dial", "compose_sms", "compose_email", "add_contact")),
+            ToolParameter("action", ToolParameterType.STRING, "Communication action.", enumValues = listOf("dial", "compose_sms", "compose_email", "add_contact"), required = true),
             ToolParameter("recipient", ToolParameterType.STRING, "Phone number, email address, or contact name.", required = false),
             ToolParameter("message", ToolParameterType.STRING, "SMS or email body.", required = false),
             ToolParameter("subject", ToolParameterType.STRING, "Email subject.", required = false),

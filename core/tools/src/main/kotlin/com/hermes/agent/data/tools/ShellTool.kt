@@ -1,5 +1,7 @@
 package com.hermes.agent.data.tools
 
+import com.hermes.agent.data.security.OutputRedactor
+import com.hermes.agent.domain.device.PrivilegedShellBackend
 import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.terminal.RemoteTerminalBackend
 import com.hermes.agent.domain.tool.Tool
@@ -25,12 +27,11 @@ import dagger.multibindings.IntoSet
 private const val MAX_OUTPUT_CHARS = 4000
 private const val TIMEOUT_SECONDS = 10L
 private const val REMOTE_TIMEOUT_SECONDS = 30L
+private const val PRIVILEGED_TIMEOUT_SECONDS = 15L
 
 /**
- * Executes a shell command via ProcessBuilder in the app's process context.
- * Commands run as the app user (not root). stdout and stderr are merged and
- * capped at MAX_OUTPUT_CHARS. A hard TIMEOUT_SECONDS timeout is enforced;
- * the process is forcibly destroyed if it exceeds it.
+ * Executes a shell command via ProcessBuilder (local), SSH (remote), or Shizuku (privileged).
+ * stdout and stderr are merged, redacted via OutputRedactor, and capped at MAX_OUTPUT_CHARS.
  *
  * requiresConfirmation = true so the orchestrator always surfaces a dialog
  * before running any shell command.
@@ -39,28 +40,32 @@ private const val REMOTE_TIMEOUT_SECONDS = 30L
 class ShellTool @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val remoteBackend: RemoteTerminalBackend,
+    private val privilegedBackend: PrivilegedShellBackend,
+    private val outputRedactor: OutputRedactor,
 ) : Tool {
 
     override val descriptor = ToolDescriptor(
         name = "shell",
         description = "Execute a shell command and return the combined stdout+stderr output " +
-            "(capped at $MAX_OUTPUT_CHARS chars). target='local' (default) runs on this device " +
-            "as the app user — not root (${TIMEOUT_SECONDS}s timeout). target='remote' runs over " +
-            "SSH on the host configured in Settings → Remote shell (${REMOTE_TIMEOUT_SECONDS}s " +
+            "(capped at $MAX_OUTPUT_CHARS chars). " +
+            "target='local' (default) runs on this device as the app user — not root (${TIMEOUT_SECONDS}s timeout). " +
+            "target='privileged' runs with elevated ADB permissions (UID 2000) via Shizuku (${PRIVILEGED_TIMEOUT_SECONDS}s timeout). " +
+            "target='remote' runs over SSH on the host configured in Settings → Remote shell (${REMOTE_TIMEOUT_SECONDS}s " +
             "timeout; reach Docker via 'docker exec …'). Use for listing files, inspecting state, " +
             "or any shell task.",
         parameters = listOf(
             ToolParameter(
                 name = "command",
                 type = ToolParameterType.STRING,
-                description = "The shell command to execute, e.g. 'ls /sdcard/Download' or 'date'.",
+                description = "The shell command to execute, e.g. 'ls /sdcard/Download', 'pm list packages', or 'date'.",
+                required = true,
             ),
             ToolParameter(
                 name = "target",
                 type = ToolParameterType.STRING,
-                description = "'local' (default, on-device) or 'remote' (SSH host from Settings).",
+                description = "'local' (default, on-device app user), 'privileged' (ADB shell via Shizuku), or 'remote' (SSH host from Settings).",
                 required = false,
-                enumValues = listOf("local", "remote"),
+                enumValues = listOf("local", "privileged", "remote"),
             ),
         ),
         category = "device",
@@ -82,6 +87,9 @@ class ShellTool @Inject constructor(
             val target = (arguments["target"] as? JsonPrimitive)?.contentOrNull?.trim()?.lowercase()
             if (target == "remote") {
                 return@withContext executeRemote(command, start)
+            }
+            if (target == "privileged") {
+                return@withContext executePrivileged(command, start)
             }
 
             runCatching {
@@ -122,10 +130,11 @@ class ShellTool @Inject constructor(
                 }
 
                 val exitCode = process.exitValue()
-                val output = rawBytes.toByteArray()
+                val outputRaw = rawBytes.toByteArray()
                     .toString(Charsets.UTF_8)
                     .filter { it.code != 0 }
                     .trim()
+                val output = outputRedactor.redact(outputRaw)
                     .let {
                         if (it.length > MAX_OUTPUT_CHARS)
                             it.take(MAX_OUTPUT_CHARS) + "\n...[truncated]"
@@ -148,6 +157,64 @@ class ShellTool @Inject constructor(
                 )
             }
         }
+
+    /**
+     * Run [command] via privileged backend (Shizuku).
+     */
+    private suspend fun executePrivileged(command: String, start: Long): ToolResult {
+        val s = runCatching { settingsRepository.current() }.getOrNull()
+            ?: return ToolResult.error("could not read settings")
+
+        if (!s.privilegedShellEnabled) {
+            return ToolResult.error(
+                "Privileged shell execution is disabled in Settings. " +
+                    "Enable it in Settings → Advanced → Privileged Shell (Shizuku).",
+            )
+        }
+
+        val status = privilegedBackend.getStatus()
+        when (status.status) {
+            PrivilegedShellBackend.Status.NOT_INSTALLED -> {
+                return ToolResult.error(
+                    "Shizuku is not installed. Install Shizuku from GitHub/Play Store to use target='privileged'.",
+                )
+            }
+            PrivilegedShellBackend.Status.DEAD -> {
+                return ToolResult.error(
+                    "Shizuku service is not running. Start it with:\n" +
+                        "adb shell sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh",
+                )
+            }
+            PrivilegedShellBackend.Status.PERMISSION_REQUIRED -> {
+                return ToolResult.error(
+                    "Shizuku permission has not been granted to Hermes. " +
+                        "Grant permission in Settings → Advanced → Privileged Shell (Shizuku).",
+                )
+            }
+            PrivilegedShellBackend.Status.READY -> Unit
+        }
+
+        return privilegedBackend.execute(command, PRIVILEGED_TIMEOUT_SECONDS * 1000).fold(
+            onSuccess = { r ->
+                val outputRedacted = outputRedactor.redact(r.output)
+                val output = if (outputRedacted.length > MAX_OUTPUT_CHARS) {
+                    outputRedacted.take(MAX_OUTPUT_CHARS) + "\n...[truncated]"
+                } else outputRedacted
+
+                val resultText = buildString {
+                    append("exit_code=${r.exitCode} (privileged uid=${status.uid})\n")
+                    if (output.isNotEmpty()) append(output)
+                }
+                ToolResult.ok(output = resultText, executionMs = System.currentTimeMillis() - start)
+            },
+            onFailure = { t ->
+                ToolResult.error(
+                    message = "privileged shell execution failed: ${t.message ?: t.javaClass.simpleName}",
+                    executionMs = System.currentTimeMillis() - start,
+                )
+            },
+        )
+    }
 
     /**
      * Run [command] over SSH on the host configured in Settings → Remote
@@ -174,8 +241,10 @@ class ShellTool @Inject constructor(
 
         return remoteBackend.execute(config, command, REMOTE_TIMEOUT_SECONDS * 1000).fold(
             onSuccess = { r ->
-                val output = r.output
-                    .let { if (it.length > MAX_OUTPUT_CHARS) it.take(MAX_OUTPUT_CHARS) + "\n...[truncated]" else it }
+                val outputRedacted = outputRedactor.redact(r.output)
+                val output = if (outputRedacted.length > MAX_OUTPUT_CHARS) {
+                    outputRedacted.take(MAX_OUTPUT_CHARS) + "\n...[truncated]"
+                } else outputRedacted
                 val resultText = buildString {
                     append("exit_code=${r.exitCode} (remote ${s.sshUser}@${s.sshHost})\n")
                     if (output.isNotEmpty()) append(output)

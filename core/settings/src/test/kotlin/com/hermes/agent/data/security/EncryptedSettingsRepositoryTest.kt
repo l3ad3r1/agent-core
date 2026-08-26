@@ -8,6 +8,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -111,14 +112,14 @@ class EncryptedSettingsRepositoryTest {
         every { keystore.decrypt(any(), any()) } throws SecurityException("key from another install")
         coEvery { delegate.current() } returns UserSettings(
             cloudApiKey = "enc:v1:d2hhdGV2ZXI=",
-            githubPat = "enc:v1:d2hhdGV2ZXI=",
+            auxApiKey = "enc:v1:d2hhdGV2ZXI=",
         )
 
         val cleared = repo.clearUnreadableSecrets()
 
         assertEquals(2, cleared)
         coVerify { delegate.setCloudApiKey("") }
-        coVerify { delegate.setGithubPat("") }
+        coVerify { delegate.setAuxApiKey("") }
     }
 
     @Test
@@ -129,7 +130,7 @@ class EncryptedSettingsRepositoryTest {
 
         coEvery { delegate.current() } returns UserSettings(
             cloudApiKey = stored.captured,      // marked, and decryptable here
-            githubPat = "legacy-plaintext-pat", // unmarked: may still work
+            auxApiKey = "legacy-plaintext-key", // unmarked: may still work
         )
 
         assertEquals(0, repo.clearUnreadableSecrets())
@@ -172,5 +173,27 @@ class EncryptedSettingsRepositoryTest {
 
         coEvery { delegate.current() } returns UserSettings(cloudProviderProfiles = stored.captured)
         assertEquals(listOf("key-a", "key-b"), repo.current().cloudProviderProfiles.map { it.apiKey })
+    }
+
+    // --- Retired Gist backup ---
+
+    @Test
+    fun `purging the retired Gist credentials also destroys the key that encrypted them`() = runTest {
+        repo.purgeRetiredGistCredentials()
+
+        // Clearing the stored values is only half of it. The token was written
+        // as ciphertext, so a stale copy — an old backup archive, a forensic
+        // image — stays readable for as long as its keystore key survives.
+        coVerify { delegate.purgeRetiredGistCredentials() }
+        verify { keystore.deleteKey(KeystoreManager.ALIAS_GITHUB_PAT) }
+    }
+
+    @Test
+    fun `purging leaves the keys that are still in use`() = runTest {
+        repo.purgeRetiredGistCredentials()
+
+        verify(exactly = 0) { keystore.deleteKey(KeystoreManager.ALIAS_CLOUD_API_KEY) }
+        verify(exactly = 0) { keystore.deleteKey(KeystoreManager.ALIAS_AUX_API_KEY) }
+        verify(exactly = 0) { keystore.deleteKey(KeystoreManager.ALIAS_BACKUP_PASSPHRASE) }
     }
 }

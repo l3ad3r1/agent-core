@@ -47,12 +47,14 @@ class DeviceSettingsTool @Inject constructor(
                 type = ToolParameterType.STRING,
                 description = "Which setting to operate on.",
                 enumValues = listOf("brightness", "media_volume"),
+                required = true,
             ),
             ToolParameter(
                 name = "action",
                 type = ToolParameterType.STRING,
                 description = "'get' to read the current value, 'set' to change it.",
                 enumValues = listOf("get", "set"),
+                required = true,
             ),
             ToolParameter(
                 name = "value",
@@ -99,12 +101,17 @@ class DeviceSettingsTool @Inject constructor(
             }
             "set" -> {
                 val v = value ?: return ToolResult.error("missing 'value' for action=set")
+                if (!Settings.System.canWrite(context)) {
+                    return ToolResult.error("Modify system settings access is not granted")
+                }
                 val clamped = v.coerceIn(0, 255)
-                val ok = Settings.System.putInt(
-                    context.contentResolver,
-                    Settings.System.SCREEN_BRIGHTNESS,
-                    clamped,
-                )
+                val ok = runCatching {
+                    Settings.System.putInt(
+                        context.contentResolver,
+                        Settings.System.SCREEN_BRIGHTNESS,
+                        clamped,
+                    )
+                }.getOrDefault(false)
                 if (ok) ToolResult.ok("brightness set to $clamped")
                 else ToolResult.error("could not set brightness (permission denied?)")
             }

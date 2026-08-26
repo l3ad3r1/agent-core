@@ -50,7 +50,7 @@ class DelegateChildCapabilitiesTest {
             "memory",
             "todo",
             "scheduler",
-            "calendar_add_event",
+            "calendar",
             "device_settings",
             "shell",
             "terminal",

@@ -26,7 +26,7 @@ class MediaControlTool @Inject constructor(
         name = "media_control",
         description = "Play or pause media, skip tracks, or ask an installed music app to play a search.",
         parameters = listOf(
-            ToolParameter("action", ToolParameterType.STRING, "Media action.", enumValues = listOf("play_pause", "next", "previous", "play_search")),
+            ToolParameter("action", ToolParameterType.STRING, "Media action.", enumValues = listOf("play_pause", "next", "previous", "play_search"), required = true),
             ToolParameter("query", ToolParameterType.STRING, "Song, artist, album, or playlist to play.", required = false),
         ),
         category = "device",

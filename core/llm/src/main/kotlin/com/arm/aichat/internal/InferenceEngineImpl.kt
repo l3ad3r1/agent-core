@@ -113,6 +113,7 @@ internal class InferenceEngineImpl private constructor(
         MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized)
     override val state: StateFlow<InferenceEngine.State> = _state.asStateFlow()
 
+    @Volatile
     private var _cancelGeneration: Boolean = false
 
     /**
@@ -186,16 +187,16 @@ internal class InferenceEngineImpl private constructor(
      *
      * TODO-han.yin: return error code if system prompt not correct processed?
      */
-    override suspend fun setSystemPrompt(prompt: String) =
+    override suspend fun setSystemPrompt(systemPrompt: String) =
         withContext(llamaDispatcher) {
-            require(prompt.isNotBlank()) { "Cannot process empty system prompt!" }
+            require(systemPrompt.isNotBlank()) { "Cannot process empty system prompt!" }
             check(_state.value is InferenceEngine.State.ModelReady) {
                 "Cannot process system prompt in ${_state.value.javaClass.simpleName}!"
             }
 
             Log.i(TAG, "Sending system prompt...")
             _state.value = InferenceEngine.State.ProcessingSystemPrompt
-            processSystemPrompt(prompt).let { result ->
+            processSystemPrompt(systemPrompt).let { result ->
                 if (result != 0) {
                     RuntimeException("Failed to process system prompt: $result").also {
                         _state.value = InferenceEngine.State.Error(it)
@@ -315,11 +316,13 @@ internal class InferenceEngineImpl private constructor(
      */
     override fun destroy() {
         _cancelGeneration = true
-        runBlocking(llamaDispatcher) {
-            when(_state.value) {
-                is InferenceEngine.State.Uninitialized -> {}
-                is InferenceEngine.State.Initialized -> shutdown()
-                else -> { unload(); shutdown() }
+        runCatching {
+            runBlocking(llamaDispatcher) {
+                when(_state.value) {
+                    is InferenceEngine.State.Uninitialized -> {}
+                    is InferenceEngine.State.Initialized -> shutdown()
+                    else -> { unload(); shutdown() }
+                }
             }
         }
         llamaScope.cancel()

@@ -48,4 +48,18 @@ interface ConversationRepository {
 
     /** Return the most recent N messages for a conversation, oldest-first. */
     suspend fun getRecentMessages(conversationId: String, limit: Int = 30): List<Message>
+
+    /**
+     * Rewind: drop [message] and every message after it, so the conversation
+     * returns to the state it was in just before that turn. Returns how many
+     * messages were removed.
+     */
+    suspend fun rewindTo(conversationId: String, message: Message): Int
+
+    /**
+     * Fork: copy the transcript up to and including [message] into a brand new
+     * conversation and return its id. The original is left untouched, so a
+     * fork is always non-destructive where a rewind is not.
+     */
+    suspend fun forkFrom(conversationId: String, message: Message, title: String): String
 }

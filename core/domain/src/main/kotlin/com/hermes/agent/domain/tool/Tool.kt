@@ -29,6 +29,13 @@ typealias ParameterType = ToolParameterType
  * @property description Natural-language description; the LLM uses this to
  *   decide when and how to supply the parameter.
  * @property required True if the LLM must always supply this parameter.
+ *   Defaults to false, matching JSON Schema, where a property is optional
+ *   unless it is listed in `required`. Action-style tools (`todo`, `notes`,
+ *   `calendar`, …) must leave their per-action arguments optional: marking
+ *   them required puts every argument in the emitted `required` array, and
+ *   providers that validate tool calls strictly (Groq) then reject a valid
+ *   single-action call with HTTP 400 before the tool ever runs. Such tools
+ *   validate their own arguments per action at execution time instead.
  * @property enumValues Optional closed set of allowed values.
  */
 @Serializable
@@ -36,7 +43,7 @@ data class ToolParameter(
     val name: String,
     val type: ToolParameterType,
     val description: String,
-    val required: Boolean = true,
+    val required: Boolean = false,
     val enumValues: List<String>? = null,
 )
 

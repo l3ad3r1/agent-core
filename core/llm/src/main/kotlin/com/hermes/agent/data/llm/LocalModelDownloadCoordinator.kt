@@ -31,6 +31,29 @@ internal data class ModelDownloadSnapshot(
     val error: String = "",
 )
 
+/**
+ * Picks the run that the UI should reflect out of everything WorkManager still
+ * holds for the unique download name.
+ *
+ * `enqueueUniqueWork(REPLACE)` does not erase the run it replaces — it cancels
+ * it and keeps the record until it is pruned, and the returned list has no
+ * guaranteed order. Taking the last element therefore surfaced whichever record
+ * happened to come back last, so starting a download could report the *previous*
+ * attempt: "The model download was cancelled", with no progress, while the new
+ * one was in fact running.
+ *
+ * Preference order: the run this process enqueued, then any run still going,
+ * then a finished run that was not cancelled, and only then anything at all.
+ */
+internal fun selectActiveWorkInfo(
+    workInfos: List<WorkInfo>,
+    trackedId: UUID?,
+): WorkInfo? =
+    workInfos.firstOrNull { it.id == trackedId }
+        ?: workInfos.firstOrNull { !it.state.isFinished }
+        ?: workInfos.firstOrNull { it.state != WorkInfo.State.CANCELLED }
+        ?: workInfos.lastOrNull()
+
 internal fun modelDownloadSnapshot(
     state: WorkInfo.State?,
     progressPercent: Int,
@@ -59,9 +82,13 @@ class LocalModelDownloadCoordinator @Inject constructor(
     private val immediateError = MutableStateFlow("")
     private val dismissedFailureId = MutableStateFlow<UUID?>(null)
 
-    private val latestWorkInfo: StateFlow<WorkInfo?> = workManager
-        .getWorkInfosForUniqueWorkFlow(LocalModelDownloadWorker.UNIQUE_NAME)
-        .map { workInfos -> workInfos.lastOrNull() }
+    /** The request this process enqueued, so its own run wins over a replaced one. */
+    private val trackedRequestId = MutableStateFlow<UUID?>(null)
+
+    private val latestWorkInfo: StateFlow<WorkInfo?> = combine(
+        workManager.getWorkInfosForUniqueWorkFlow(LocalModelDownloadWorker.UNIQUE_NAME),
+        trackedRequestId,
+    ) { workInfos, trackedId -> selectActiveWorkInfo(workInfos, trackedId) }
         .stateIn(scope, SharingStarted.Eagerly, null)
 
     private val snapshot: StateFlow<ModelDownloadSnapshot> = combine(
@@ -109,11 +136,16 @@ class LocalModelDownloadCoordinator @Inject constructor(
                 ),
             )
             .build()
+        trackedRequestId.value = request.id
         workManager.enqueueUniqueWork(
             LocalModelDownloadWorker.UNIQUE_NAME,
             ExistingWorkPolicy.REPLACE,
             request,
         )
+    }
+
+    fun cancelDownload() {
+        workManager.cancelUniqueWork(LocalModelDownloadWorker.UNIQUE_NAME)
     }
 
     fun reportError(message: String) {

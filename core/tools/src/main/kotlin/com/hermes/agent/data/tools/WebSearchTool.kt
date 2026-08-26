@@ -5,6 +5,8 @@ import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolParameter
 import com.hermes.agent.domain.tool.ToolParameterType
 import com.hermes.agent.domain.tool.ToolResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -38,23 +40,25 @@ class WebSearchTool @Inject constructor(
     // (needed for long LLM streams); search must fail fast instead of hanging.
     private val client: OkHttpClient = okHttpClient.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .callTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
     override val descriptor = ToolDescriptor(
         name = "web_search",
-        description = "Search the web for current information. Returns titles, URLs and snippets for the top results.",
+        description = "Search the web using DuckDuckGo. Returns titles, URLs, and snippets " +
+            "for the top results. Always prefer this over guessing when the user asks about " +
+            "current events, documentation, or facts outside your training data.",
         parameters = listOf(
             ToolParameter(
                 name = "query",
                 type = ToolParameterType.STRING,
-                description = "The search query.",
+                description = "The search query (e.g. 'kotlin coroutines best practices').",
+                required = true,
             ),
             ToolParameter(
                 name = "limit",
                 type = ToolParameterType.INTEGER,
-                description = "Max results to return (default 8, max 15).",
+                description = "Maximum results to return (default 8, max 15).",
                 required = false,
             ),
         ),
@@ -62,14 +66,14 @@ class WebSearchTool @Inject constructor(
         capabilities = setOf("web"),
     )
 
-    override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {
+    override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult = withContext(Dispatchers.IO) {
         val start = System.currentTimeMillis()
         val query = (arguments["query"] as? JsonPrimitive)?.contentOrNull
-            ?: return ToolResult.error("missing required parameter: query")
+            ?: return@withContext ToolResult.error("missing required parameter: query")
         val limit = (arguments["limit"] as? JsonPrimitive)?.contentOrNull
             ?.toIntOrNull()?.coerceIn(1, 15) ?: 8
 
-        return try {
+        return@withContext try {
             // POST to DuckDuckGo Lite — returns clean HTML, no JS required.
             val body = FormBody.Builder()
                 .add("q", query)
@@ -87,14 +91,14 @@ class WebSearchTool @Inject constructor(
 
             val html = client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    return ToolResult.error("Search request failed: HTTP ${response.code}")
+                    throw java.io.IOException("Search request failed: HTTP ${response.code}")
                 }
-                response.body?.string() ?: return ToolResult.error("Empty response from DuckDuckGo")
+                response.body?.string() ?: throw java.io.IOException("Empty response from DuckDuckGo")
             }
 
             val results = parseResults(html, limit)
             if (results.isEmpty()) {
-                return ToolResult.ok("No results found for: \"$query\"", System.currentTimeMillis() - start)
+                return@withContext ToolResult.ok("No results found for: \"$query\"", System.currentTimeMillis() - start)
             }
 
             val output = buildString {
@@ -110,7 +114,7 @@ class WebSearchTool @Inject constructor(
             ToolResult.ok(output, System.currentTimeMillis() - start)
 
         } catch (e: Exception) {
-            Timber.e(e, "WebSearchTool failed: $query")
+            Timber.e(e, "WebSearchTool failed for query: $query")
             ToolResult.error("Search failed: ${e.message}")
         }
     }

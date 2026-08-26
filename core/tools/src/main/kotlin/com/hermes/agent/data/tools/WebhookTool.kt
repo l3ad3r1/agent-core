@@ -14,6 +14,8 @@ import com.hermes.agent.domain.tool.ToolParameter
 import com.hermes.agent.domain.tool.ToolParameterType
 import com.hermes.agent.domain.tool.ToolResult
 import com.hermes.agent.domain.product.ProductIdentity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -47,7 +49,7 @@ class WebhookTool @Inject constructor(
         name = "notify",
         description = "Send a message to connected platforms (Telegram, Discord, Signal, WhatsApp, webhook). Use when you need to notify the user via an external channel.",
         parameters = listOf(
-            ToolParameter("message", ToolParameterType.STRING, "The message to send."),
+            ToolParameter("message", ToolParameterType.STRING, "The message to send.", required = true),
             ToolParameter("platform", ToolParameterType.STRING,
                 "Optional: specific platform name to target (e.g. 'Telegram'). Omit to send to all enabled connectors.",
                 required = false),
@@ -64,49 +66,56 @@ class WebhookTool @Inject constructor(
             ?: return ToolResult.error("missing required parameter: message")
         val platform = (arguments["platform"] as? JsonPrimitive)?.contentOrNull
 
+        val isLocal = platform == null || platform.equals("local", ignoreCase = true) || platform.equals("notification", ignoreCase = true)
         val connectors = connectorRepository.getEnabled().filter { c ->
             platform == null || c.type.displayName.equals(platform, ignoreCase = true) || c.name.equals(platform, ignoreCase = true)
         }
 
-        if (connectors.isEmpty()) return ToolResult.ok("No connectors enabled.", System.currentTimeMillis() - start)
-
-        var sent = 0
-        connectors.forEach { connector ->
-            runCatching {
-                when (connector.type) {
-                    ConnectorType.WEBHOOK -> postWebhook(
-                        connector.config["url"] ?: return@forEach,
-                        message,
-                        connector.config["secret"],
-                    )
-                    ConnectorType.TELEGRAM -> postTelegram(
-                        connector.config["botToken"] ?: return@forEach,
-                        connector.config["chatId"] ?: return@forEach,
-                        message,
-                    )
-                    ConnectorType.DISCORD -> postDiscord(connector.config["url"] ?: return@forEach, message)
-                    ConnectorType.SIGNAL -> postSignal(
-                        connector.config["url"] ?: return@forEach,
-                        connector.config["recipient"] ?: return@forEach,
-                        message,
-                    )
-                    ConnectorType.WHATSAPP -> postWhatsApp(
-                        connector.config["phoneNumberId"] ?: return@forEach,
-                        connector.config["accessToken"] ?: return@forEach,
-                        connector.config["recipient"] ?: return@forEach,
-                        message,
-                    )
-                    ConnectorType.SMS -> sendSms(
-                        connector.config["recipient"] ?: connector.config["phoneNumber"] ?: return@forEach,
-                        message,
-                    )
-                }
-                connectorRepository.recordUsed(connector.id)
-                sent++
-            }.onFailure { e -> Timber.e(e, "WebhookTool: failed to send via ${connector.name}") }
+        if (connectors.isEmpty() && !isLocal) {
+            return ToolResult.ok("No connectors enabled.", System.currentTimeMillis() - start)
         }
 
-        if (platform == null || platform.equals("local", ignoreCase = true)) {
+        var sent = 0
+        if (connectors.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                connectors.forEach { connector ->
+                    runCatching {
+                        when (connector.type) {
+                            ConnectorType.WEBHOOK -> postWebhook(
+                                connector.config["url"] ?: return@forEach,
+                                message,
+                                connector.config["secret"],
+                            )
+                            ConnectorType.TELEGRAM -> postTelegram(
+                                connector.config["botToken"] ?: return@forEach,
+                                connector.config["chatId"] ?: return@forEach,
+                                message,
+                            )
+                            ConnectorType.DISCORD -> postDiscord(connector.config["url"] ?: return@forEach, message)
+                            ConnectorType.SIGNAL -> postSignal(
+                                connector.config["url"] ?: return@forEach,
+                                connector.config["recipient"] ?: return@forEach,
+                                message,
+                            )
+                            ConnectorType.WHATSAPP -> postWhatsApp(
+                                connector.config["phoneNumberId"] ?: return@forEach,
+                                connector.config["accessToken"] ?: return@forEach,
+                                connector.config["recipient"] ?: return@forEach,
+                                message,
+                            )
+                            ConnectorType.SMS -> sendSms(
+                                connector.config["recipient"] ?: connector.config["phoneNumber"] ?: return@forEach,
+                                message,
+                            )
+                        }
+                        connectorRepository.recordUsed(connector.id)
+                        sent++
+                    }.onFailure { e -> Timber.e(e, "WebhookTool: failed to send via ${connector.name}") }
+                }
+            }
+        }
+
+        if (isLocal) {
             postLocalNotification(message)
             sent++
         }
@@ -115,6 +124,16 @@ class WebhookTool @Inject constructor(
     }
 
     private fun postLocalNotification(message: String) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                Timber.w("WebhookTool: POST_NOTIFICATIONS permission not granted; skipping local notification")
+                return
+            }
+        }
+
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             nm.createNotificationChannel(

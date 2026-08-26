@@ -52,6 +52,7 @@ class ConversationSearchTool @Inject constructor(
                 name = "query",
                 type = ToolParameterType.STRING,
                 description = "Keyword or topic to search for.",
+                required = true,
             ),
             ToolParameter(
                 name = "limit",

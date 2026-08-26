@@ -89,6 +89,7 @@ class ContactsPlugin @Inject constructor(
                 name = "query",
                 type = ToolParameterType.STRING,
                 description = "Name or partial name to search for.",
+                required = true,
             ),
             ToolParameter(
                 name = "limit",
@@ -108,6 +109,7 @@ class ContactsPlugin @Inject constructor(
                 name = "contact_id",
                 type = ToolParameterType.STRING,
                 description = "The contact id returned by contacts_search.",
+                required = true,
             ),
         ),
         category = "communication",

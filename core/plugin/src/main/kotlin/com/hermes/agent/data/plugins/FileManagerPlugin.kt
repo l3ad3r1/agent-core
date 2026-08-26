@@ -54,6 +54,7 @@ class FileManagerPlugin @Inject constructor(
                 type = ToolParameterType.STRING,
                 description = "The SAF tree URI the user granted. The host app must hold a persisted " +
                     "permission for this URI.",
+                required = true,
             ),
             ToolParameter(
                 name = "limit",
@@ -73,6 +74,7 @@ class FileManagerPlugin @Inject constructor(
                 name = "file_uri",
                 type = ToolParameterType.STRING,
                 description = "The SAF document URI of the file to read.",
+                required = true,
             ),
         ),
         category = "device",

@@ -37,12 +37,14 @@ class AppSwipeTool @Inject constructor(
                 name = "snapshot_id",
                 type = ToolParameterType.INTEGER,
                 description = "The latest screen snapshot ID.",
+                required = true,
             ),
             ToolParameter(
                 name = "direction",
                 type = ToolParameterType.STRING,
                 description = "The direction to swipe. Must be 'up', 'down', 'left', or 'right'.",
-                enumValues = listOf("up", "down", "left", "right")
+                enumValues = listOf("up", "down", "left", "right"),
+                required = true,
             )
         ),
         category = "device",

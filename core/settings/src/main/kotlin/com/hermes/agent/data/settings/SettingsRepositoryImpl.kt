@@ -3,6 +3,7 @@ import com.hermes.agent.domain.llm.*
 import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.settings.UserSettings
 import com.hermes.agent.domain.settings.CloudProviderProfile
+import com.hermes.agent.domain.settings.DEFAULT_MODULE_CATALOG_URL
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
@@ -11,6 +12,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import timber.log.Timber
 import androidx.datastore.preferences.preferencesDataStore
 import com.hermes.agent.core.settings.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -44,9 +46,6 @@ class SettingsRepositoryImpl @Inject constructor(
         val LOCAL_MODEL_URI = stringPreferencesKey("local_model_uri")
         val SELECTED_MODEL_ID = stringPreferencesKey("selected_model_id")
         val MODEL_DOWNLOAD_DIR = stringPreferencesKey("model_download_dir")
-        val GITHUB_PAT = stringPreferencesKey("github_pat")
-        val GIST_ID = stringPreferencesKey("gist_id")
-        val LAST_BACKUP_TS = longPreferencesKey("last_backup_ts")
         val BACKUP_PASSPHRASE = stringPreferencesKey("backup_passphrase")
         val TERMUX_HERMES_INSTALLED = booleanPreferencesKey("termux_hermes_installed")
         val SHOW_TOOL_CALLS = booleanPreferencesKey("show_tool_calls")
@@ -63,6 +62,8 @@ class SettingsRepositoryImpl @Inject constructor(
         val TELEGRAM_BOT_ENABLED = booleanPreferencesKey("telegram_bot_enabled")
         val TELEGRAM_BOT_TOKEN = stringPreferencesKey("telegram_bot_token")
         val TELEGRAM_ALLOWED_USER_IDS = stringPreferencesKey("telegram_allowed_user_ids")
+        val MODULE_CATALOG_URL = stringPreferencesKey("module_catalog_url")
+        val PRIVILEGED_SHELL_ENABLED = booleanPreferencesKey("privileged_shell_enabled")
     }
 
     override fun observe(): Flow<UserSettings> = context.hermesDataStore.data.map { prefs ->
@@ -133,16 +134,21 @@ class SettingsRepositoryImpl @Inject constructor(
         context.hermesDataStore.edit { it[Keys.ONBOARDING_COMPLETED] = completed }
     }
 
-    override suspend fun setGithubPat(pat: String) {
-        context.hermesDataStore.edit { it[Keys.GITHUB_PAT] = pat.trim() }
-    }
-
-    override suspend fun setGistId(gistId: String) {
-        context.hermesDataStore.edit { it[Keys.GIST_ID] = gistId.trim() }
-    }
-
-    override suspend fun setLastBackupTimestamp(ts: Long) {
-        context.hermesDataStore.edit { it[Keys.LAST_BACKUP_TS] = ts }
+    override suspend fun purgeRetiredGistCredentials() {
+        // Named literally rather than via Keys: these entries no longer belong
+        // to the settings model, and nothing else may read them again.
+        val pat = stringPreferencesKey("github_pat")
+        val gistId = stringPreferencesKey("gist_id")
+        val lastBackup = longPreferencesKey("last_backup_ts")
+        context.hermesDataStore.edit { prefs ->
+            val hadCredentials = prefs.contains(pat) || prefs.contains(gistId)
+            prefs.remove(pat)
+            prefs.remove(gistId)
+            prefs.remove(lastBackup)
+            if (hadCredentials) {
+                Timber.tag("Settings").i("removed the retired Gist backup credentials")
+            }
+        }
     }
 
     override suspend fun setBackupPassphrase(passphrase: String) {
@@ -205,8 +211,16 @@ class SettingsRepositoryImpl @Inject constructor(
         context.hermesDataStore.edit { it[Keys.TELEGRAM_BOT_TOKEN] = token.trim() }
     }
 
+    override suspend fun setModuleCatalogUrl(url: String) {
+        context.hermesDataStore.edit { it[Keys.MODULE_CATALOG_URL] = url.trim() }
+    }
+
     override suspend fun setTelegramAllowedUserIds(userIds: String) {
         context.hermesDataStore.edit { it[Keys.TELEGRAM_ALLOWED_USER_IDS] = userIds.trim() }
+    }
+
+    override suspend fun setPrivilegedShellEnabled(enabled: Boolean) {
+        context.hermesDataStore.edit { it[Keys.PRIVILEGED_SHELL_ENABLED] = enabled }
     }
 
     private fun Preferences.toUserSettings(): UserSettings {
@@ -224,9 +238,6 @@ class SettingsRepositoryImpl @Inject constructor(
             localModelUri = this[Keys.LOCAL_MODEL_URI] ?: "",
             selectedModelId = this[Keys.SELECTED_MODEL_ID] ?: "",
             modelDownloadDir = this[Keys.MODEL_DOWNLOAD_DIR] ?: "",
-            githubPat = this[Keys.GITHUB_PAT] ?: "",
-            gistId = this[Keys.GIST_ID] ?: "",
-            lastBackupTimestamp = this[Keys.LAST_BACKUP_TS] ?: 0L,
             backupPassphrase = this[Keys.BACKUP_PASSPHRASE] ?: "",
             termuxHermesInstalled = this[Keys.TERMUX_HERMES_INSTALLED] ?: false,
             showToolCalls = this[Keys.SHOW_TOOL_CALLS] ?: true,
@@ -243,6 +254,8 @@ class SettingsRepositoryImpl @Inject constructor(
             telegramBotEnabled = this[Keys.TELEGRAM_BOT_ENABLED] ?: false,
             telegramBotToken = this[Keys.TELEGRAM_BOT_TOKEN] ?: "",
             telegramAllowedUserIds = this[Keys.TELEGRAM_ALLOWED_USER_IDS] ?: "",
+            moduleCatalogUrl = this[Keys.MODULE_CATALOG_URL] ?: DEFAULT_MODULE_CATALOG_URL,
+            privilegedShellEnabled = this[Keys.PRIVILEGED_SHELL_ENABLED] ?: false,
         )
     }
 
