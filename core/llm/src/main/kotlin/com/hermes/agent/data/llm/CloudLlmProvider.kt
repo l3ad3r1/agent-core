@@ -14,10 +14,14 @@ import com.hermes.agent.domain.settings.UserSettings
 import com.hermes.agent.domain.product.ProductIdentity
 import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.util.DispatcherProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -77,6 +81,9 @@ class CloudLlmProvider @Inject constructor(
 
     private var fixedProfile: CloudProviderProfile? = null
 
+    @Volatile
+    private var lastObservedModel: String = fixedProfile?.model?.cleaned().orEmpty()
+
     internal constructor(
         api: OpenAiApi,
         settings: SettingsRepository,
@@ -86,6 +93,7 @@ class CloudLlmProvider @Inject constructor(
         productIdentity: ProductIdentity,
     ) : this(api, settings, dispatchers, json, CloudModelSource.PRIMARY, productIdentity) {
         fixedProfile = profile
+        lastObservedModel = profile.model.cleaned()
     }
 
     private companion object {
@@ -102,7 +110,10 @@ class CloudLlmProvider @Inject constructor(
             }
     override val isOnDevice: Boolean = false
     override val model: String
-        get() = settings.currentBlocking().selectedModel().cleaned()
+        get() = fixedProfile?.model?.cleaned()
+            ?: lastObservedModel.ifBlank {
+                if (modelSource == CloudModelSource.AUX) "specialist-cloud" else "primary-cloud"
+            }
 
     /**
      * Model id this instance targets: the primary [UserSettings.cloudModel]
@@ -128,6 +139,7 @@ class CloudLlmProvider @Inject constructor(
 
     override suspend fun isAvailable(): Boolean {
         val s = settings.current()
+        lastObservedModel = s.selectedModel().cleaned()
         return s.cloudEnabled && (fixedProfile?.enabled != false) && s.activeApiKey().isNotBlank()
     }
 
@@ -144,6 +156,7 @@ class CloudLlmProvider @Inject constructor(
 
     override suspend fun complete(messages: List<LlmMessage>): LlmResponse {
         val s = settings.current()
+        lastObservedModel = s.selectedModel().cleaned()
         require(s.activeApiKey().isNotBlank()) {
             "Cloud LLM is enabled but no API key is set."
         }
@@ -450,10 +463,6 @@ class CloudLlmProvider @Inject constructor(
             finishReason = finishReason,
         )
     }
-
-    private fun SettingsRepository.currentBlocking(): com.hermes.agent.domain.settings.UserSettings =
-        kotlinx.coroutines.runBlocking { current() }
-
 }
 
 /**

@@ -3,6 +3,7 @@ import com.hermes.agent.domain.llm.*
 import com.hermes.agent.domain.settings.*
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -51,11 +52,59 @@ class LocalLlmManager @Inject constructor(
     private suspend fun currentModelFile(): File = File(destinationDir(), activeModel().fileName)
 
     /**
+     * Reads current device memory info.
+     */
+    private fun getMemoryInfo(): ActivityManager.MemoryInfo {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        am?.getMemoryInfo(memoryInfo)
+        return memoryInfo
+    }
+
+    /**
+     * Evaluates RAM preflight for a downloadable catalog model.
+     */
+    fun evaluatePreflight(
+        model: DownloadableModel,
+        requestedContextTokens: Int = 2048,
+    ): PreflightDecision {
+        val memInfo = getMemoryInfo()
+        return LocalModelPreflight.evaluate(
+            modelBytes = model.sizeBytes,
+            totalRamBytes = memInfo.totalMem,
+            availableRamBytes = memInfo.availMem,
+            lowMemory = memInfo.lowMemory,
+            requestedContextTokens = requestedContextTokens,
+        )
+    }
+
+    /**
+     * Evaluates RAM preflight for a custom model from URI.
+     */
+    fun evaluateCustomModelPreflight(
+        uri: Uri,
+        requestedContextTokens: Int = 2048,
+    ): PreflightDecision {
+        val size = runCatching {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize }
+        }.getOrNull() ?: 0L
+        val memInfo = getMemoryInfo()
+        return LocalModelPreflight.evaluate(
+            modelBytes = size,
+            totalRamBytes = memInfo.totalMem,
+            availableRamBytes = memInfo.availMem,
+            lowMemory = memInfo.lowMemory,
+            requestedContextTokens = requestedContextTokens,
+        )
+    }
+
+    /**
      * Whether the selected model is present. This does storage-provider (SAF
      * binder) and filesystem IO, so it MUST run off the main thread — every
-     * caller reaches it from `viewModelScope` (Main), and a slow provider here
-     * was blocking the main thread on model switch, ANR-ing the app (looked
-     * like a crash) and stalling the UI.
+     * caller reaches it from `viewModelScope` (Main).
+     *
+     * Pinned models check file presence and the fast `<fileName>.verified` sidecar
+     * to avoid re-hashing multi-GB files on ANR-sensitive paths.
      */
     suspend fun isModelDownloaded(): Boolean = withContext(Dispatchers.IO) {
         val settings = settingsRepository.current()
@@ -67,7 +116,17 @@ class LocalLlmManager @Inject constructor(
         }
         val model = activeModel()
         val file = currentModelFile()
-        file.isFile && file.length() == model.sizeBytes
+        if (!file.isFile || file.length() != model.sizeBytes) {
+            return@withContext false
+        }
+        // If sidecar exists, verify it matches
+        if (LocalModelInstaller.sidecarFile(file).isFile) {
+            LocalModelInstaller.isSidecarValid(file, model.sha256, model.sizeBytes)
+        } else {
+            // Legacy download before sidecar support — accept size match and write sidecar
+            LocalModelInstaller.writeSidecar(file, model.sha256)
+            true
+        }
     }
 
     val isDownloading: StateFlow<Boolean> = downloadCoordinator.isDownloading
@@ -87,6 +146,8 @@ class LocalLlmManager @Inject constructor(
 
     fun clearDownloadError() = downloadCoordinator.clearError()
 
+    fun cancelDownload() = downloadCoordinator.cancelDownload()
+
     private suspend fun initializeLocked() {
         val settledState = engine.state.first {
             it !is State.Uninitialized && it !is State.Initializing
@@ -101,14 +162,57 @@ class LocalLlmManager @Inject constructor(
         if (!isModelDownloaded()) {
             throw IllegalStateException("Model not downloaded yet. Please download it in settings.")
         }
+
         val customUri = settingsRepository.current().localModelUri
         if (customUri.isNotBlank()) {
             val uri = Uri.parse(customUri)
+
+            // Phase 1: GGUF validation for custom model
+            when (val validation = LocalModelValidator.validate(context, uri)) {
+                is ModelValidation.Rejected -> {
+                    throw IllegalStateException("Custom model validation rejected: ${validation.reason}")
+                }
+                is ModelValidation.Valid -> {
+                    Timber.i("Validated custom GGUF model: %s", validation.summary)
+                }
+            }
+
+            // Phase 1: RAM Preflight check
+            val preflight = evaluateCustomModelPreflight(uri)
+            if (!preflight.allowed || preflight.level == PreflightLevel.BLOCKED) {
+                throw IllegalStateException("Model load blocked by preflight: ${preflight.detail}")
+            }
+            if (preflight.level == PreflightLevel.WARNING) {
+                Timber.w("Model preflight warning: %s", preflight.detail)
+            }
+
             context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
                 engine.loadModel("/proc/self/fd/${descriptor.fd}")
             } ?: throw IllegalStateException("Cannot open the custom model file. Choose it again.")
         } else {
-            engine.loadModel(currentModelFile().absolutePath)
+            val model = activeModel()
+            val modelFile = currentModelFile()
+
+            // Phase 1: GGUF validation for catalog model
+            when (val validation = LocalModelValidator.validate(modelFile, expectedSizeBytes = model.sizeBytes)) {
+                is ModelValidation.Rejected -> {
+                    throw IllegalStateException("Model validation rejected: ${validation.reason}")
+                }
+                is ModelValidation.Valid -> {
+                    Timber.i("Validated catalog GGUF model: %s", validation.summary)
+                }
+            }
+
+            // Phase 1: RAM Preflight check
+            val preflight = evaluatePreflight(model)
+            if (!preflight.allowed || preflight.level == PreflightLevel.BLOCKED) {
+                throw IllegalStateException("Model load blocked by preflight: ${preflight.detail}")
+            }
+            if (preflight.level == PreflightLevel.WARNING) {
+                Timber.w("Model preflight warning: %s", preflight.detail)
+            }
+
+            engine.loadModel(modelFile.absolutePath)
         }
     }
 

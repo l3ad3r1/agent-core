@@ -22,8 +22,8 @@ class InMemoryVectorStore @Inject constructor() : VectorStore {
         entries[entry.id] = entry
     }
 
-    override suspend fun upsertAll(newEntries: List<VectorEntry>) {
-        for (e in newEntries) entries[e.id] = e
+    override suspend fun upsertAll(entries: List<VectorEntry>) {
+        for (e in entries) this.entries[e.id] = e
     }
 
     override suspend fun delete(id: String) {

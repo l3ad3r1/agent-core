@@ -81,5 +81,6 @@ class KeystoreManager @Inject constructor() {
         const val ALIAS_SSH_PASSWORD = "hermes.ssh_password"
         const val ALIAS_DB_AT_REST = "hermes.db_at_rest"
         const val ALIAS_BACKUP_PASSPHRASE = "hermes.backup_passphrase"
+        const val ALIAS_TELEGRAM_BOT_TOKEN = "hermes.telegram_bot_token"
     }
 }

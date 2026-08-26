@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalLlmManagerLifecycleTest {
@@ -90,5 +91,25 @@ class LocalLlmManagerLifecycleTest {
         manager.generateResponse(systemPrompt = "", userPrompt = "hello").toList()
 
         coVerify { engine.setSystemPrompt("You are Hermes, a helpful on-device assistant.") }
+    }
+
+    @Test
+    fun `model load is not attempted when model is not downloaded`() = runTest {
+        every { engine.state } returns MutableStateFlow(State.Initialized)
+        coEvery { settingsRepository.current() } returns UserSettings(
+            selectedModelId = "llama-3.2-1b-q4km",
+            modelDownloadDir = "/non_existent_folder_xyz",
+        )
+
+        val flow = manager.generateResponse(systemPrompt = "sys", userPrompt = "test")
+        var failed = false
+        try {
+            flow.toList()
+        } catch (e: IllegalStateException) {
+            failed = true
+        }
+
+        assertTrue(failed)
+        coVerify(exactly = 0) { engine.loadModel(any()) }
     }
 }

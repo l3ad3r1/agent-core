@@ -28,10 +28,6 @@ data class UserSettings(
     // top-level "AI Models" folder on shared storage. A user-typed path here
     // (needs All-Files access) sends downloads elsewhere.
     val modelDownloadDir: String = "",
-    // Backup
-    val githubPat: String = "",
-    val gistId: String = "",
-    val lastBackupTimestamp: Long = 0L,
     // True once the Hermes CLI has been detected in Termux (hides the installer).
     val termuxHermesInstalled: Boolean = false,
     // Tool transparency: when true (default), tool-call cards (web search,
@@ -86,6 +82,11 @@ data class UserSettings(
      * as soon as they navigated away.
      */
     val moduleCatalogUrl: String = DEFAULT_MODULE_CATALOG_URL,
+    /**
+     * Elevated privileged execution (e.g. Shizuku ADB shell).
+     * Off by default; requires explicit user opt-in.
+     */
+    val privilegedShellEnabled: Boolean = false,
 )
 
 /** First-party module catalog, published from the hermes-jeeves-modules repo. */

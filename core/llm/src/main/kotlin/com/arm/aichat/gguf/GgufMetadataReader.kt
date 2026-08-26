@@ -42,8 +42,7 @@ interface GgufMetadataReader {
     suspend fun readStructuredMetadata(input: InputStream): GgufMetadata
 
     companion object {
-        private val DEFAULT_SKIP_KEYS = setOf(
-            "tokenizer.chat_template",
+        val DEFAULT_SKIP_KEYS = setOf(
             "tokenizer.ggml.scores",
             "tokenizer.ggml.tokens",
             "tokenizer.ggml.token_type"

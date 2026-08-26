@@ -106,8 +106,10 @@ internal class RoutedProviderChain(
                             emit(chunk)
                         }
                         is LlmStreamChunk.Error -> {
-                            if (!emittedOutput && chunk.cause?.isProviderFailoverFailure() == true) {
-                                retryFailure = chunk.cause
+                            val isFailover = chunk.cause?.isProviderFailoverFailure() == true ||
+                                (chunk.cause == null && chunk.message.isNotBlank())
+                            if (!emittedOutput && isFailover) {
+                                retryFailure = chunk.cause ?: java.io.IOException(chunk.message)
                             } else {
                                 emit(chunk)
                             }

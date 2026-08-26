@@ -20,6 +20,8 @@ internal class GgufMetadataReaderImpl(
 ) : GgufMetadataReader {
     companion object {
         private const val ARCH_LLAMA = "llama"
+        private const val MAX_SAFE_STRING_LENGTH = 16 * 1024 * 1024 // 16 MB
+        private const val MAX_SAFE_ARRAY_COUNT = 500_000
     }
 
     /** Enum corresponding to GGUF metadata value types (for convenience and array element typing). */
@@ -143,7 +145,7 @@ internal class GgufMetadataReaderImpl(
      */
     private fun readLEUInt32(input: InputStream): Int {
         val b0 = input.read(); val b1 = input.read(); val b2 = input.read(); val b3 = input.read()
-        if (b3 == -1) throw IOException("Unexpected EOF while reading UInt32")
+        if (b0 == -1 || b1 == -1 || b2 == -1 || b3 == -1) throw IOException("Unexpected EOF while reading UInt32")
         return (b3 and 0xFF shl 24) or
             (b2 and 0xFF shl 16) or
             (b1 and 0xFF shl  8) or
@@ -208,10 +210,11 @@ internal class GgufMetadataReaderImpl(
 
         // -------------- populate sections ----------------
         val basic = GgufMetadata.BasicInfo(
-            uuid      = "general.uuid".str(),
-            name      = "general.basename".str(),
-            nameLabel = "general.name".str(),
-            sizeLabel = "general.size_label".str()
+            uuid       = "general.uuid".str(),
+            name       = "general.basename".str(),
+            nameLabel  = "general.name".str(),
+            sizeLabel  = "general.size_label".str(),
+            splitCount = "split.count".u32() ?: "split.count".i32() ?: "general.split_count".u32(),
         )
 
         val author = GgufMetadata.AuthorInfo(
@@ -242,7 +245,7 @@ internal class GgufMetadataReaderImpl(
             vocabSize           = "$arch.vocab_size".u32(),
             finetune            = "general.finetune".str(),
             quantizationVersion = "general.quantization_version".u32()
-        ).takeUnless { fileType == null && vocabSize == null && finetune == null && quantizationVersion == null }
+        ).takeUnless { "general.architecture".str() == null && fileType == null && vocabSize == null && finetune == null && quantizationVersion == null }
 
         val baseModels = buildList {
             val n = "general.base_model.count".u32() ?: 0
@@ -415,6 +418,9 @@ internal class GgufMetadataReaderImpl(
         MetadataType.ARRAY -> {
             val elemType = MetadataType.fromCode(littleEndianBytesToInt(input.readNBytesExact(4)))
             val len      = readLittleLong(input)
+            if (len < 0 || len > MAX_SAFE_ARRAY_COUNT) {
+                throw IOException("GGUF array element count ($len) exceeds safe maximum ($MAX_SAFE_ARRAY_COUNT)")
+            }
             val count    = len.toInt()
 
             if (arraySummariseThreshold >= 0 && count > arraySummariseThreshold) {
@@ -519,7 +525,9 @@ internal class GgufMetadataReaderImpl(
     private fun readString(input: InputStream): String =
         // Read 8-byte little-endian length (number of bytes in the string).
         readLittleLong(input).let { len ->
-            if (len < 0 || len > Int.MAX_VALUE) throw IOException("String too long: $len")
+            if (len < 0 || len > MAX_SAFE_STRING_LENGTH) {
+                throw IOException("GGUF string length ($len) exceeds safe maximum ($MAX_SAFE_STRING_LENGTH)")
+            }
 
             // Read the UTF-8 bytes of the given length.
             ByteArray(len.toInt()).let {
@@ -584,7 +592,5 @@ internal class GgufMetadataReaderImpl(
      *
      * @throws IOException on premature EOF.
      */
-    private fun InputStream.readNBytesExact(n: Int) = ByteArray(n).also {
-        if (read(it) != n) throw IOException("Unexpected EOF")
-    }
+    private fun InputStream.readNBytesExact(n: Int) = ByteArray(n).also { readFully(it, n) }
 }

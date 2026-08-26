@@ -26,10 +26,17 @@ interface SettingsRepository {
     suspend fun setOnboardingCompleted(completed: Boolean)
 
     // Backup
-    suspend fun setGithubPat(pat: String)
-    suspend fun setGistId(gistId: String)
-    suspend fun setLastBackupTimestamp(ts: Long)
     suspend fun setBackupPassphrase(passphrase: String)
+
+    /**
+     * Deletes the credentials left behind by the retired Gist backup.
+     *
+     * Removing the feature stops Hermes reading the token, but it does not
+     * remove it: the GitHub PAT, the gist id, and the last-backup timestamp
+     * stay in DataStore until something deletes them. A token we no longer use
+     * has no business sitting on the device, so this runs once at startup.
+     */
+    suspend fun purgeRetiredGistCredentials()
 
     suspend fun setTermuxHermesInstalled(installed: Boolean)
 
@@ -56,4 +63,7 @@ interface SettingsRepository {
 
     // Module repository
     suspend fun setModuleCatalogUrl(url: String)
+
+    // Privileged shell (Shizuku)
+    suspend fun setPrivilegedShellEnabled(enabled: Boolean)
 }

@@ -118,9 +118,9 @@ class EncryptedSettingsRepository @Inject constructor(
         // that stay are already ciphertext and must not be encrypted again.
         sweep(raw.cloudApiKey, KeystoreManager.ALIAS_CLOUD_API_KEY) { delegate.setCloudApiKey("") }
         sweep(raw.auxApiKey, KeystoreManager.ALIAS_AUX_API_KEY) { delegate.setAuxApiKey("") }
-        sweep(raw.githubPat, KeystoreManager.ALIAS_GITHUB_PAT) { delegate.setGithubPat("") }
         sweep(raw.apiServerKey, KeystoreManager.ALIAS_API_SERVER_KEY) { delegate.setApiServerKey("") }
         sweep(raw.sshPassword, KeystoreManager.ALIAS_SSH_PASSWORD) { delegate.setSshPassword("") }
+        sweep(raw.telegramBotToken, KeystoreManager.ALIAS_TELEGRAM_BOT_TOKEN) { delegate.setTelegramBotToken("") }
 
         val profiles = raw.cloudProviderProfiles
         val dead = profiles.count { isUnreadable(it.apiKey, KeystoreManager.ALIAS_PROVIDER_API_KEYS) }
@@ -146,6 +146,16 @@ class EncryptedSettingsRepository @Inject constructor(
         return cleared
     }
 
+    /**
+     * Clears the retired Gist credentials, then destroys the keystore key that
+     * encrypted the token so the ciphertext cannot be recovered from a stale
+     * DataStore copy — an old backup archive, for instance.
+     */
+    override suspend fun purgeRetiredGistCredentials() {
+        delegate.purgeRetiredGistCredentials()
+        keystore.deleteKey(KeystoreManager.ALIAS_GITHUB_PAT)
+    }
+
     /** True only for a value we marked as ciphertext and then failed to decrypt. */
     private fun isUnreadable(value: String, alias: String): Boolean {
         if (!value.startsWith(ENCRYPTED_PREFIX)) return false
@@ -161,9 +171,9 @@ class EncryptedSettingsRepository @Inject constructor(
             cloudApiKey = decryptSecret(plain.cloudApiKey, KeystoreManager.ALIAS_CLOUD_API_KEY),
             auxApiKey = decryptSecret(plain.auxApiKey, KeystoreManager.ALIAS_AUX_API_KEY),
             cloudProviderProfiles = decryptProviderProfiles(plain.cloudProviderProfiles),
-            githubPat = decryptSecret(plain.githubPat, KeystoreManager.ALIAS_GITHUB_PAT),
             apiServerKey = decryptSecret(plain.apiServerKey, KeystoreManager.ALIAS_API_SERVER_KEY),
             sshPassword = decryptSecret(plain.sshPassword, KeystoreManager.ALIAS_SSH_PASSWORD),
+            telegramBotToken = decryptSecret(plain.telegramBotToken, KeystoreManager.ALIAS_TELEGRAM_BOT_TOKEN),
             backupPassphrase = decryptSecret(
                 plain.backupPassphrase, KeystoreManager.ALIAS_BACKUP_PASSPHRASE,
             ),
@@ -176,9 +186,9 @@ class EncryptedSettingsRepository @Inject constructor(
                 cloudApiKey = decryptSecret(plain.cloudApiKey, KeystoreManager.ALIAS_CLOUD_API_KEY),
                 auxApiKey = decryptSecret(plain.auxApiKey, KeystoreManager.ALIAS_AUX_API_KEY),
                 cloudProviderProfiles = decryptProviderProfiles(plain.cloudProviderProfiles),
-                githubPat = decryptSecret(plain.githubPat, KeystoreManager.ALIAS_GITHUB_PAT),
                 apiServerKey = decryptSecret(plain.apiServerKey, KeystoreManager.ALIAS_API_SERVER_KEY),
                 sshPassword = decryptSecret(plain.sshPassword, KeystoreManager.ALIAS_SSH_PASSWORD),
+                telegramBotToken = decryptSecret(plain.telegramBotToken, KeystoreManager.ALIAS_TELEGRAM_BOT_TOKEN),
                 backupPassphrase = decryptSecret(
                     plain.backupPassphrase, KeystoreManager.ALIAS_BACKUP_PASSPHRASE,
                 ),
@@ -213,16 +223,16 @@ class EncryptedSettingsRepository @Inject constructor(
         )
     }
 
-    override suspend fun setGithubPat(pat: String) {
-        delegate.setGithubPat(encryptSecret(pat, KeystoreManager.ALIAS_GITHUB_PAT))
-    }
-
     override suspend fun setApiServerKey(key: String) {
         delegate.setApiServerKey(encryptSecret(key, KeystoreManager.ALIAS_API_SERVER_KEY))
     }
 
     override suspend fun setSshPassword(password: String) {
         delegate.setSshPassword(encryptSecret(password, KeystoreManager.ALIAS_SSH_PASSWORD))
+    }
+
+    override suspend fun setTelegramBotToken(token: String) {
+        delegate.setTelegramBotToken(encryptSecret(token, KeystoreManager.ALIAS_TELEGRAM_BOT_TOKEN))
     }
 
     override suspend fun setBackupPassphrase(passphrase: String) {

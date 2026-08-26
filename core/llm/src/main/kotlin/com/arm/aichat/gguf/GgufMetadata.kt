@@ -50,6 +50,7 @@ data class GgufMetadata(
         val name: String? = null,
         val nameLabel: String? = null,
         val sizeLabel: String? = null,  // Size label like "7B"
+        val splitCount: Int? = null,
     )
 
     data class AuthorInfo(
