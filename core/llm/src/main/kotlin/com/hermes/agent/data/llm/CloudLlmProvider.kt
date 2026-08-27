@@ -28,6 +28,12 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
 import timber.log.Timber
@@ -470,26 +476,43 @@ class CloudLlmProvider @Inject constructor(
  * format. Kept here as a private top-level function so the descriptor class
  * stays pure-Kotlin in the domain layer.
  */
-internal fun ToolDescriptor.toJsonOpenAiString(): String {
-    val params = buildString {
-        append('{')
-        append("\"type\":\"object\",")
-        append("\"properties\":{")
-        parameters.joinTo(this, ",") { p ->
-            val sb = StringBuilder()
-            sb.append('"').append(p.name).append("\":{")
-            sb.append("\"type\":\"").append(p.type.jsonSchemaType).append('"')
-            sb.append(",\"description\":\"").append(p.description.replace("\"", "\\\"")).append('"')
-            p.enumValues?.let {
-                sb.append(",\"enum\":[")
-                it.joinTo(sb, ",") { "\"$it\"" }
-                sb.append(']')
+internal fun ToolDescriptor.toJsonOpenAiString(): String =
+    toolSchemaJson.encodeToString(JsonObject.serializer(), toOpenAiJsonObject())
+
+/**
+ * Builds the OpenAI tool schema through kotlinx.serialization rather than by
+ * concatenating JSON text.
+ *
+ * The hand-rolled version escaped only `"`, so a description carrying a
+ * newline, tab, or backslash emitted a raw control character inside a string
+ * literal and the whole request body became unparseable — providers rejected it
+ * with HTTP 400 before any model ran. Descriptions are prose written by tool
+ * authors (and, for script modules, by third parties), so they must be treated
+ * as arbitrary text, never as pre-escaped JSON.
+ */
+internal fun ToolDescriptor.toOpenAiJsonObject(): JsonObject = buildJsonObject {
+    put("type", "function")
+    putJsonObject("function") {
+        put("name", name)
+        put("description", description)
+        putJsonObject("parameters") {
+            put("type", "object")
+            putJsonObject("properties") {
+                parameters.forEach { p ->
+                    putJsonObject(p.name) {
+                        put("type", p.type.jsonSchemaType)
+                        put("description", p.description)
+                        p.enumValues?.let { values ->
+                            putJsonArray("enum") { values.forEach { add(it) } }
+                        }
+                    }
+                }
             }
-            sb.append('}')
+            putJsonArray("required") {
+                parameters.filter { it.required }.forEach { add(it.name) }
+            }
         }
-        append("},\"required\":[")
-        parameters.filter { it.required }.joinTo(this, ",") { "\"${it.name}\"" }
-        append("]}")
     }
-    return "{\"type\":\"function\",\"function\":{\"name\":\"$name\",\"description\":\"${description.replace("\"", "\\\"")}\",\"parameters\":$params}}"
 }
+
+private val toolSchemaJson = Json { encodeDefaults = true }
