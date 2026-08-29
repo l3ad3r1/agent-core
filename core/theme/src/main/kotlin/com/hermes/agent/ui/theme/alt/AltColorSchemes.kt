@@ -12,27 +12,35 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 /**
- * Alternative colour styles, alongside each app's own monochrome default.
+ * Alternative colour + shape styles, alongside each app's own default.
  *
- * Two styles, chosen from the same place fonts are:
+ * Three styles, chosen from the same place fonts are:
  *  - [ThemeStyle.CLASSIC] — each app's existing scheme (Hermes/Jeeves resolve it
  *    themselves; this file plays no part).
- *  - [ThemeStyle.MYBRAIN] — a fixed cyan/purple palette in the shape of the
- *    MyBrain app's own colours (github.com/mhss1/MyBrain, GPL-3.0). Only the
- *    colour *values* are taken from its `Color.kt` — plain hex constants, not
- *    creative expression — and reimplemented fresh here rather than copied, so
- *    nothing GPL-licensed enters this MIT tree. See the note on the constants
- *    below for the exact source values.
+ *  - [ThemeStyle.CORTEX] — "Cortex": a fixed cyan/violet palette plus squircle
+ *    card shapes and icon tiles, in the shape of the MyBrain app's own UI
+ *    (github.com/mhss1/MyBrain, GPL-3.0). Nothing here is copied from that
+ *    codebase — only *values* (hex colour constants, a corner-radius number)
+ *    and the general *look* (a colour family, a corner style, "icon on a
+ *    tinted squircle" as a tile pattern) are reimplemented fresh, all in this
+ *    repo's own code, using this repo's own icon set (Material Icons) rather
+ *    than MyBrain's Flaticon-attributed artwork. See the note on the
+ *    constants below for the exact source values, and [SquircleShape] /
+ *    [SpaceTile] for the shape and tile pieces.
  *  - [ThemeStyle.MATERIAL_YOU] — Android's own per-device wallpaper palette
  *    (`dynamicColorScheme`), available from Android 12 (API 31); falls back to
  *    [ThemeStyle.CLASSIC] below that, since there is nothing to derive a
- *    dynamic palette from.
+ *    dynamic palette from. Shares Cortex's squircle/icon-tile shape language,
+ *    just with dynamic colours instead of the fixed palette.
  */
 enum class ThemeStyle(val storageKey: String) {
     CLASSIC("classic"),
-    MYBRAIN("mybrain"),
+    CORTEX("cortex"),
     MATERIAL_YOU("material_you"),
     ;
+
+    /** Whether this style should render squircle card/tile shapes (see [SquircleShapes]). */
+    val usesSquircleShapes: Boolean get() = this != CLASSIC
 
     companion object {
         val DEFAULT = CLASSIC
@@ -49,7 +57,7 @@ enum class ThemeStyle(val storageKey: String) {
  * numeric constants — not the copyrightable part of that GPL codebase — used
  * here to offer the same *look* as an alternative to each app's own default.
  */
-private object MyBrainHex {
+private object CortexHex {
     val Primary = Color(0xFF28B0DF)
     val OnPrimary = Color.White
     val Secondary = Color(0xFF5F12CA)
@@ -59,53 +67,53 @@ private object MyBrainHex {
     val Error = Color(0xFFB3261E)
 }
 
-val MyBrainDark: ColorScheme = darkColorScheme(
-    primary = MyBrainHex.Primary,
-    onPrimary = MyBrainHex.OnPrimary,
-    secondary = MyBrainHex.Secondary,
+val CortexDark: ColorScheme = darkColorScheme(
+    primary = CortexHex.Primary,
+    onPrimary = CortexHex.OnPrimary,
+    secondary = CortexHex.Secondary,
     onSecondary = Color.White,
-    tertiary = MyBrainHex.Secondary,
+    tertiary = CortexHex.Secondary,
     onTertiary = Color.White,
     background = Color.Black,
     onBackground = Color.White,
-    surface = MyBrainHex.DarkNeutral,
+    surface = CortexHex.DarkNeutral,
     onSurface = Color.White,
-    surfaceVariant = MyBrainHex.DarkNeutral,
+    surfaceVariant = CortexHex.DarkNeutral,
     onSurfaceVariant = Color.White,
-    surfaceTint = MyBrainHex.DarkNeutral,
+    surfaceTint = CortexHex.DarkNeutral,
     surfaceContainerLowest = Color.Black,
-    surfaceContainerLow = MyBrainHex.DarkNeutral,
-    surfaceContainer = MyBrainHex.DarkNeutral,
-    surfaceContainerHigh = MyBrainHex.DarkNeutral,
-    surfaceContainerHighest = MyBrainHex.DarkNeutral,
-    surfaceDim = MyBrainHex.DarkNeutral,
-    surfaceBright = MyBrainHex.DarkNeutral,
-    error = MyBrainHex.Error,
+    surfaceContainerLow = CortexHex.DarkNeutral,
+    surfaceContainer = CortexHex.DarkNeutral,
+    surfaceContainerHigh = CortexHex.DarkNeutral,
+    surfaceContainerHighest = CortexHex.DarkNeutral,
+    surfaceDim = CortexHex.DarkNeutral,
+    surfaceBright = CortexHex.DarkNeutral,
+    error = CortexHex.Error,
     onError = Color.White,
 )
 
-val MyBrainLight: ColorScheme = lightColorScheme(
-    primary = MyBrainHex.Primary,
-    onPrimary = MyBrainHex.OnPrimary,
-    secondary = MyBrainHex.Secondary,
+val CortexLight: ColorScheme = lightColorScheme(
+    primary = CortexHex.Primary,
+    onPrimary = CortexHex.OnPrimary,
+    secondary = CortexHex.Secondary,
     onSecondary = Color.White,
-    tertiary = MyBrainHex.Secondary,
+    tertiary = CortexHex.Secondary,
     onTertiary = Color.White,
-    background = MyBrainHex.LightBackground,
-    onBackground = MyBrainHex.DarkNeutral,
-    surface = MyBrainHex.LightCard,
-    onSurface = MyBrainHex.DarkNeutral,
-    surfaceVariant = MyBrainHex.LightCard,
-    onSurfaceVariant = MyBrainHex.DarkNeutral,
-    surfaceTint = MyBrainHex.LightCard,
-    surfaceContainerLowest = MyBrainHex.LightBackground,
-    surfaceContainerLow = MyBrainHex.LightCard,
-    surfaceContainer = MyBrainHex.LightCard,
-    surfaceContainerHigh = MyBrainHex.LightCard,
-    surfaceContainerHighest = MyBrainHex.LightCard,
-    surfaceDim = MyBrainHex.LightCard,
-    surfaceBright = MyBrainHex.LightCard,
-    error = MyBrainHex.Error,
+    background = CortexHex.LightBackground,
+    onBackground = CortexHex.DarkNeutral,
+    surface = CortexHex.LightCard,
+    onSurface = CortexHex.DarkNeutral,
+    surfaceVariant = CortexHex.LightCard,
+    onSurfaceVariant = CortexHex.DarkNeutral,
+    surfaceTint = CortexHex.LightCard,
+    surfaceContainerLowest = CortexHex.LightBackground,
+    surfaceContainerLow = CortexHex.LightCard,
+    surfaceContainer = CortexHex.LightCard,
+    surfaceContainerHigh = CortexHex.LightCard,
+    surfaceContainerHighest = CortexHex.LightCard,
+    surfaceDim = CortexHex.LightCard,
+    surfaceBright = CortexHex.LightCard,
+    error = CortexHex.Error,
     onError = Color.White,
 )
 
@@ -121,7 +129,7 @@ val MyBrainLight: ColorScheme = lightColorScheme(
 fun resolveAltColorScheme(style: ThemeStyle, darkTheme: Boolean = isSystemInDarkTheme()): ColorScheme? =
     when (style) {
         ThemeStyle.CLASSIC -> null
-        ThemeStyle.MYBRAIN -> if (darkTheme) MyBrainDark else MyBrainLight
+        ThemeStyle.CORTEX -> if (darkTheme) CortexDark else CortexLight
         ThemeStyle.MATERIAL_YOU -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val context = LocalContext.current
@@ -130,4 +138,23 @@ fun resolveAltColorScheme(style: ThemeStyle, darkTheme: Boolean = isSystemInDark
                 null
             }
         }
+    }
+
+/**
+ * Resolves an alternative [androidx.compose.material3.Shapes] set, or null for
+ * [ThemeStyle.CLASSIC] (meaning "the caller's own default applies"). Cortex and
+ * Material You both use [SquircleShapes] — the squircle corner style is part of
+ * the "MyBrain-shaped" look regardless of which colours are behind it.
+ */
+fun resolveAltShapes(style: ThemeStyle): androidx.compose.material3.Shapes? =
+    if (style.usesSquircleShapes) {
+        androidx.compose.material3.Shapes(
+            extraSmall = SquircleShapes.extraSmall,
+            small = SquircleShapes.small,
+            medium = SquircleShapes.medium,
+            large = SquircleShapes.large,
+            extraLarge = SquircleShapes.extraLarge,
+        )
+    } else {
+        null
     }
