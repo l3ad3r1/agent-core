@@ -69,4 +69,8 @@ interface SettingsRepository {
 
     // On-device model fallback
     suspend fun setLocalLlmEnabled(enabled: Boolean)
+
+    // Home Assistant
+    suspend fun setHomeAssistantUrl(url: String)
+    suspend fun setHomeAssistantToken(token: String)
 }

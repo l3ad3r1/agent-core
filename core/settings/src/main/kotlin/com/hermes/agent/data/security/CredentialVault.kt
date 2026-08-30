@@ -24,6 +24,7 @@ class CredentialVault @Inject constructor(
             auxApiKey = s.auxApiKey,
             apiServerKey = s.apiServerKey,
             sshPassword = s.sshPassword,
+            homeAssistantToken = s.homeAssistantToken,
             providerKeys = s.cloudProviderProfiles
                 .filter { it.apiKey.isNotBlank() }
                 .associate { it.id to it.apiKey },
@@ -38,6 +39,9 @@ class CredentialVault @Inject constructor(
         }
         if (credentials.auxApiKey.isNotBlank()) {
             settings.setAuxApiKey(credentials.auxApiKey); restored++
+        }
+        if (credentials.homeAssistantToken.isNotBlank()) {
+            settings.setHomeAssistantToken(credentials.homeAssistantToken); restored++
         }
         if (credentials.providerKeys.isNotEmpty()) {
             val profiles = settings.current().cloudProviderProfiles

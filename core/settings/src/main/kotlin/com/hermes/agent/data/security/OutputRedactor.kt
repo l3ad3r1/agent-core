@@ -40,6 +40,7 @@ class OutputRedactor @Inject constructor(
             if (settings.apiServerKey.isNotBlank()) configuredSecrets += settings.apiServerKey to "api-server-key"
             if (settings.sshPassword.isNotBlank()) configuredSecrets += settings.sshPassword to "ssh-password"
             if (settings.telegramBotToken.isNotBlank()) configuredSecrets += settings.telegramBotToken to "telegram-bot-token"
+            if (settings.homeAssistantToken.isNotBlank()) configuredSecrets += settings.homeAssistantToken to "home-assistant-token"
             settings.cloudProviderProfiles.forEach { profile ->
                 if (profile.apiKey.isNotBlank()) {
                     configuredSecrets += profile.apiKey to "${profile.name.lowercase().replace(" ", "-")}-api-key"

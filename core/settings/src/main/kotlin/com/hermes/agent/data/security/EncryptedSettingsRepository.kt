@@ -121,6 +121,7 @@ class EncryptedSettingsRepository @Inject constructor(
         sweep(raw.apiServerKey, KeystoreManager.ALIAS_API_SERVER_KEY) { delegate.setApiServerKey("") }
         sweep(raw.sshPassword, KeystoreManager.ALIAS_SSH_PASSWORD) { delegate.setSshPassword("") }
         sweep(raw.telegramBotToken, KeystoreManager.ALIAS_TELEGRAM_BOT_TOKEN) { delegate.setTelegramBotToken("") }
+        sweep(raw.homeAssistantToken, KeystoreManager.ALIAS_HOME_ASSISTANT_TOKEN) { delegate.setHomeAssistantToken("") }
 
         val profiles = raw.cloudProviderProfiles
         val dead = profiles.count { isUnreadable(it.apiKey, KeystoreManager.ALIAS_PROVIDER_API_KEYS) }
@@ -177,6 +178,9 @@ class EncryptedSettingsRepository @Inject constructor(
             backupPassphrase = decryptSecret(
                 plain.backupPassphrase, KeystoreManager.ALIAS_BACKUP_PASSPHRASE,
             ),
+            homeAssistantToken = decryptSecret(
+                plain.homeAssistantToken, KeystoreManager.ALIAS_HOME_ASSISTANT_TOKEN,
+            ),
         )
     }
 
@@ -191,6 +195,9 @@ class EncryptedSettingsRepository @Inject constructor(
                 telegramBotToken = decryptSecret(plain.telegramBotToken, KeystoreManager.ALIAS_TELEGRAM_BOT_TOKEN),
                 backupPassphrase = decryptSecret(
                     plain.backupPassphrase, KeystoreManager.ALIAS_BACKUP_PASSPHRASE,
+                ),
+                homeAssistantToken = decryptSecret(
+                    plain.homeAssistantToken, KeystoreManager.ALIAS_HOME_ASSISTANT_TOKEN,
                 ),
             )
         }
@@ -238,6 +245,12 @@ class EncryptedSettingsRepository @Inject constructor(
     override suspend fun setBackupPassphrase(passphrase: String) {
         delegate.setBackupPassphrase(
             encryptSecret(passphrase, KeystoreManager.ALIAS_BACKUP_PASSPHRASE),
+        )
+    }
+
+    override suspend fun setHomeAssistantToken(token: String) {
+        delegate.setHomeAssistantToken(
+            encryptSecret(token, KeystoreManager.ALIAS_HOME_ASSISTANT_TOKEN),
         )
     }
 

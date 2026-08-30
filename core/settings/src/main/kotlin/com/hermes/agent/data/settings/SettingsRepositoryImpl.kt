@@ -75,6 +75,8 @@ class SettingsRepositoryImpl(
         val MODULE_CATALOG_URL = stringPreferencesKey("module_catalog_url")
         val PRIVILEGED_SHELL_ENABLED = booleanPreferencesKey("privileged_shell_enabled")
         val LOCAL_LLM_ENABLED = booleanPreferencesKey("local_llm_enabled")
+        val HOME_ASSISTANT_URL = stringPreferencesKey("home_assistant_url")
+        val HOME_ASSISTANT_TOKEN = stringPreferencesKey("home_assistant_token")
     }
 
     /**
@@ -90,6 +92,7 @@ class SettingsRepositoryImpl(
             Keys.SSH_PASSWORD,
             Keys.TELEGRAM_BOT_TOKEN,
             Keys.BACKUP_PASSPHRASE,
+            Keys.HOME_ASSISTANT_TOKEN,
         )
 
     private suspend fun putSecret(key: Preferences.Key<String>, value: String) {
@@ -292,6 +295,14 @@ class SettingsRepositoryImpl(
         context.hermesDataStore.edit { it[Keys.LOCAL_LLM_ENABLED] = enabled }
     }
 
+    override suspend fun setHomeAssistantUrl(url: String) {
+        context.hermesDataStore.edit { it[Keys.HOME_ASSISTANT_URL] = url.trim() }
+    }
+
+    override suspend fun setHomeAssistantToken(token: String) {
+        putSecret(Keys.HOME_ASSISTANT_TOKEN, token.trim())
+    }
+
     private fun Preferences.toUserSettings(): UserSettings {
         return UserSettings(
             cloudEnabled = this[Keys.CLOUD_ENABLED] ?: false,
@@ -326,6 +337,8 @@ class SettingsRepositoryImpl(
             moduleCatalogUrl = this[Keys.MODULE_CATALOG_URL] ?: DEFAULT_MODULE_CATALOG_URL,
             privilegedShellEnabled = this[Keys.PRIVILEGED_SHELL_ENABLED] ?: false,
             localLlmEnabled = this[Keys.LOCAL_LLM_ENABLED] ?: true,
+            homeAssistantUrl = this[Keys.HOME_ASSISTANT_URL] ?: "http://homeassistant.local:8123",
+            homeAssistantToken = this.secret(Keys.HOME_ASSISTANT_TOKEN) ?: "",
         )
     }
 

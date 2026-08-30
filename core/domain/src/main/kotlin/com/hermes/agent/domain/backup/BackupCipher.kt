@@ -105,10 +105,11 @@ data class CredentialsBackup(
     val auxApiKey: String = "",
     val apiServerKey: String = "",
     val sshPassword: String = "",
+    val homeAssistantToken: String = "",
     /** Provider id → API key, so a rename or reorder cannot misassign them. */
     val providerKeys: Map<String, String> = emptyMap(),
 ) {
     val isEmpty: Boolean
-        get() = listOf(cloudApiKey, auxApiKey, apiServerKey, sshPassword)
+        get() = listOf(cloudApiKey, auxApiKey, apiServerKey, sshPassword, homeAssistantToken)
             .all { it.isBlank() } && providerKeys.isEmpty()
 }

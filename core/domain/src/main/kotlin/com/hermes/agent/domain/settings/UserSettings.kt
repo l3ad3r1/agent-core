@@ -90,6 +90,9 @@ data class UserSettings(
     // On-device model fallback. Off skips the local engine entirely — cloud
     // fails loudly instead of silently dropping to local when unreachable.
     val localLlmEnabled: Boolean = true,
+    // Home Assistant connection
+    val homeAssistantUrl: String = "http://homeassistant.local:8123",
+    val homeAssistantToken: String = "",
 )
 
 /** First-party module catalog, published from the hermes-jeeves-modules repo. */
