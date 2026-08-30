@@ -89,6 +89,7 @@ class HybridLlmRouter @Inject constructor(
                     it.model == s.cloudModel
             }
             if (s.cloudEnabled && !primaryRepresentedInRegistry && available(cloud)) {
+                val primaryDef = CloudProviderRegistry.providers.firstOrNull { it.defaultModel == s.cloudModel }
                 add(
                     LlmRouteCandidate(
                         provider = cloud,
@@ -97,6 +98,7 @@ class HybridLlmRouter @Inject constructor(
                         cost = 0.35,
                         latency = 0.80,
                         toolReliability = 0.90,
+                        supportsVision = primaryDef?.supportsVision ?: false,
                     ),
                 )
             }
@@ -108,6 +110,7 @@ class HybridLlmRouter @Inject constructor(
                     it.model == s.auxModel
             }
             if (s.cloudEnabled && !specialistRepresentedInRegistry && available(specialised)) {
+                val auxDef = CloudProviderRegistry.providers.firstOrNull { it.defaultModel == s.auxModel }
                 add(
                     LlmRouteCandidate(
                         provider = specialised,
@@ -116,6 +119,7 @@ class HybridLlmRouter @Inject constructor(
                         cost = 0.85,
                         latency = 0.45,
                         toolReliability = 0.96,
+                        supportsVision = auxDef?.supportsVision ?: true,
                     ),
                 )
             }
@@ -138,6 +142,7 @@ class HybridLlmRouter @Inject constructor(
                                     cost = profile.cost.coerceIn(0.0, 1.0),
                                     latency = profile.latency.coerceIn(0.0, 1.0),
                                     toolReliability = profile.toolReliability.coerceIn(0.0, 1.0),
+                                    supportsVision = profile.supportsVision,
                                 ),
                             )
                         }

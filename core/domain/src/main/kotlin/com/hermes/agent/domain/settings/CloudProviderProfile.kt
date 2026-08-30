@@ -16,4 +16,5 @@ data class CloudProviderProfile(
     val cost: Double,
     val latency: Double,
     val toolReliability: Double,
+    val supportsVision: Boolean = false,
 )

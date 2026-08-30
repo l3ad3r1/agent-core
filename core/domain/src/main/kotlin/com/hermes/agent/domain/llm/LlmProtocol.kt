@@ -27,6 +27,8 @@ data class LlmMessage(
     val content: String,
     val toolCallId: String? = null,
     val toolCalls: List<ToolCall>? = null,
+    val attachmentUri: String? = null,
+    val attachmentMimeType: String? = null,
 )
 
 /**

@@ -32,4 +32,6 @@ data class Message(
     val tokens: Int = 0,
     val isOnDevice: Boolean = true,
     val evidenceState: EvidenceState? = null,
+    val attachmentUri: String? = null,
+    val attachmentMimeType: String? = null,
 )

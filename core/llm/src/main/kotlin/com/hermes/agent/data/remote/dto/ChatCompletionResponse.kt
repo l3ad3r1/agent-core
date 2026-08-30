@@ -27,8 +27,8 @@ data class ChatCompletionResponse(
         @SerialName("total_tokens") val totalTokens: Int = 0,
     )
 
-    /** Convenience accessor — first choice's content, or empty string. */
-    val firstContent: String get() = choices.firstOrNull()?.message?.content.orEmpty()
+    /** Convenience accessor — first choice's text content, or empty string. */
+    val firstContent: String get() = choices.firstOrNull()?.message?.textContent.orEmpty()
 }
 
 /**

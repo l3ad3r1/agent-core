@@ -410,17 +410,43 @@ class CloudLlmProvider @Inject constructor(
 
     // --- helpers ---
 
-    private fun LlmMessage.toDto(): ChatMessage = ChatMessage(
-        role = role,
-        content = content,
-        toolCallId = toolCallId,
-        toolCalls = toolCalls?.map { tc ->
-            ToolCallDto(
-                id = tc.id,
-                function = FunctionCallDto(name = tc.name, arguments = tc.argumentsJson()),
-            )
-        },
-    )
+    private fun LlmMessage.toDto(): ChatMessage {
+        val contentElement: kotlinx.serialization.json.JsonElement? = when {
+            attachmentUri != null && content.isNotBlank() -> kotlinx.serialization.json.buildJsonArray {
+                add(kotlinx.serialization.json.buildJsonObject {
+                    put("type", "text")
+                    put("text", content)
+                })
+                add(kotlinx.serialization.json.buildJsonObject {
+                    put("type", "image_url")
+                    putJsonObject("image_url") {
+                        put("url", attachmentUri)
+                    }
+                })
+            }
+            attachmentUri != null -> kotlinx.serialization.json.buildJsonArray {
+                add(kotlinx.serialization.json.buildJsonObject {
+                    put("type", "image_url")
+                    putJsonObject("image_url") {
+                        put("url", attachmentUri)
+                    }
+                })
+            }
+            content.isNotEmpty() || (toolCalls == null && toolCallId == null) -> kotlinx.serialization.json.JsonPrimitive(content)
+            else -> null
+        }
+        return ChatMessage(
+            role = role,
+            content = contentElement,
+            toolCallId = toolCallId,
+            toolCalls = toolCalls?.map { tc ->
+                ToolCallDto(
+                    id = tc.id,
+                    function = FunctionCallDto(name = tc.name, arguments = tc.argumentsJson()),
+                )
+            },
+        )
+    }
 
     private fun parseCompletionResponse(raw: String): LlmToolResponse {
         val element = json.parseToJsonElement(raw).jsonObject

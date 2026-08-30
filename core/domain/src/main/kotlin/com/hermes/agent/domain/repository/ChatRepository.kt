@@ -33,6 +33,8 @@ interface ChatRepository {
     fun sendMessage(
         conversationId: String,
         content: String,
+        attachmentUri: String? = null,
+        attachmentMimeType: String? = null,
     ): kotlinx.coroutines.flow.Flow<ChatStreamEvent>
 
     /**
@@ -48,6 +50,8 @@ interface ChatRepository {
         conversationId: String,
         content: String,
         origin: ExecutionOrigin,
+        attachmentUri: String? = null,
+        attachmentMimeType: String? = null,
     ): Flow<OrchestratorEvent>
 
     /**

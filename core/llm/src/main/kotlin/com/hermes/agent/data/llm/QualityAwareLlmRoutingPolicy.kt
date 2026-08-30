@@ -20,6 +20,7 @@ data class RoutingContext(
      * is the better outcome there.
      */
     val cloudOnly: Boolean = false,
+    val requiresVision: Boolean = false,
 )
 
 /** The role and normalized operating characteristics of one runnable model. */
@@ -30,6 +31,7 @@ data class LlmRouteCandidate(
     val cost: Double,
     val latency: Double,
     val toolReliability: Double,
+    val supportsVision: Boolean = false,
 )
 
 enum class LlmModelTier {
@@ -81,10 +83,13 @@ class QualityAwareLlmRoutingPolicy @Inject constructor() : LlmRoutingPolicy {
         val prompt = messages.lastOrNull { it.role == "user" }?.content.orEmpty()
         val requiredQuality = requiredQuality(prompt, context)
         val minimumToolReliability = if (context.requiresReliableToolCalls) 0.85 else 0.0
+        val needsVision = context.requiresVision || messages.any { it.attachmentUri != null }
 
         val scored = candidates.map { candidate ->
+            val visionSatisfied = !needsVision || candidate.supportsVision || candidate.tier == LlmModelTier.SPECIALIST_CLOUD
             val satisfies = candidate.quality >= requiredQuality &&
-                candidate.toolReliability >= minimumToolReliability
+                candidate.toolReliability >= minimumToolReliability &&
+                visionSatisfied
             val qualitySurplus = candidate.quality - requiredQuality
             var score = if (satisfies) {
                 // Among models good enough for this request, favor efficiency.
@@ -96,9 +101,14 @@ class QualityAwareLlmRoutingPolicy @Inject constructor() : LlmRoutingPolicy {
                 // candidate rather than failing an otherwise runnable request.
                 candidate.quality * 0.65 +
                     candidate.toolReliability * (if (context.requiresReliableToolCalls) 0.25 else 0.0) +
+                    (if (candidate.supportsVision) 0.30 else 0.0) +
                     (1.0 - candidate.cost) * 0.10
             }
             
+            // Vision boost
+            if (needsVision && candidate.supportsVision) {
+                score += 5.0
+            }
             // OMH Maestro alias boosting
             if (context.requiredAlias == "ultrabrain" && candidate.tier == LlmModelTier.SPECIALIST_CLOUD) {
                 score += 10.0 // heavily boost specialist cloud

@@ -55,4 +55,10 @@ data class MessageEntity(
 
     @ColumnInfo(name = "evidence_state")
     val evidenceState: String? = null,
+
+    @ColumnInfo(name = "attachment_uri")
+    val attachmentUri: String? = null,
+
+    @ColumnInfo(name = "attachment_mime_type")
+    val attachmentMimeType: String? = null,
 )

@@ -4,6 +4,13 @@ import com.hermes.agent.domain.llm.*
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+
 /**
  * OpenAI-compatible chat-completions request.
  *
@@ -29,10 +36,34 @@ data class ChatCompletionRequest(
 data class ChatMessage(
     val role: String,
     // Nullable: an assistant message that only carries tool_calls has no content.
-    val content: String? = null,
+    // Supports string primitive or array of parts for vision/multimodal input.
+    val content: JsonElement? = null,
     @SerialName("tool_call_id") val toolCallId: String? = null,
     @SerialName("tool_calls") val toolCalls: List<ToolCallDto>? = null,
-)
+) {
+    constructor(
+        role: String,
+        content: String?,
+        toolCallId: String? = null,
+        toolCalls: List<ToolCallDto>? = null,
+    ) : this(
+        role = role,
+        content = content?.let { JsonPrimitive(it) },
+        toolCallId = toolCallId,
+        toolCalls = toolCalls,
+    )
+
+    val textContent: String?
+        get() = when (val c = content) {
+            is JsonPrimitive -> c.contentOrNull
+            is JsonArray -> c.mapNotNull { item ->
+                if (item is JsonObject && item["type"]?.jsonPrimitive?.contentOrNull == "text") {
+                    item["text"]?.jsonPrimitive?.contentOrNull
+                } else null
+            }.joinToString("\n")
+            else -> null
+        }
+}
 
 @Serializable
 data class ToolCallDto(
