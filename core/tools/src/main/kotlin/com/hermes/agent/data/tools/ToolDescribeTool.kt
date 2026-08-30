@@ -12,13 +12,16 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 import kotlin.system.measureTimeMillis
 
 @Singleton
 class ToolDescribeTool @Inject constructor(
-    private val toolRegistry: ToolRegistry,
+    private val toolRegistryProvider: Provider<ToolRegistry>,
 ) : Tool {
+
+    constructor(toolRegistry: ToolRegistry) : this(Provider { toolRegistry })
 
     override val descriptor: ToolDescriptor = ToolSearchEngine.describeToolDescriptor
 
@@ -30,7 +33,7 @@ class ToolDescribeTool @Inject constructor(
 
         var output = ""
         val duration = measureTimeMillis {
-            val tool = toolRegistry.byName(toolName)
+            val tool = toolRegistryProvider.get().byName(toolName)
             if (tool == null) {
                 output = "Tool '$toolName' was not found in the tool registry."
             } else {

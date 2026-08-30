@@ -13,13 +13,16 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 import kotlin.system.measureTimeMillis
 
 @Singleton
 class ToolSearchTool @Inject constructor(
-    private val toolRegistry: ToolRegistry,
+    private val toolRegistryProvider: Provider<ToolRegistry>,
 ) : Tool {
+
+    constructor(toolRegistry: ToolRegistry) : this(Provider { toolRegistry })
 
     override val descriptor: ToolDescriptor = ToolSearchEngine.searchToolDescriptor
 
@@ -35,7 +38,7 @@ class ToolSearchTool @Inject constructor(
         val duration = measureTimeMillis {
             val queryTerms = query.lowercase().split(Regex("[^a-z0-9_]+")).filter { it.length > 1 }
 
-            val allTools = toolRegistry.all()
+            val allTools = toolRegistryProvider.get().all()
             val deferrableTools = allTools.filter { !ToolSearchEngine.isCoreTool(it.descriptor) }
 
             val matches = deferrableTools.mapNotNull { tool ->

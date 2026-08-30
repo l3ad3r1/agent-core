@@ -9,12 +9,15 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class ToolCallTool @Inject constructor(
-    private val toolRegistry: ToolRegistry,
+    private val toolRegistryProvider: Provider<ToolRegistry>,
 ) : Tool {
+
+    constructor(toolRegistry: ToolRegistry) : this(Provider { toolRegistry })
 
     override val descriptor: ToolDescriptor = ToolSearchEngine.callToolDescriptor
 
@@ -24,7 +27,7 @@ class ToolCallTool @Inject constructor(
             return ToolResult.error("Parameter 'tool_name' is required to execute a deferred tool")
         }
 
-        val targetTool = toolRegistry.byName(toolName)
+        val targetTool = toolRegistryProvider.get().byName(toolName)
             ?: return ToolResult.error("Deferred tool '$toolName' is not registered or unavailable")
 
         val nestedArgsElem = arguments["arguments"]
