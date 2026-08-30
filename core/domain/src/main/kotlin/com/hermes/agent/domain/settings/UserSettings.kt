@@ -87,6 +87,9 @@ data class UserSettings(
      * Off by default; requires explicit user opt-in.
      */
     val privilegedShellEnabled: Boolean = false,
+    // On-device model fallback. Off skips the local engine entirely — cloud
+    // fails loudly instead of silently dropping to local when unreachable.
+    val localLlmEnabled: Boolean = true,
 )
 
 /** First-party module catalog, published from the hermes-jeeves-modules repo. */

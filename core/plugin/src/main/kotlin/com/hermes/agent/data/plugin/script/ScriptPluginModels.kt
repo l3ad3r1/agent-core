@@ -95,6 +95,16 @@ data class ScriptPluginRegistryEntry(
     val type: String = ScriptPluginManifest.TYPE_TOOL,
     val version: String = "",
     val manifestUrl: String,
+    /**
+     * Lowercase hex SHA-256 of the manifest document this entry points at.
+     *
+     * The registry is fetched over HTTPS, but the manifest it names is a
+     * separate document that can change under a URL the user already approved.
+     * Pinning the digest here means the bytes reviewed at the registry are the
+     * bytes installed. Blank means unpinned — accepted for now so older
+     * registries keep working, and reported to the user as unverified.
+     */
+    val sha256: String = "",
 )
 
 @Serializable

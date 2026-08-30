@@ -38,6 +38,10 @@ dependencies {
     api(libs.retrofit)
     api(libs.retrofit.kotlinx.serialization)
     api(libs.okhttp)
+    // Unused inside this module's own source — kept as `api` (not `implementation`)
+    // deliberately, so both apps' di/NetworkModule.kt get HttpLoggingInterceptor
+    // transitively from depending on :core:llm. Narrowing this to
+    // `implementation` would silently drop it from the app classpath.
     api(libs.okhttp.logging)
     api(libs.kotlinx.coroutines.android)
     api(libs.kotlinx.serialization.json)

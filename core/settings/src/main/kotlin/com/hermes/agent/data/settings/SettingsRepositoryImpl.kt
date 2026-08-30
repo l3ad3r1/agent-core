@@ -19,6 +19,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -27,9 +28,18 @@ import javax.inject.Singleton
 private val Context.hermesDataStore by preferencesDataStore(name = "hermes_settings")
 
 @Singleton
-class SettingsRepositoryImpl @Inject constructor(
-    @ApplicationContext private val context: Context,
+class SettingsRepositoryImpl(
+    private val context: Context,
+    private val secretCipher: SecretCipher,
 ) : SettingsRepository {
+
+    /**
+     * The constructor Hilt uses. Credentials are encrypted with a hardware-bound
+     * keystore key; the two-argument form exists so unit tests can swap in
+     * [PlaintextSecretCipher], since there is no Android Keystore on the JVM.
+     */
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(context, KeystoreSecretCipher())
 
     private object Keys {
         val CLOUD_ENABLED = booleanPreferencesKey("cloud_enabled")
@@ -64,11 +74,66 @@ class SettingsRepositoryImpl @Inject constructor(
         val TELEGRAM_ALLOWED_USER_IDS = stringPreferencesKey("telegram_allowed_user_ids")
         val MODULE_CATALOG_URL = stringPreferencesKey("module_catalog_url")
         val PRIVILEGED_SHELL_ENABLED = booleanPreferencesKey("privileged_shell_enabled")
+        val LOCAL_LLM_ENABLED = booleanPreferencesKey("local_llm_enabled")
     }
 
-    override fun observe(): Flow<UserSettings> = context.hermesDataStore.data.map { prefs ->
-        prefs.toUserSettings()
+    /**
+     * Preference keys whose values are credentials. Everything else stays in
+     * clear text so the store remains inspectable when something goes wrong.
+     */
+    private val secretKeys
+        get() = listOf(
+            Keys.CLOUD_API_KEY,
+            Keys.AUX_API_KEY,
+            Keys.CLOUD_PROVIDER_PROFILES,
+            Keys.API_SERVER_KEY,
+            Keys.SSH_PASSWORD,
+            Keys.TELEGRAM_BOT_TOKEN,
+            Keys.BACKUP_PASSPHRASE,
+        )
+
+    private suspend fun putSecret(key: Preferences.Key<String>, value: String) {
+        context.hermesDataStore.edit { it[key] = secretCipher.encrypt(value) }
     }
+
+    /** Reads a credential, transparently accepting values written before encryption. */
+    private fun Preferences.secret(key: Preferences.Key<String>): String? =
+        this[key]?.let(secretCipher::decrypt)
+
+    private val secretsMigrated = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Re-writes any credential still held in clear text, once per process.
+     *
+     * Reads already tolerate plaintext, so this is not needed for correctness —
+     * it is what stops a key written before this change from sitting unencrypted
+     * forever, without making the user re-enter anything.
+     */
+    private suspend fun migrateSecretsAtRest() {
+        if (!secretsMigrated.compareAndSet(false, true)) return
+        try {
+            val stored = context.hermesDataStore.data.first()
+            val stale = secretKeys.filter { key ->
+                val value = stored[key]
+                !value.isNullOrEmpty() && !secretCipher.isEncrypted(value)
+            }
+            if (stale.isEmpty()) return
+            context.hermesDataStore.edit { prefs ->
+                stale.forEach { key -> prefs[key]?.let { prefs[key] = secretCipher.encrypt(it) } }
+            }
+            Timber.tag("Settings").i("Encrypted %d credential(s) previously stored in clear text", stale.size)
+        } catch (t: Throwable) {
+            // Never let this break settings; reads work either way.
+            Timber.tag("Settings").e(t, "Could not migrate credentials at rest")
+        }
+    }
+
+    override fun observe(): Flow<UserSettings> = context.hermesDataStore.data
+        .map { prefs -> prefs.toUserSettings() }
+        // Every surface in both apps observes settings at startup, which makes
+        // this the one place guaranteed to run once per process without either
+        // app having to remember to call a migration hook.
+        .onStart { migrateSecretsAtRest() }
 
     override suspend fun current(): UserSettings = observe().first()
 
@@ -77,7 +142,7 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setCloudApiKey(key: String) {
-        context.hermesDataStore.edit { it[Keys.CLOUD_API_KEY] = key }
+        putSecret(Keys.CLOUD_API_KEY, key)
     }
 
     override suspend fun setCloudBaseUrl(url: String) {
@@ -106,12 +171,12 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setAuxApiKey(key: String) {
-        context.hermesDataStore.edit { it[Keys.AUX_API_KEY] = key }
+        putSecret(Keys.AUX_API_KEY, key)
     }
 
     override suspend fun setCloudProviderProfiles(profiles: List<CloudProviderProfile>) {
         val encoded = profilesJson.encodeToString(ListSerializer(CloudProviderProfile.serializer()), profiles)
-        context.hermesDataStore.edit { it[Keys.CLOUD_PROVIDER_PROFILES] = encoded }
+        putSecret(Keys.CLOUD_PROVIDER_PROFILES, encoded)
     }
 
     override suspend fun setLocalModelUri(uri: String) {
@@ -152,7 +217,7 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setBackupPassphrase(passphrase: String) {
-        context.hermesDataStore.edit { it[Keys.BACKUP_PASSPHRASE] = passphrase }
+        putSecret(Keys.BACKUP_PASSPHRASE, passphrase)
     }
 
     override suspend fun setTermuxHermesInstalled(installed: Boolean) {
@@ -180,7 +245,7 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setApiServerKey(key: String) {
-        context.hermesDataStore.edit { it[Keys.API_SERVER_KEY] = key }
+        putSecret(Keys.API_SERVER_KEY, key)
     }
 
     override suspend fun setApiServerAllowLan(allow: Boolean) {
@@ -200,7 +265,7 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setSshPassword(password: String) {
-        context.hermesDataStore.edit { it[Keys.SSH_PASSWORD] = password }
+        putSecret(Keys.SSH_PASSWORD, password)
     }
 
     override suspend fun setTelegramBotEnabled(enabled: Boolean) {
@@ -208,7 +273,7 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setTelegramBotToken(token: String) {
-        context.hermesDataStore.edit { it[Keys.TELEGRAM_BOT_TOKEN] = token.trim() }
+        putSecret(Keys.TELEGRAM_BOT_TOKEN, token.trim())
     }
 
     override suspend fun setModuleCatalogUrl(url: String) {
@@ -223,39 +288,44 @@ class SettingsRepositoryImpl @Inject constructor(
         context.hermesDataStore.edit { it[Keys.PRIVILEGED_SHELL_ENABLED] = enabled }
     }
 
+    override suspend fun setLocalLlmEnabled(enabled: Boolean) {
+        context.hermesDataStore.edit { it[Keys.LOCAL_LLM_ENABLED] = enabled }
+    }
+
     private fun Preferences.toUserSettings(): UserSettings {
         return UserSettings(
             cloudEnabled = this[Keys.CLOUD_ENABLED] ?: false,
-            cloudApiKey = this[Keys.CLOUD_API_KEY] ?: BuildConfig.CLOUD_API_KEY,
+            cloudApiKey = this.secret(Keys.CLOUD_API_KEY) ?: BuildConfig.CLOUD_API_KEY,
             cloudBaseUrl = this[Keys.CLOUD_BASE_URL] ?: BuildConfig.CLOUD_BASE_URL,
             cloudModel = this[Keys.CLOUD_MODEL] ?: BuildConfig.CLOUD_MODEL,
             appTheme = this[Keys.APP_THEME] ?: "MIDNIGHT",
             reasoningEffort = this[Keys.REASONING_EFFORT] ?: "medium",
             auxModel = this[Keys.AUX_MODEL] ?: "gpt-4o-mini",
             auxBaseUrl = this[Keys.AUX_BASE_URL] ?: "",
-            auxApiKey = this[Keys.AUX_API_KEY] ?: "",
-            cloudProviderProfiles = decodeProviderProfiles(this[Keys.CLOUD_PROVIDER_PROFILES]),
+            auxApiKey = this.secret(Keys.AUX_API_KEY) ?: "",
+            cloudProviderProfiles = decodeProviderProfiles(this.secret(Keys.CLOUD_PROVIDER_PROFILES)),
             localModelUri = this[Keys.LOCAL_MODEL_URI] ?: "",
             selectedModelId = this[Keys.SELECTED_MODEL_ID] ?: "",
             modelDownloadDir = this[Keys.MODEL_DOWNLOAD_DIR] ?: "",
-            backupPassphrase = this[Keys.BACKUP_PASSPHRASE] ?: "",
+            backupPassphrase = this.secret(Keys.BACKUP_PASSPHRASE) ?: "",
             termuxHermesInstalled = this[Keys.TERMUX_HERMES_INSTALLED] ?: false,
             showToolCalls = this[Keys.SHOW_TOOL_CALLS] ?: true,
             autoApprovePhoneActions = this[Keys.AUTO_APPROVE_PHONE_ACTIONS] ?: false,
             trustedBackgroundPhoneActions = this[Keys.TRUSTED_BACKGROUND_PHONE_ACTIONS] ?: false,
             apiServerEnabled = this[Keys.API_SERVER_ENABLED] ?: false,
             apiServerPort = this[Keys.API_SERVER_PORT] ?: 8642,
-            apiServerKey = this[Keys.API_SERVER_KEY] ?: "",
+            apiServerKey = this.secret(Keys.API_SERVER_KEY) ?: "",
             apiServerAllowLan = this[Keys.API_SERVER_ALLOW_LAN] ?: false,
             sshHost = this[Keys.SSH_HOST] ?: "",
             sshPort = this[Keys.SSH_PORT] ?: 22,
             sshUser = this[Keys.SSH_USER] ?: "",
-            sshPassword = this[Keys.SSH_PASSWORD] ?: "",
+            sshPassword = this.secret(Keys.SSH_PASSWORD) ?: "",
             telegramBotEnabled = this[Keys.TELEGRAM_BOT_ENABLED] ?: false,
-            telegramBotToken = this[Keys.TELEGRAM_BOT_TOKEN] ?: "",
+            telegramBotToken = this.secret(Keys.TELEGRAM_BOT_TOKEN) ?: "",
             telegramAllowedUserIds = this[Keys.TELEGRAM_ALLOWED_USER_IDS] ?: "",
             moduleCatalogUrl = this[Keys.MODULE_CATALOG_URL] ?: DEFAULT_MODULE_CATALOG_URL,
             privilegedShellEnabled = this[Keys.PRIVILEGED_SHELL_ENABLED] ?: false,
+            localLlmEnabled = this[Keys.LOCAL_LLM_ENABLED] ?: true,
         )
     }
 

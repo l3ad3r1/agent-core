@@ -70,16 +70,18 @@ class HybridLlmRouter @Inject constructor(
         messages: List<LlmMessage>,
         context: RoutingContext,
     ): RoutingDecision {
+        val s = settings.current()
         // cloudOnly callers must never silently land on the on-device model.
-        val localAvailable = available(local) && !context.cloudOnly
-        
+        // The user-facing "Local model" toggle is a hard off switch: even a
+        // downloaded model is never routed to while it's disabled.
+        val localAvailable = s.localLlmEnabled && available(local) && !context.cloudOnly
+
         // OMH Maestro alias enforcement
         if (context.requiredAlias == "quick" && localAvailable) {
             Timber.tag("LlmRouter").d("Route=ON_DEVICE, reason=OMH alias 'quick' requested")
             return RoutingDecision.Ready(local, "OMH alias 'quick' requested")
         }
-        
-        val s = settings.current()
+
         val cloudCandidates = buildList {
             val primaryRepresentedInRegistry = s.cloudProviderProfiles.any {
                 it.enabled && it.apiKey.isNotBlank() &&
@@ -151,8 +153,12 @@ class HybridLlmRouter @Inject constructor(
             val reason = when {
                 context.cloudOnly ->
                     "No cloud model is reachable. This needs a working Cloud LLM — check Settings → Cloud."
+                !s.localLlmEnabled && !s.cloudEnabled ->
+                    "Cloud is disabled and the local model is turned off. Configure a Cloud LLM or re-enable the local model in Settings."
                 !s.cloudEnabled ->
                     "Cloud is disabled and local model is not downloaded. Configure a Cloud LLM or download the local model in Settings."
+                !s.localLlmEnabled ->
+                    "Cloud is enabled but no API key is set, and the local model is turned off. Add a key or re-enable the local model in Settings."
                 else ->
                     "Cloud is enabled but no API key is set, and local model is not downloaded. Add one in Settings."
             }

@@ -31,6 +31,8 @@ kotlin {
 dependencies {
     api(project(":core:util"))
     api(project(":core:domain"))
+    // ScriptPluginRepository persists installed modules through the shared DAO.
+    api(project(":core:persistence"))
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     api("javax.inject:javax.inject:1")
@@ -40,7 +42,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.okhttp)
     // Sandboxed JS runtime for script modules. Pure Java, no native code.
-    api("org.mozilla:rhino:1.7.14")
+    api(libs.rhino)
+    // ModulesSettingsViewModel — the Modules settings screen's state holder.
+    api(libs.androidx.lifecycle.viewmodel.ktx)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

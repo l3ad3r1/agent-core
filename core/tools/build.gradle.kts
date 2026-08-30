@@ -36,6 +36,10 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     api(libs.okhttp)
+    // Unused inside this module's own source — kept as `api` (not `implementation`)
+    // deliberately, so both apps' data/server/HermesApiServer.kt-equivalent get
+    // NanoHTTPD transitively from depending on :core:tools. Narrowing this to
+    // `implementation` would silently drop it from the app classpath.
     api(libs.nanohttpd)
     api(libs.jsch)
     api(libs.kotlinx.coroutines.android)

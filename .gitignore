@@ -9,3 +9,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Kotlin compiler daemon error logs — build noise, not source.
+.kotlin/

@@ -66,4 +66,7 @@ interface SettingsRepository {
 
     // Privileged shell (Shizuku)
     suspend fun setPrivilegedShellEnabled(enabled: Boolean)
+
+    // On-device model fallback
+    suspend fun setLocalLlmEnabled(enabled: Boolean)
 }

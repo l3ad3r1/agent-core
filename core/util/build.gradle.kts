@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -27,6 +28,13 @@ kotlin {
 dependencies {
     api("javax.inject:javax.inject:1")
     api(libs.kotlinx.coroutines.android)
+
+    // FileLogTree / LogManager: on-device log capture, shared by both apps.
+    api(libs.timber)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    api("javax.inject:javax.inject:1")
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }

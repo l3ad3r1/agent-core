@@ -5,6 +5,8 @@ import com.hermes.agent.domain.oauth.OAuthSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
@@ -81,14 +83,12 @@ class OAuthManager @Inject constructor(
         val challenge = generateCodeChallenge(verifier)
         val state = generateState()
 
-        val session = OAuthSession(
-            providerId = providerId,
-            state = state,
-            codeVerifier = verifier,
-            redirectUri = redirectUri,
-        )
-
         val encodedRedirect = URLEncoder.encode(redirectUri, "UTF-8")
+
+        // OpenRouter's /auth endpoint takes no state parameter; Nous does.
+        // stateSent records which, so the callback can require a matching
+        // state back from exactly the providers that were given one.
+        val stateSent = providerId == PROVIDER_NOUS
 
         val authUrl = when (providerId) {
             PROVIDER_OPENROUTER -> {
@@ -99,6 +99,14 @@ class OAuthManager @Inject constructor(
             }
             else -> throw IllegalArgumentException("Unsupported OAuth provider: $providerId")
         }
+
+        val session = OAuthSession(
+            providerId = providerId,
+            state = state,
+            codeVerifier = verifier,
+            redirectUri = redirectUri,
+            stateSent = stateSent,
+        )
 
         return authUrl to session
     }
@@ -119,15 +127,20 @@ class OAuthManager @Inject constructor(
         }
     }
 
+    /** Serializes a flat string map to a JSON object, escaping every value. */
+    private fun jsonBody(vararg fields: Pair<String, String>): String =
+        buildJsonObject { fields.forEach { (k, v) -> put(k, JsonPrimitive(v)) } }.toString()
+
     private fun exchangeOpenRouter(session: OAuthSession, code: String): OAuthExchangeResult {
         val url = "https://openrouter.ai/api/v1/auth/keys"
-        val payload = """
-            {
-                "code": "$code",
-                "code_verifier": "${session.codeVerifier}",
-                "code_challenge_method": "S256"
-            }
-        """.trimIndent()
+        // Built through the serializer, not string interpolation: `code` comes
+        // off a redirect URI that any app on the device can craft, and a quote
+        // in it would otherwise reshape this request body.
+        val payload = jsonBody(
+            "code" to code,
+            "code_verifier" to session.codeVerifier,
+            "code_challenge_method" to "S256",
+        )
 
         val request = Request.Builder()
             .url(url)
@@ -154,15 +167,13 @@ class OAuthManager @Inject constructor(
 
     private fun exchangeNous(session: OAuthSession, code: String): OAuthExchangeResult {
         val url = "https://portal.nousresearch.com/oauth/token"
-        val payload = """
-            {
-                "client_id": "hermes-agent",
-                "grant_type": "authorization_code",
-                "code": "$code",
-                "code_verifier": "${session.codeVerifier}",
-                "redirect_uri": "${session.redirectUri}"
-            }
-        """.trimIndent()
+        val payload = jsonBody(
+            "client_id" to "hermes-agent",
+            "grant_type" to "authorization_code",
+            "code" to code,
+            "code_verifier" to session.codeVerifier,
+            "redirect_uri" to session.redirectUri,
+        )
 
         val request = Request.Builder()
             .url(url)
