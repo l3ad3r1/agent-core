@@ -64,6 +64,7 @@ class HomeAssistantToolTest {
         override suspend fun setLocalLlmEnabled(enabled: Boolean) {}
         override suspend fun setHomeAssistantUrl(url: String) { settings = settings.copy(homeAssistantUrl = url) }
         override suspend fun setHomeAssistantToken(token: String) { settings = settings.copy(homeAssistantToken = token) }
+        override suspend fun setFilesRootUri(uri: String) { settings = settings.copy(filesRootUri = uri) }
     }
 
     @Before

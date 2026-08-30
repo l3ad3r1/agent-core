@@ -93,6 +93,8 @@ data class UserSettings(
     // Home Assistant connection
     val homeAssistantUrl: String = "http://homeassistant.local:8123",
     val homeAssistantToken: String = "",
+    // Files access root (SAF tree URI or path). When blank, defaults to app workspace directory.
+    val filesRootUri: String = "",
 )
 
 /** First-party module catalog, published from the hermes-jeeves-modules repo. */

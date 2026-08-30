@@ -73,4 +73,7 @@ interface SettingsRepository {
     // Home Assistant
     suspend fun setHomeAssistantUrl(url: String)
     suspend fun setHomeAssistantToken(token: String)
+
+    // Files access root
+    suspend fun setFilesRootUri(uri: String)
 }

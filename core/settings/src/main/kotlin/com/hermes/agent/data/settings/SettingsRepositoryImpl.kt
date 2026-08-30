@@ -77,6 +77,7 @@ class SettingsRepositoryImpl(
         val LOCAL_LLM_ENABLED = booleanPreferencesKey("local_llm_enabled")
         val HOME_ASSISTANT_URL = stringPreferencesKey("home_assistant_url")
         val HOME_ASSISTANT_TOKEN = stringPreferencesKey("home_assistant_token")
+        val FILES_ROOT_URI = stringPreferencesKey("files_root_uri")
     }
 
     /**
@@ -303,6 +304,10 @@ class SettingsRepositoryImpl(
         putSecret(Keys.HOME_ASSISTANT_TOKEN, token.trim())
     }
 
+    override suspend fun setFilesRootUri(uri: String) {
+        context.hermesDataStore.edit { it[Keys.FILES_ROOT_URI] = uri.trim() }
+    }
+
     private fun Preferences.toUserSettings(): UserSettings {
         return UserSettings(
             cloudEnabled = this[Keys.CLOUD_ENABLED] ?: false,
@@ -339,6 +344,7 @@ class SettingsRepositoryImpl(
             localLlmEnabled = this[Keys.LOCAL_LLM_ENABLED] ?: true,
             homeAssistantUrl = this[Keys.HOME_ASSISTANT_URL] ?: "http://homeassistant.local:8123",
             homeAssistantToken = this.secret(Keys.HOME_ASSISTANT_TOKEN) ?: "",
+            filesRootUri = this[Keys.FILES_ROOT_URI] ?: "",
         )
     }
 
