@@ -45,7 +45,7 @@ class MoodTool @Inject constructor(
             ToolParameter("limit", ToolParameterType.INTEGER, "Max entries for list. Default: 20."),
         ),
         category = "productivity",
-        capabilities = setOf("mood"),
+        capabilities = setOf("mood", "deferrable"),
         maxResultSizeChars = 4096,
     )
 

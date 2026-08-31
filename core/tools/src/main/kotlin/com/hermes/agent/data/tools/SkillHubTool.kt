@@ -61,6 +61,9 @@ class SkillHubTool @Inject constructor(
                 required = false,
             ),
         ),
+        // Grants already match this tool by name; naming the capability keeps that
+        // working while "deferrable" moves it behind the tool_search bridge.
+        capabilities = setOf("skills_hub", "deferrable"),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

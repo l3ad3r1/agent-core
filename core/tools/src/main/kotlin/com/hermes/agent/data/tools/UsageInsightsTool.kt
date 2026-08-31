@@ -37,6 +37,9 @@ class UsageInsightsTool @Inject constructor(
                 enumValues = listOf("today", "7d", "30d", "all"),
             ),
         ),
+        // Grants already match this tool by name; naming the capability keeps that
+        // working while "deferrable" moves it behind the tool_search bridge.
+        capabilities = setOf("usage_insights", "deferrable"),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

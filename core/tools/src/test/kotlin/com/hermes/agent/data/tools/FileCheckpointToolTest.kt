@@ -133,6 +133,9 @@ class FileCheckpointToolTest {
     fun `the tool is confirmation gated`() {
         // Restoring overwrites a file the user may not expect to change.
         assertTrue(tool.descriptor.requiresConfirmation)
-        assertEquals(setOf("files"), tool.descriptor.capabilities)
+        // "files" still carries the grant; "deferrable" moves it behind the
+        // tool_search bridge so its schema is not sent on every turn.
+        assertTrue(tool.descriptor.capabilities.contains("files"))
+        assertTrue(tool.descriptor.capabilities.contains("deferrable"))
     }
 }

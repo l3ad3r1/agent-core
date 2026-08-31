@@ -20,9 +20,13 @@ import kotlin.system.measureTimeMillis
 @Singleton
 class ToolSearchTool @Inject constructor(
     private val toolRegistryProvider: Provider<ToolRegistry>,
+    private val deferredScope: DeferredToolScope,
 ) : Tool {
 
-    constructor(toolRegistry: ToolRegistry) : this(Provider { toolRegistry })
+    constructor(
+        toolRegistry: ToolRegistry,
+        deferredScope: DeferredToolScope = DeferredToolScope(),
+    ) : this(Provider { toolRegistry }, deferredScope)
 
     override val descriptor: ToolDescriptor = ToolSearchEngine.searchToolDescriptor
 
@@ -38,8 +42,14 @@ class ToolSearchTool @Inject constructor(
         val duration = measureTimeMillis {
             val queryTerms = query.lowercase().split(Regex("[^a-z0-9_]+")).filter { it.length > 1 }
 
+            // Only what the running agent was actually granted. Searching the
+            // whole registry here would advertise tools this role cannot use —
+            // and, before ToolCallTool started checking the same scope, would
+            // have let it run them. See DeferredToolScope.
             val allTools = toolRegistryProvider.get().all()
-            val deferrableTools = allTools.filter { !ToolSearchEngine.isCoreTool(it.descriptor) }
+            val deferrableTools = allTools.filter {
+                !ToolSearchEngine.isCoreTool(it.descriptor) && deferredScope.isAllowed(it.descriptor.name)
+            }
 
             val matches = deferrableTools.mapNotNull { tool ->
                 val desc = tool.descriptor

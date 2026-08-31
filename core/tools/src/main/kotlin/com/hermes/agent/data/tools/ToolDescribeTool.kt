@@ -19,9 +19,13 @@ import kotlin.system.measureTimeMillis
 @Singleton
 class ToolDescribeTool @Inject constructor(
     private val toolRegistryProvider: Provider<ToolRegistry>,
+    private val deferredScope: DeferredToolScope,
 ) : Tool {
 
-    constructor(toolRegistry: ToolRegistry) : this(Provider { toolRegistry })
+    constructor(
+        toolRegistry: ToolRegistry,
+        deferredScope: DeferredToolScope = DeferredToolScope(),
+    ) : this(Provider { toolRegistry }, deferredScope)
 
     override val descriptor: ToolDescriptor = ToolSearchEngine.describeToolDescriptor
 
@@ -33,7 +37,11 @@ class ToolDescribeTool @Inject constructor(
 
         var output = ""
         val duration = measureTimeMillis {
+            // Same scope check as tool_search / tool_call: describing a tool this
+            // role was never granted leaks its schema and invites a call that
+            // would then be refused. See DeferredToolScope.
             val tool = toolRegistryProvider.get().byName(toolName)
+                ?.takeIf { deferredScope.isAllowed(it.descriptor.name) }
             if (tool == null) {
                 output = "Tool '$toolName' was not found in the tool registry."
             } else {

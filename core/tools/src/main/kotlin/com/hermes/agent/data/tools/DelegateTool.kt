@@ -103,7 +103,7 @@ class DelegateTool @Inject constructor(
             ),
         ),
         category = "productivity",
-        capabilities = setOf("delegate"),
+        capabilities = setOf("delegate", "deferrable"),
         maxResultSizeChars = 12_000,
     )
 

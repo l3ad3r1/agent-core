@@ -78,7 +78,7 @@ class FileCheckpointTool(
         ),
         category = "files",
         requiresConfirmation = true,
-        capabilities = setOf("files"),
+        capabilities = setOf("files", "deferrable"),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

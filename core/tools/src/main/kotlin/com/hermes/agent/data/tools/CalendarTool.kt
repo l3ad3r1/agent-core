@@ -53,7 +53,7 @@ class CalendarTool @Inject constructor(
             ToolParameter("end_date_ms", ToolParameterType.INTEGER, "End of date range for 'range' action."),
         ),
         category = "productivity",
-        capabilities = setOf("calendar"),
+        capabilities = setOf("calendar", "deferrable"),
         requiresConfirmation = true,
         maxResultSizeChars = 8192,
     )

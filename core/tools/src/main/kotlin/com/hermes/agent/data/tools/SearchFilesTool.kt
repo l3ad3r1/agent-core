@@ -71,7 +71,7 @@ class SearchFilesTool(
             ),
         ),
         category = "files",
-        capabilities = setOf("files"),
+        capabilities = setOf("files", "deferrable"),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

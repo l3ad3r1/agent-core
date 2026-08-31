@@ -15,9 +15,13 @@ import javax.inject.Singleton
 @Singleton
 class ToolCallTool @Inject constructor(
     private val toolRegistryProvider: Provider<ToolRegistry>,
+    private val deferredScope: DeferredToolScope,
 ) : Tool {
 
-    constructor(toolRegistry: ToolRegistry) : this(Provider { toolRegistry })
+    constructor(
+        toolRegistry: ToolRegistry,
+        deferredScope: DeferredToolScope = DeferredToolScope(),
+    ) : this(Provider { toolRegistry }, deferredScope)
 
     override val descriptor: ToolDescriptor = ToolSearchEngine.callToolDescriptor
 
@@ -25,6 +29,16 @@ class ToolCallTool @Inject constructor(
         val toolName = arguments["tool_name"]?.jsonPrimitive?.content?.trim().orEmpty()
         if (toolName.isBlank()) {
             return ToolResult.error("Parameter 'tool_name' is required to execute a deferred tool")
+        }
+
+        // Role grants are applied when the advertised tool list is built, and this
+        // path never went back through it: without this check any role could run
+        // any deferred tool by naming it. The scope holds only what the running
+        // agent was actually granted. See DeferredToolScope.
+        if (!deferredScope.isAllowed(toolName)) {
+            return ToolResult.error(
+                "Tool '$toolName' is not available to this agent. Use tool_search to see what is."
+            )
         }
 
         val targetTool = toolRegistryProvider.get().byName(toolName)

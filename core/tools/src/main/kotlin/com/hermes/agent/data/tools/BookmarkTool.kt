@@ -42,7 +42,7 @@ class BookmarkTool @Inject constructor(
             ToolParameter("limit", ToolParameterType.INTEGER, "Max results. Default: 20."),
         ),
         category = "productivity",
-        capabilities = setOf("bookmarks"),
+        capabilities = setOf("bookmarks", "deferrable"),
         maxResultSizeChars = 8192,
     )
 

@@ -111,9 +111,21 @@ class ToolSearchEngineTest {
         }
         registry.register(dummyMcpTool)
 
-        val searchTool = ToolSearchTool(registry)
-        val describeTool = ToolDescribeTool(registry)
-        val callTool = ToolCallTool(registry)
+        // The bridge only reaches what the orchestrator published for this step —
+        // that set is already grant-filtered, so publishing it here is what a real
+        // turn does. See DeferredToolScope.
+        val scope = DeferredToolScope()
+        scope.publish(setOf("mcp__github__create_issue"))
+
+        val searchTool = ToolSearchTool(registry, scope)
+        val describeTool = ToolDescribeTool(registry, scope)
+        val callTool = ToolCallTool(registry, scope)
+
+        // 0. Nothing is reachable before a scope is published.
+        val unscoped = ToolCallTool(registry, DeferredToolScope()).execute(
+            mapOf("tool_name" to JsonPrimitive("mcp__github__create_issue"))
+        )
+        assertTrue("bridge must fail closed with no scope", !unscoped.success)
 
         // 1. Test tool_search
         val searchRes = searchTool.execute(mapOf("query" to JsonPrimitive("github")))
