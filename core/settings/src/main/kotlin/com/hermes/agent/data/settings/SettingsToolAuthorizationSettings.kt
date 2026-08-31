@@ -14,6 +14,9 @@ class SettingsToolAuthorizationSettings @Inject constructor(
     override suspend fun autoApprovePhoneActions(): Boolean =
         settingsRepository.current().autoApprovePhoneActions
 
+    override suspend fun autoApproveHomeAssistantControl(): Boolean =
+        settingsRepository.current().autoApproveHomeAssistantControl
+
     override suspend fun trustedBackgroundPhoneActions(): Boolean =
         settingsRepository.current().trustedBackgroundPhoneActions
 }

@@ -52,6 +52,20 @@ class ToolConfirmationService @Inject constructor(
                 .i("Auto-approved read-only tool=%s action=%s", call.name, action)
             return@withLock true
         }
+        // Opt-in, off by default: call_service actuates real hardware, so the owner
+        // has to ask for this. HIGH_RISK_HA_DOMAINS still face a human even when it
+        // is on - a wrong light is an annoyance, a wrong lock is not.
+        if (isHomeAssistantControl(call) && authorizationSettings.autoApproveHomeAssistantControl()) {
+            val domain = homeAssistantDomainOf(call)
+            if (domain != null && domain in HIGH_RISK_HA_DOMAINS) {
+                Timber.tag("ToolConfirmation")
+                    .i("Confirming high-risk HA domain=%s despite auto-approve", domain)
+            } else {
+                Timber.tag("ToolConfirmation")
+                    .i("Auto-approved HA control domain=%s", domain ?: "unknown")
+                return@withLock true
+            }
+        }
         if (
             call.name in AUTO_APPROVABLE_PHONE_TOOLS &&
             authorizationSettings.autoApprovePhoneActions()
@@ -133,6 +147,37 @@ class ToolConfirmationService @Inject constructor(
         )
 
         val BIOMETRIC_REQUIRED_TOOLS = setOf("shell", "termux")
+
+        /**
+         * Home Assistant domains that keep asking even with auto-approval on.
+         *
+         * Everything call_service touches is physical, but these are the ones where
+         * getting it wrong is not recoverable by repeating the command: an unlocked
+         * door or a disarmed alarm is a security event, not a wrong light.
+         */
+        val HIGH_RISK_HA_DOMAINS = setOf("lock", "alarm_control_panel", "cover", "vacuum")
+
+        /** True for a home_assistant call whose action changes state. */
+        fun isHomeAssistantControl(call: ToolCall): Boolean {
+            if (call.name != "home_assistant") return false
+            val action = (call.arguments["action"] as? JsonPrimitive)
+                ?.contentOrNull?.trim()?.lowercase()
+            return action == "call_service"
+        }
+
+        /**
+         * The Home Assistant domain a call targets, from the explicit `domain`
+         * argument or the prefix of `entity_id`. Null when neither says.
+         */
+        fun homeAssistantDomainOf(call: ToolCall): String? {
+            (call.arguments["domain"] as? JsonPrimitive)?.contentOrNull
+                ?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+                ?.let { return it }
+            return (call.arguments["entity_id"] as? JsonPrimitive)?.contentOrNull
+                ?.substringBefore('.', "")
+                ?.trim()?.lowercase()
+                ?.takeIf { it.isNotEmpty() }
+        }
 
         /**
          * The read-only `action` this call names, or null if it is not one - in which

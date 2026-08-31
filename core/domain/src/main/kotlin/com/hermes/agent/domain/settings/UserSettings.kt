@@ -38,6 +38,8 @@ data class UserSettings(
     // Termux, or raw settings commands, and background runs remain denied by
     // ToolExecutionPolicy.
     val autoApprovePhoneActions: Boolean = false,
+    /** Run Home Assistant call_service without asking. Off by default: it actuates real hardware. */
+    val autoApproveHomeAssistantControl: Boolean = false,
     // Allows a restricted set of phone tools from background agent runs. The
     // user must authenticate with the device credential before enabling it.
     val trustedBackgroundPhoneActions: Boolean = false,

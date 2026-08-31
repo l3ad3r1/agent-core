@@ -19,9 +19,13 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class ToolConfirmationServiceTest {
 
-    private fun service(autoApprovePhoneActions: Boolean = false): ToolConfirmationService {
+    private fun service(
+        autoApprovePhoneActions: Boolean = false,
+        autoApproveHomeAssistantControl: Boolean = false,
+    ): ToolConfirmationService {
         val settings = mockk<ToolAuthorizationSettings>(relaxed = true)
         coEvery { settings.autoApprovePhoneActions() } returns autoApprovePhoneActions
+        coEvery { settings.autoApproveHomeAssistantControl() } returns autoApproveHomeAssistantControl
         return ToolConfirmationService(settings, mockk(relaxed = true))
     }
 
@@ -143,6 +147,60 @@ class ToolConfirmationServiceTest {
         val call = ToolCall(
             "c", "home_assistant",
             mapOf("action" to JsonPrimitive("delete_everything")),
+        )
+
+        val pending = async { service.awaitConfirmation(call) }
+        runCurrent()
+
+        assertEquals(call, service.pendingRequest.value?.call)
+        service.submitConfirmation(service.pendingRequest.value!!.id, false)
+        assertFalse(pending.await())
+    }
+
+    @Test
+    fun `opting in lets ordinary HA control run without asking`() = runTest {
+        val service = service(autoApproveHomeAssistantControl = true)
+        val call = ToolCall(
+            "c", "home_assistant",
+            mapOf(
+                "action" to JsonPrimitive("call_service"),
+                "domain" to JsonPrimitive("switch"),
+                "entity_id" to JsonPrimitive("switch.cooler"),
+            ),
+        )
+
+        assertTrue(service.awaitConfirmation(call))
+        assertNull(service.pendingRequest.value)
+    }
+
+    @Test
+    fun `high-risk domains still ask even when auto-approve is on`() = runTest {
+        // A wrong light is an annoyance; a wrong lock is a security event.
+        for (entity in listOf("lock.front_door", "alarm_control_panel.home", "cover.garage")) {
+            val service = service(autoApproveHomeAssistantControl = true)
+            val call = ToolCall(
+                "c", "home_assistant",
+                mapOf(
+                    "action" to JsonPrimitive("call_service"),
+                    "entity_id" to JsonPrimitive(entity),
+                ),
+            )
+
+            val pending = async { service.awaitConfirmation(call) }
+            runCurrent()
+
+            assertEquals("'${'$'}entity' must still ask", call, service.pendingRequest.value?.call)
+            service.submitConfirmation(service.pendingRequest.value!!.id, false)
+            assertFalse(pending.await())
+        }
+    }
+
+    @Test
+    fun `HA control still asks while the opt-in is off`() = runTest {
+        val service = service(autoApproveHomeAssistantControl = false)
+        val call = ToolCall(
+            "c", "home_assistant",
+            mapOf("action" to JsonPrimitive("call_service"), "domain" to JsonPrimitive("switch")),
         )
 
         val pending = async { service.awaitConfirmation(call) }

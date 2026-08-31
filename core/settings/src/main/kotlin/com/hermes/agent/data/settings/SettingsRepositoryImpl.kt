@@ -76,6 +76,7 @@ class SettingsRepositoryImpl(
         val TERMUX_HERMES_INSTALLED = booleanPreferencesKey("termux_hermes_installed")
         val SHOW_TOOL_CALLS = booleanPreferencesKey("show_tool_calls")
         val AUTO_APPROVE_PHONE_ACTIONS = booleanPreferencesKey("auto_approve_phone_actions")
+        val AUTO_APPROVE_HA_CONTROL = booleanPreferencesKey("auto_approve_ha_control")
         val TRUSTED_BACKGROUND_PHONE_ACTIONS = booleanPreferencesKey("trusted_background_phone_actions")
         val API_SERVER_ENABLED = booleanPreferencesKey("api_server_enabled")
         val API_SERVER_PORT = intPreferencesKey("api_server_port")
@@ -248,6 +249,10 @@ class SettingsRepositoryImpl(
         context.hermesDataStore.edit { it[Keys.SHOW_TOOL_CALLS] = enabled }
     }
 
+    override suspend fun setAutoApproveHomeAssistantControl(enabled: Boolean) {
+        context.hermesDataStore.edit { it[Keys.AUTO_APPROVE_HA_CONTROL] = enabled }
+    }
+
     override suspend fun setAutoApprovePhoneActions(enabled: Boolean) {
         context.hermesDataStore.edit { it[Keys.AUTO_APPROVE_PHONE_ACTIONS] = enabled }
     }
@@ -343,6 +348,7 @@ class SettingsRepositoryImpl(
             termuxHermesInstalled = this[Keys.TERMUX_HERMES_INSTALLED] ?: false,
             showToolCalls = this[Keys.SHOW_TOOL_CALLS] ?: true,
             autoApprovePhoneActions = this[Keys.AUTO_APPROVE_PHONE_ACTIONS] ?: false,
+            autoApproveHomeAssistantControl = this[Keys.AUTO_APPROVE_HA_CONTROL] ?: false,
             trustedBackgroundPhoneActions = this[Keys.TRUSTED_BACKGROUND_PHONE_ACTIONS] ?: false,
             apiServerEnabled = this[Keys.API_SERVER_ENABLED] ?: false,
             apiServerPort = this[Keys.API_SERVER_PORT] ?: 8642,

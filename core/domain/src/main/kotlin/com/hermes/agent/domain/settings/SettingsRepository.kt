@@ -42,6 +42,7 @@ interface SettingsRepository {
 
     suspend fun setShowToolCalls(enabled: Boolean)
     suspend fun setAutoApprovePhoneActions(enabled: Boolean)
+    suspend fun setAutoApproveHomeAssistantControl(enabled: Boolean)
     suspend fun setTrustedBackgroundPhoneActions(enabled: Boolean)
 
     // Local API server
