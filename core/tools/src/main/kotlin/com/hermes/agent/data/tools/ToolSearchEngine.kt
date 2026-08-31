@@ -101,11 +101,18 @@ object ToolSearchEngine {
         contextWindowTokens: Int = 128000,
         thresholdPct: Double = DEFAULT_THRESHOLD_PCT,
     ): ToolDisclosureResult {
-        val (coreTools, deferrableTools) = allDescriptors.partition { isCoreTool(it) }
+        // The three bridge tools are plumbing, not catalogue. They are registered
+        // unconditionally, so if they arrive in allDescriptors they would be
+        // classified as core and then added a second time in the active branch -
+        // and would be advertised to the model even in the passthrough branch,
+        // where there is nothing to search. Strip them first and let the active
+        // branch be the only thing that puts them back.
+        val catalog = allDescriptors.filterNot { isBridgeTool(it) }
+        val (coreTools, deferrableTools) = catalog.partition { isCoreTool(it) }
 
         if (deferrableTools.isEmpty()) {
             return ToolDisclosureResult(
-                modelVisibleDescriptors = allDescriptors,
+                modelVisibleDescriptors = catalog,
                 isProgressiveDisclosureActive = false,
                 deferredDescriptors = emptyList(),
             )
@@ -119,7 +126,7 @@ object ToolSearchEngine {
         return if (estimatedTokens <= tokenBudget) {
             // Tier 0: Direct passthrough
             ToolDisclosureResult(
-                modelVisibleDescriptors = allDescriptors,
+                modelVisibleDescriptors = catalog,
                 isProgressiveDisclosureActive = false,
                 deferredDescriptors = emptyList(),
             )
@@ -135,6 +142,12 @@ object ToolSearchEngine {
             )
         }
     }
+
+    /** True for tool_search / tool_describe / tool_call themselves. */
+    fun isBridgeTool(descriptor: ToolDescriptor): Boolean =
+        descriptor.name == TOOL_SEARCH_NAME ||
+            descriptor.name == TOOL_DESCRIBE_NAME ||
+            descriptor.name == TOOL_CALL_NAME
 
     fun isCoreTool(descriptor: ToolDescriptor): Boolean {
         // A tool is core if it does NOT have "deferrable" or "mcp" capability and is not an mcp__ prefixed tool
