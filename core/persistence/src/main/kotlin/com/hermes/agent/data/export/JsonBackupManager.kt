@@ -220,6 +220,8 @@ private fun SkillEntity.toBackup() = SkillBackup(
     content = content, category = category, tags = tagsOf(tagsJson),
     requiresTools = tagsOf(requiresToolsJson), lifecycleState = lifecycleState,
     createdAt = createdAt, updatedAt = updatedAt,
+    sourceUrl = sourceUrl, pinnedCommit = pinnedCommit,
+    installedAt = installedAt, lintStatus = lintStatus,
 )
 
 private fun MemoryEntity.toBackup() = MemoryBackup(
@@ -276,6 +278,10 @@ private fun SkillBackup.toEntity() = SkillEntity(
     isBuiltIn = false,
     createdAt = createdAt, updatedAt = updatedAt,
     requiresToolsJson = tagsJson(requiresTools),
+    sourceUrl = sourceUrl,
+    pinnedCommit = pinnedCommit,
+    installedAt = installedAt,
+    lintStatus = lintStatus,
 )
 
 private fun MemoryBackup.toEntity() = MemoryEntity(

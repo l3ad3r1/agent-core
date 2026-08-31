@@ -27,6 +27,10 @@ data class SkillEntity(
     val pinned: Boolean = false,
     val useCount: Int = 0,
     val lastUsedAt: Long? = null,
+    val sourceUrl: String? = null,
+    val pinnedCommit: String? = null,
+    val installedAt: Long? = null,
+    val lintStatus: String? = null,
 ) {
     fun toDomain() = Skill(
         id = id,
@@ -46,6 +50,10 @@ data class SkillEntity(
         pinned = pinned,
         useCount = useCount,
         lastUsedAt = lastUsedAt,
+        sourceUrl = sourceUrl,
+        pinnedCommit = pinnedCommit,
+        installedAt = installedAt,
+        lintStatus = lintStatus,
     )
 
     companion object {
@@ -69,6 +77,10 @@ data class SkillEntity(
             pinned = s.pinned,
             useCount = s.useCount,
             lastUsedAt = s.lastUsedAt,
+            sourceUrl = s.sourceUrl,
+            pinnedCommit = s.pinnedCommit,
+            installedAt = s.installedAt,
+            lintStatus = s.lintStatus,
         )
     }
 }

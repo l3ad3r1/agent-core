@@ -36,4 +36,12 @@ data class Skill(
     val useCount: Int = 0,
     /** Last time the skill was loaded (skill_manager view), or null if never. */
     val lastUsedAt: Long? = null,
+    /** Source repository or URL where this skill was installed from (e.g. GitHub Contents API). */
+    val sourceUrl: String? = null,
+    /** Git commit SHA the skill was pinned to at install time. Unpinned skills are rejected. */
+    val pinnedCommit: String? = null,
+    /** Timestamp when the skill was installed from the hub. */
+    val installedAt: Long? = null,
+    /** Linter verification result ("PASS", "FAIL: ...", "WARNING: ..."). */
+    val lintStatus: String? = null,
 )

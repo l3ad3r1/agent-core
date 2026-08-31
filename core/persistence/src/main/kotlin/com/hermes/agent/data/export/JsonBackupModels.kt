@@ -230,6 +230,10 @@ data class SkillBackup(
     val lifecycleState: String = "",
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
+    val sourceUrl: String? = null,
+    val pinnedCommit: String? = null,
+    val installedAt: Long? = null,
+    val lintStatus: String? = null,
 )
 
 /**

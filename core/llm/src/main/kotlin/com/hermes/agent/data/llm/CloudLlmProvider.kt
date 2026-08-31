@@ -83,6 +83,7 @@ class CloudLlmProvider @Inject constructor(
     private val json: Json,
     private val modelSource: CloudModelSource,
     private val productIdentity: ProductIdentity,
+    private val credentialPool: CredentialPoolManager? = null,
 ) : LlmProvider {
 
     private var fixedProfile: CloudProviderProfile? = null
@@ -97,7 +98,8 @@ class CloudLlmProvider @Inject constructor(
         json: Json,
         profile: CloudProviderProfile,
         productIdentity: ProductIdentity,
-    ) : this(api, settings, dispatchers, json, CloudModelSource.PRIMARY, productIdentity) {
+        credentialPool: CredentialPoolManager? = null,
+    ) : this(api, settings, dispatchers, json, CloudModelSource.PRIMARY, productIdentity, credentialPool) {
         fixedProfile = profile
         lastObservedModel = profile.model.cleaned()
     }
@@ -143,10 +145,31 @@ class CloudLlmProvider @Inject constructor(
         fixedProfile?.apiKey
             ?: if (modelSource == CloudModelSource.AUX && auxApiKey.isNotBlank()) auxApiKey else cloudApiKey
 
+    private fun resolveProviderName(s: UserSettings): String =
+        fixedProfile?.name ?: if (modelSource == CloudModelSource.AUX) "cloud-aux" else "cloud-primary"
+
+    private fun resolveApiKey(s: UserSettings): String =
+        credentialPool?.getActiveKey(resolveProviderName(s), s.activeApiKey()) ?: s.activeApiKey()
+
+    private fun handleOutcome(s: UserSettings, key: String, error: Throwable?) {
+        if (credentialPool == null) return
+        val provider = resolveProviderName(s)
+        if (error == null) {
+            credentialPool.reportKeySuccess(provider, key)
+            return
+        }
+        if (error is retrofit2.HttpException) {
+            when (error.code()) {
+                429 -> credentialPool.reportKeyExhausted(provider, key, cooldownSeconds = 60L)
+                401, 403 -> credentialPool.reportKeyExhausted(provider, key, isPermanentFailure = true)
+            }
+        }
+    }
+
     override suspend fun isAvailable(): Boolean {
         val s = settings.current()
         lastObservedModel = s.selectedModel().cleaned()
-        return s.cloudEnabled && (fixedProfile?.enabled != false) && s.activeApiKey().isNotBlank()
+        return s.cloudEnabled && (fixedProfile?.enabled != false) && resolveApiKey(s).isNotBlank()
     }
 
     /**
@@ -163,7 +186,8 @@ class CloudLlmProvider @Inject constructor(
     override suspend fun complete(messages: List<LlmMessage>): LlmResponse {
         val s = settings.current()
         lastObservedModel = s.selectedModel().cleaned()
-        require(s.activeApiKey().isNotBlank()) {
+        val apiKey = resolveApiKey(s)
+        require(apiKey.isNotBlank()) {
             "Cloud LLM is enabled but no API key is set."
         }
         val request = ChatCompletionRequest(
@@ -172,12 +196,15 @@ class CloudLlmProvider @Inject constructor(
             stream = false,
             reasoningEffort = s.reasoningEffort.takeIf { it != "medium" && it.isNotBlank() },
         )
-        val auth = "Bearer ${s.activeApiKey().cleaned()}"
+        val auth = "Bearer ${apiKey.cleaned()}"
         val resp = try {
-            retryTransientNetwork {
+            val response = retryTransientNetwork {
                 api.completion(chatUrl(s.activeBaseUrl()), auth, request)
             }
+            handleOutcome(s, apiKey, null)
+            response
         } catch (t: Throwable) {
+            handleOutcome(s, apiKey, t)
             Timber.tag("CloudLlm").w(t, "Cloud completion failed")
             throw t
         }
@@ -194,7 +221,8 @@ class CloudLlmProvider @Inject constructor(
         tools: List<ToolDescriptor>,
     ): LlmToolResponse {
         val s = settings.current()
-        require(s.activeApiKey().isNotBlank()) {
+        val apiKey = resolveApiKey(s)
+        require(apiKey.isNotBlank()) {
             "Cloud LLM is enabled but no API key is set."
         }
 
@@ -212,20 +240,24 @@ class CloudLlmProvider @Inject constructor(
             append('}')
         }
 
-        val auth = "Bearer ${s.activeApiKey().cleaned()}"
+        val auth = "Bearer ${apiKey.cleaned()}"
         val rawJson: String = try {
-            retryTransientNetwork {
+            val result = retryTransientNetwork {
                 api.completionRaw(
                     chatUrl(s.activeBaseUrl()),
                     auth,
                     requestJson.toRequestBody("application/json; charset=utf-8".toMediaType()),
                 ).string()
             }
+            handleOutcome(s, apiKey, null)
+            result
         } catch (e: retrofit2.HttpException) {
+            handleOutcome(s, apiKey, e)
             val errBody = runCatching { e.response()?.errorBody()?.string() }.getOrNull()
             Timber.tag("CloudLlm").w(e, "completion-with-tools HTTP %d: %s", e.code(), errBody)
             throw RuntimeException("HTTP ${e.code()}: ${errBody ?: e.message()}", e)
         } catch (t: Throwable) {
+            handleOutcome(s, apiKey, t)
             Timber.tag("CloudLlm").w(t, "Cloud completion-with-tools failed")
             throw t
         }

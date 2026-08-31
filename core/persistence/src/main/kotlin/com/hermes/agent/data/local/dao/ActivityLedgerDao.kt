@@ -18,4 +18,7 @@ interface ActivityLedgerDao {
     /** Keep the ledger bounded: drop everything older than [cutoffMillis]. */
     @Query("DELETE FROM activity_ledger WHERE timestamp < :cutoffMillis")
     suspend fun pruneOlderThan(cutoffMillis: Long): Int
+
+    @Query("SELECT * FROM activity_ledger WHERE timestamp >= :sinceTimestamp ORDER BY timestamp ASC")
+    suspend fun getEntriesSince(sinceTimestamp: Long): List<ActivityLedgerEntity>
 }

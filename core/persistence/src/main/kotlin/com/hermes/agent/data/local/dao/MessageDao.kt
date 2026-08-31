@@ -79,4 +79,10 @@ interface MessageDao {
         """
     )
     suspend fun searchAll(query: String, limit: Int): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE timestamp >= :sinceTimestamp ORDER BY timestamp ASC")
+    suspend fun getMessagesSince(sinceTimestamp: Long): List<MessageEntity>
+
+    @Query("SELECT COUNT(DISTINCT conversation_id) FROM messages WHERE timestamp >= :sinceTimestamp")
+    suspend fun countActiveConversationsSince(sinceTimestamp: Long): Int
 }

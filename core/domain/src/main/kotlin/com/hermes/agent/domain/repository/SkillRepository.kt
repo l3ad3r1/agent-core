@@ -24,7 +24,26 @@ interface SkillRepository {
          * not worth keeping history for.
          */
         revisionNote: String? = null,
+        sourceUrl: String? = null,
+        pinnedCommit: String? = null,
+        installedAt: Long? = null,
+        lintStatus: String? = null,
     ): Skill
+
+    suspend fun saveSkill(skill: Skill): Skill = upsert(
+        name = skill.name,
+        description = skill.description,
+        content = skill.content,
+        category = skill.category,
+        tags = skill.tags,
+        version = skill.version,
+        requiresTools = skill.requiresTools,
+        fallbackForTools = skill.fallbackForTools,
+        sourceUrl = skill.sourceUrl,
+        pinnedCommit = skill.pinnedCommit,
+        installedAt = skill.installedAt,
+        lintStatus = skill.lintStatus,
+    )
 
     /** Archived prior versions of a skill, newest first. */
     suspend fun revisions(skillName: String, limit: Int = 20): List<SkillRevision>
