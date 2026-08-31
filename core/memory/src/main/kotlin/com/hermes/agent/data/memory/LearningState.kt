@@ -1,15 +1,28 @@
 package com.hermes.agent.data.memory
 
 import android.content.Context
+import androidx.datastore.core.CorruptionException
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.learningDataStore by preferencesDataStore(name = "hermes_learning_state")
+// See the matching fix in SettingsRepositoryImpl: an unguarded preferencesDataStore
+// rethrows a corrupt file's exception forever with no recovery path. This state is
+// just counters, so resetting to defaults on corruption is strictly safe.
+private val Context.learningDataStore by preferencesDataStore(
+    name = "hermes_learning_state",
+    corruptionHandler = ReplaceFileCorruptionHandler { ex: CorruptionException ->
+        Timber.e(ex, "hermes_learning_state DataStore was corrupt; resetting to defaults")
+        emptyPreferences()
+    },
+)
 
 /**
  * Persistent state for the self-improvement loop.

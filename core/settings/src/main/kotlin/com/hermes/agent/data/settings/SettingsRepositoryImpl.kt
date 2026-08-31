@@ -6,9 +6,12 @@ import com.hermes.agent.domain.settings.CloudProviderProfile
 import com.hermes.agent.domain.settings.DEFAULT_MODULE_CATALOG_URL
 
 import android.content.Context
+import androidx.datastore.core.CorruptionException
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -25,7 +28,20 @@ import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.hermesDataStore by preferencesDataStore(name = "hermes_settings")
+// A torn write (process death mid-save, storage corruption) previously left this
+// file unparseable forever: DataStore has no default recovery, so every future
+// launch rethrew the same CorruptionException before the app could even reach
+// a UI that might let the user clear it. One real device hit exactly this and
+// was hard-bricked on cold launch. Falling back to empty preferences trades the
+// corrupted settings for a working app; providers/credentials/HA config would
+// need re-entry, but that is already true of unreadable data.
+private val Context.hermesDataStore by preferencesDataStore(
+    name = "hermes_settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { ex: CorruptionException ->
+        Timber.e(ex, "hermes_settings DataStore was corrupt; resetting to defaults")
+        emptyPreferences()
+    },
+)
 
 @Singleton
 class SettingsRepositoryImpl(
