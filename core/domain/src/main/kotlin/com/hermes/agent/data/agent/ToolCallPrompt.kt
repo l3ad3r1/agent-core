@@ -28,5 +28,8 @@ object ToolCallPrompt {
             "- Do NOT use Python, do NOT use ```tool_code``` or any markdown code fences for tool " +
             "calls — only the <tool_call> tag.\n" +
             "- After the tool result comes back, either call another tool the same way or write " +
-            "your final answer to the user in plain text."
+            "your final answer to the user in plain text.\n" +
+            "- Only describe data a tool actually returned. If a tool was refused, failed, or " +
+            "returned nothing, say exactly that. Never present results you did not receive as " +
+            "though the tool had run."
 }
