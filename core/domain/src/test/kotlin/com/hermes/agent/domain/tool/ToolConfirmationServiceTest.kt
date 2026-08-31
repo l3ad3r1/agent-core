@@ -6,6 +6,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.async
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -91,6 +92,74 @@ class ToolConfirmationServiceTest {
 
         assertTrue(service.awaitConfirmation(ToolCall("phone", "device_control", emptyMap())))
         assertNull(service.pendingRequest.value)
+    }
+
+    @Test
+    fun `read-only home_assistant actions run without a confirmation prompt`() = runTest {
+        val service = service()
+
+        for (action in listOf("list_entities", "get_state", "list_services")) {
+            val call = ToolCall("c", "home_assistant", mapOf("action" to JsonPrimitive(action)))
+            assertTrue("'${'$'}action' only reads and must not prompt", service.awaitConfirmation(call))
+            assertNull(service.pendingRequest.value)
+        }
+    }
+
+    @Test
+    fun `call_service still faces the confirmation dialog`() = runTest {
+        // The write action actuates real hardware; it must never ride in on the
+        // read-only exemption.
+        val service = service()
+        val call = ToolCall(
+            "c", "home_assistant",
+            mapOf("action" to JsonPrimitive("call_service"), "domain" to JsonPrimitive("light")),
+        )
+
+        val pending = async { service.awaitConfirmation(call) }
+        runCurrent()
+
+        assertEquals(call, service.pendingRequest.value?.call)
+        service.submitConfirmation(service.pendingRequest.value!!.id, false)
+        assertFalse(pending.await())
+    }
+
+    @Test
+    fun `a call with no action fails closed and still confirms`() = runTest {
+        val service = service()
+        val call = ToolCall("c", "home_assistant", emptyMap())
+
+        val pending = async { service.awaitConfirmation(call) }
+        runCurrent()
+
+        assertEquals(call, service.pendingRequest.value?.call)
+        service.submitConfirmation(service.pendingRequest.value!!.id, false)
+        assertFalse(pending.await())
+    }
+
+    @Test
+    fun `an action nobody allowlisted still confirms`() = runTest {
+        // A mutating action added to the tool later must not be exempt by default.
+        val service = service()
+        val call = ToolCall(
+            "c", "home_assistant",
+            mapOf("action" to JsonPrimitive("delete_everything")),
+        )
+
+        val pending = async { service.awaitConfirmation(call) }
+        runCurrent()
+
+        assertEquals(call, service.pendingRequest.value?.call)
+        service.submitConfirmation(service.pendingRequest.value!!.id, false)
+        assertFalse(pending.await())
+    }
+
+    @Test
+    fun `the read-only exemption does not leak to other tools`() = runTest {
+        // shell is biometric-gated; naming a read-only action must not bypass that.
+        val service = service()
+        val call = ToolCall("c", "shell", mapOf("action" to JsonPrimitive("list_entities")))
+
+        assertFalse(service.awaitConfirmation(call))
     }
 
     @Test

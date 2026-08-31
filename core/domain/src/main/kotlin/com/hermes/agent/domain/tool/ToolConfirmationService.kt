@@ -2,6 +2,8 @@ package com.hermes.agent.domain.tool
 
 import com.hermes.agent.domain.llm.ToolCall
 import com.hermes.agent.domain.security.DeviceAuthenticationService
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +38,19 @@ class ToolConfirmationService @Inject constructor(
                 title = "Approve ${call.name.replace('_', ' ')}",
                 reason = "Confirm with your fingerprint or phone passcode",
             )
+        }
+        // Some tools carry both reads and writes behind one `action` argument, so
+        // gating by tool name alone makes every harmless lookup cost a tap. Reading
+        // state changes nothing, so it is approved here; the write actions of the
+        // same tool still face the dialog below.
+        //
+        // Allowlisted, never pattern-matched: an action this map does not name -
+        // including a new one added later, or a call that omits `action` entirely -
+        // falls through and is confirmed.
+        readOnlyActionOf(call)?.let { action ->
+            Timber.tag("ToolConfirmation")
+                .i("Auto-approved read-only tool=%s action=%s", call.name, action)
+            return@withLock true
         }
         if (
             call.name in AUTO_APPROVABLE_PHONE_TOOLS &&
@@ -93,6 +108,20 @@ class ToolConfirmationService @Inject constructor(
     companion object {
         const val CONFIRMATION_TIMEOUT_MS = 60_000L
 
+        /**
+         * Per-tool allowlist of `action` values that only read.
+         *
+         * `home_assistant` is one tool spanning reads and writes: list_entities /
+         * get_state / list_services fetch data, while call_service actuates real
+         * hardware - lights, switches, locks. Confirming the whole tool made every
+         * lookup cost a tap; confirming none of it would let a model change the
+         * house unprompted. Only the reads are listed, so call_service (and anything
+         * added later) still stops for a human.
+         */
+        val READ_ONLY_ACTIONS: Map<String, Set<String>> = mapOf(
+            "home_assistant" to setOf("list_entities", "get_state", "list_services"),
+        )
+
         val AUTO_APPROVABLE_PHONE_TOOLS = setOf(
             "alarm",
             "navigation",
@@ -104,5 +133,20 @@ class ToolConfirmationService @Inject constructor(
         )
 
         val BIOMETRIC_REQUIRED_TOOLS = setOf("shell", "termux")
+
+        /**
+         * The read-only `action` this call names, or null if it is not one - in which
+         * case the caller must confirm. Fails closed on a missing, non-string, or
+         * unrecognised action rather than guessing.
+         */
+        fun readOnlyActionOf(call: ToolCall): String? {
+            val allowed = READ_ONLY_ACTIONS[call.name] ?: return null
+            val action = (call.arguments["action"] as? JsonPrimitive)
+                ?.contentOrNull
+                ?.trim()
+                ?.lowercase()
+                ?: return null
+            return action.takeIf { it in allowed }
+        }
     }
 }
