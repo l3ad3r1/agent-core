@@ -77,4 +77,12 @@ class UsageInsightsTool @Inject constructor(
 
         return ToolResult.ok(output.trim())
     }
+
+    @dagger.Module
+    @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+    abstract class BindingsModule {
+        @dagger.Binds
+        @dagger.multibindings.IntoSet
+        abstract fun bindTool(tool: UsageInsightsTool): Tool
+    }
 }
