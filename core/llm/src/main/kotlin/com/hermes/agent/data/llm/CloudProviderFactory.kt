@@ -18,9 +18,17 @@ class CloudProviderFactory @Inject constructor(
     private val dispatchers: DispatcherProvider,
     private val json: Json,
     private val productIdentity: ProductIdentity,
+    private val credentialPool: CredentialPoolManager,
 ) : ProfileCloudProviderFactory {
+    /**
+     * The pool must be passed through here, not just to the `@Inject`-constructed
+     * singleton. [com.hermes.agent.data.llm.HybridLlmRouter] builds every
+     * profile-backed cloud provider through this factory, so a provider created
+     * without a pool is the one serving ordinary chat: key rotation and the 429
+     * cooldown would never run on the path that actually carries traffic.
+     */
     override fun create(profile: CloudProviderProfile): CloudLlmProvider =
-        CloudLlmProvider(api, settings, dispatchers, json, profile, productIdentity)
+        CloudLlmProvider(api, settings, dispatchers, json, profile, productIdentity, credentialPool)
 }
 
 interface ProfileCloudProviderFactory {
