@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -95,6 +96,11 @@ class SettingsRepositoryImpl(
         val HOME_ASSISTANT_URL = stringPreferencesKey("home_assistant_url")
         val HOME_ASSISTANT_TOKEN = stringPreferencesKey("home_assistant_token")
         val FILES_ROOT_URI = stringPreferencesKey("files_root_uri")
+        val WAKE_WORD_ENABLED = booleanPreferencesKey("wake_word_enabled")
+        val WAKE_WORD_TRIGGERS = stringPreferencesKey("wake_word_triggers")
+        val WAKE_WORD_ROUTING_RULES = stringPreferencesKey("wake_word_routing_rules")
+        val WAKE_WORD_SENSITIVITY = floatPreferencesKey("wake_word_sensitivity")
+        val WAKE_WORD_RESTART_ON_BOOT = booleanPreferencesKey("wake_word_restart_on_boot")
     }
 
     /**
@@ -329,6 +335,29 @@ class SettingsRepositoryImpl(
         context.hermesDataStore.edit { it[Keys.FILES_ROOT_URI] = uri.trim() }
     }
 
+    override suspend fun setWakeWordEnabled(enabled: Boolean) {
+        context.hermesDataStore.edit { it[Keys.WAKE_WORD_ENABLED] = enabled }
+    }
+
+    override suspend fun setWakeWordTriggers(triggers: List<String>) {
+        val normalized = WakeWordConfig.normalizeTriggers(triggers)
+        context.hermesDataStore.edit { it[Keys.WAKE_WORD_TRIGGERS] = WakeWordConfig.encodeTriggers(normalized) }
+    }
+
+    override suspend fun setWakeWordRoutingRules(rules: Map<String, String>) {
+        val normalized = WakeWordConfig.normalizeRoutingRules(rules)
+        context.hermesDataStore.edit { it[Keys.WAKE_WORD_ROUTING_RULES] = WakeWordConfig.encodeRoutingRules(normalized) }
+    }
+
+    override suspend fun setWakeWordSensitivity(sensitivity: Float) {
+        val clamped = sensitivity.coerceIn(0.0f, 1.0f)
+        context.hermesDataStore.edit { it[Keys.WAKE_WORD_SENSITIVITY] = clamped }
+    }
+
+    override suspend fun setWakeWordRestartOnBoot(restartOnBoot: Boolean) {
+        context.hermesDataStore.edit { it[Keys.WAKE_WORD_RESTART_ON_BOOT] = restartOnBoot }
+    }
+
     private fun Preferences.toUserSettings(): UserSettings {
         return UserSettings(
             cloudEnabled = this[Keys.CLOUD_ENABLED] ?: false,
@@ -367,6 +396,11 @@ class SettingsRepositoryImpl(
             homeAssistantUrl = this[Keys.HOME_ASSISTANT_URL] ?: "http://homeassistant.local:8123",
             homeAssistantToken = this.secret(Keys.HOME_ASSISTANT_TOKEN) ?: "",
             filesRootUri = this[Keys.FILES_ROOT_URI] ?: "",
+            wakeWordEnabled = this[Keys.WAKE_WORD_ENABLED] ?: false,
+            wakeWordTriggers = WakeWordConfig.decodeTriggers(this[Keys.WAKE_WORD_TRIGGERS]),
+            wakeWordRoutingRules = WakeWordConfig.decodeRoutingRules(this[Keys.WAKE_WORD_ROUTING_RULES]),
+            wakeWordSensitivity = this[Keys.WAKE_WORD_SENSITIVITY] ?: 0.5f,
+            wakeWordRestartOnBoot = this[Keys.WAKE_WORD_RESTART_ON_BOOT] ?: false,
         )
     }
 

@@ -66,6 +66,11 @@ class HomeAssistantToolTest {
         override suspend fun setHomeAssistantUrl(url: String) { settings = settings.copy(homeAssistantUrl = url) }
         override suspend fun setHomeAssistantToken(token: String) { settings = settings.copy(homeAssistantToken = token) }
         override suspend fun setFilesRootUri(uri: String) { settings = settings.copy(filesRootUri = uri) }
+        override suspend fun setWakeWordEnabled(enabled: Boolean) { settings = settings.copy(wakeWordEnabled = enabled) }
+        override suspend fun setWakeWordTriggers(triggers: List<String>) { settings = settings.copy(wakeWordTriggers = triggers) }
+        override suspend fun setWakeWordRoutingRules(rules: Map<String, String>) { settings = settings.copy(wakeWordRoutingRules = rules) }
+        override suspend fun setWakeWordSensitivity(sensitivity: Float) { settings = settings.copy(wakeWordSensitivity = sensitivity) }
+        override suspend fun setWakeWordRestartOnBoot(restartOnBoot: Boolean) { settings = settings.copy(wakeWordRestartOnBoot = restartOnBoot) }
     }
 
     @Before

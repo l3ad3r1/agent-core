@@ -76,6 +76,11 @@ class TranscribeAudioToolTest {
         override suspend fun setHomeAssistantUrl(url: String) {}
         override suspend fun setHomeAssistantToken(token: String) {}
         override suspend fun setFilesRootUri(uri: String) {}
+        override suspend fun setWakeWordEnabled(enabled: Boolean) {}
+        override suspend fun setWakeWordTriggers(triggers: List<String>) {}
+        override suspend fun setWakeWordRoutingRules(rules: Map<String, String>) {}
+        override suspend fun setWakeWordSensitivity(sensitivity: Float) {}
+        override suspend fun setWakeWordRestartOnBoot(restartOnBoot: Boolean) {}
     }
 
     @Before

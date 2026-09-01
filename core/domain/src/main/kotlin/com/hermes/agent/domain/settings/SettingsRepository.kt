@@ -77,4 +77,11 @@ interface SettingsRepository {
 
     // Files access root
     suspend fun setFilesRootUri(uri: String)
+
+    // Wake Word ("Hey Hermes")
+    suspend fun setWakeWordEnabled(enabled: Boolean)
+    suspend fun setWakeWordTriggers(triggers: List<String>)
+    suspend fun setWakeWordRoutingRules(rules: Map<String, String>)
+    suspend fun setWakeWordSensitivity(sensitivity: Float)
+    suspend fun setWakeWordRestartOnBoot(restartOnBoot: Boolean)
 }

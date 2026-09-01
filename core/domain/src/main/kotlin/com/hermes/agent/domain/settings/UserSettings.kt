@@ -97,6 +97,12 @@ data class UserSettings(
     val homeAssistantToken: String = "",
     // Files access root (SAF tree URI or path). When blank, defaults to app workspace directory.
     val filesRootUri: String = "",
+    // Wake Word ("Hey Hermes")
+    val wakeWordEnabled: Boolean = false,
+    val wakeWordTriggers: List<String> = listOf("Hey Hermes"),
+    val wakeWordRoutingRules: Map<String, String> = emptyMap(),
+    val wakeWordSensitivity: Float = 0.5f,
+    val wakeWordRestartOnBoot: Boolean = false,
 )
 
 /** First-party module catalog, published from the hermes-jeeves-modules repo. */
