@@ -47,6 +47,7 @@ class HomeAssistantToolTest {
         override suspend fun setTermuxHermesInstalled(installed: Boolean) {}
         override suspend fun setShowToolCalls(enabled: Boolean) {}
         override suspend fun setAutoApprovePhoneActions(enabled: Boolean) {}
+        override suspend fun setAutoApproveHomeAssistantControl(enabled: Boolean) {}
         override suspend fun setTrustedBackgroundPhoneActions(enabled: Boolean) {}
         override suspend fun setApiServerEnabled(enabled: Boolean) {}
         override suspend fun setApiServerPort(port: Int) {}
