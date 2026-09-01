@@ -101,6 +101,9 @@ class SettingsRepositoryImpl(
         val WAKE_WORD_ROUTING_RULES = stringPreferencesKey("wake_word_routing_rules")
         val WAKE_WORD_SENSITIVITY = floatPreferencesKey("wake_word_sensitivity")
         val WAKE_WORD_RESTART_ON_BOOT = booleanPreferencesKey("wake_word_restart_on_boot")
+        val HEARTBEAT_ENABLED = booleanPreferencesKey("heartbeat_enabled")
+        val HEARTBEAT_INTERVAL_MINUTES = intPreferencesKey("heartbeat_interval_minutes")
+        val STANDING_ORDERS_JSON = stringPreferencesKey("standing_orders_json")
     }
 
     /**
@@ -358,6 +361,19 @@ class SettingsRepositoryImpl(
         context.hermesDataStore.edit { it[Keys.WAKE_WORD_RESTART_ON_BOOT] = restartOnBoot }
     }
 
+    override suspend fun setHeartbeatEnabled(enabled: Boolean) {
+        context.hermesDataStore.edit { it[Keys.HEARTBEAT_ENABLED] = enabled }
+    }
+
+    override suspend fun setHeartbeatIntervalMinutes(minutes: Int) {
+        val clamped = minutes.coerceIn(5, 1440)
+        context.hermesDataStore.edit { it[Keys.HEARTBEAT_INTERVAL_MINUTES] = clamped }
+    }
+
+    override suspend fun setStandingOrdersJson(json: String) {
+        context.hermesDataStore.edit { it[Keys.STANDING_ORDERS_JSON] = json }
+    }
+
     private fun Preferences.toUserSettings(): UserSettings {
         return UserSettings(
             cloudEnabled = this[Keys.CLOUD_ENABLED] ?: false,
@@ -401,6 +417,9 @@ class SettingsRepositoryImpl(
             wakeWordRoutingRules = WakeWordConfig.decodeRoutingRules(this[Keys.WAKE_WORD_ROUTING_RULES]),
             wakeWordSensitivity = this[Keys.WAKE_WORD_SENSITIVITY] ?: 0.5f,
             wakeWordRestartOnBoot = this[Keys.WAKE_WORD_RESTART_ON_BOOT] ?: false,
+            heartbeatEnabled = this[Keys.HEARTBEAT_ENABLED] ?: false,
+            heartbeatIntervalMinutes = this[Keys.HEARTBEAT_INTERVAL_MINUTES] ?: 30,
+            standingOrdersJson = this[Keys.STANDING_ORDERS_JSON] ?: "[]",
         )
     }
 

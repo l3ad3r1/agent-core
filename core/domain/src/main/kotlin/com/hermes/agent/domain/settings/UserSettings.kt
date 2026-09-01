@@ -103,6 +103,10 @@ data class UserSettings(
     val wakeWordRoutingRules: Map<String, String> = emptyMap(),
     val wakeWordSensitivity: Float = 0.5f,
     val wakeWordRestartOnBoot: Boolean = false,
+    // Heartbeat & Standing Orders Automation (OpenClaw port)
+    val heartbeatEnabled: Boolean = false,
+    val heartbeatIntervalMinutes: Int = 30,
+    val standingOrdersJson: String = "[]",
 )
 
 /** First-party module catalog, published from the hermes-jeeves-modules repo. */

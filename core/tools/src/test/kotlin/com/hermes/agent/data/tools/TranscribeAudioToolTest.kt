@@ -81,6 +81,9 @@ class TranscribeAudioToolTest {
         override suspend fun setWakeWordRoutingRules(rules: Map<String, String>) {}
         override suspend fun setWakeWordSensitivity(sensitivity: Float) {}
         override suspend fun setWakeWordRestartOnBoot(restartOnBoot: Boolean) {}
+        override suspend fun setHeartbeatEnabled(enabled: Boolean) {}
+        override suspend fun setHeartbeatIntervalMinutes(minutes: Int) {}
+        override suspend fun setStandingOrdersJson(json: String) {}
     }
 
     @Before
