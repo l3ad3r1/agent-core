@@ -20,8 +20,8 @@ data class CloudProviderDefinition(
 
 object CloudProviderRegistry {
     val providers: List<CloudProviderDefinition> = listOf(
-        CloudProviderDefinition("nous", "Nous Portal", "Nous Research reasoning and frontier models", "https://portal.nousresearch.com/v1", "hermes-3-llama-3.1-405b", 0.95, 0.10, 0.60, 0.95, supportsVision = true),
         CloudProviderDefinition("openai", "OpenAI", "OpenAI's direct API — GPT-5, GPT-4.1, and o-series", "https://api.openai.com/v1", "gpt-4.1-mini", 0.97, 0.25, 0.78, 0.97, supportsVision = true),
+        CloudProviderDefinition("nous", "Nous Portal", "Nous Research reasoning and frontier models", "https://portal.nousresearch.com/v1", "hermes-3-llama-3.1-405b", 0.95, 0.10, 0.60, 0.95, supportsVision = true),
         CloudProviderDefinition("nvidia", "NVIDIA NIM", "NVIDIA-hosted and self-hosted NIM models", "https://integrate.api.nvidia.com/v1", "meta/llama-3.3-70b-instruct", 0.88, 0.15, 0.72, 0.90, supportsVision = true),
         CloudProviderDefinition("openrouter", "OpenRouter", "Aggregator for frontier and open models", "https://openrouter.ai/api/v1", "openai/gpt-4.1-mini", 0.94, 0.05, 0.55, 0.94, supportsVision = true),
         CloudProviderDefinition("llm7", "LLM7.io", "OpenAI-compatible multi-model gateway", "https://api.llm7.io/v1", "gpt-4.1-nano", 0.90, 0.05, 0.55, 0.88),
