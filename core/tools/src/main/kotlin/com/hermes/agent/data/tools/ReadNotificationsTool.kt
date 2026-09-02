@@ -3,6 +3,7 @@ package com.hermes.agent.data.tools
 import android.content.Context
 import com.hermes.agent.data.notifications.NotificationContentScreen
 import com.hermes.agent.data.notifications.NotificationGateway
+import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.tool.Tool
 import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolParameter
@@ -33,6 +34,7 @@ import javax.inject.Singleton
 class ReadNotificationsTool @Inject constructor(
     @ApplicationContext private val context: Context,
     private val notificationGateway: NotificationGateway,
+    private val settingsRepository: SettingsRepository,
 ) : Tool {
 
     private val json = Json { prettyPrint = true }
@@ -67,6 +69,18 @@ class ReadNotificationsTool @Inject constructor(
         val start = System.currentTimeMillis()
         val packageName = arguments.string("package_name")
         val limit = (arguments.int("limit") ?: 10).coerceIn(1, 50)
+
+        // Two independent opt-ins are required before third-party notification
+        // text may reach the model: the OS notification-listener grant (which
+        // fills the gateway at all) and this in-app switch. Either one off means
+        // an empty result, never an error - the agent simply has nothing to read.
+        if (!settingsRepository.current().notificationsAgentReadEnabled) {
+            return@withContext ToolResult.ok(
+                "Notification reading is turned off. The user can enable it in " +
+                    "Settings > Assistant > Notifications before I can read them.",
+                System.currentTimeMillis() - start,
+            )
+        }
 
         val rawNotifications = notificationGateway.getActiveNotifications(
             packageNameFilter = packageName,

@@ -8,6 +8,7 @@ import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.PowerManager
 import com.hermes.agent.data.local.dao.PresenceLogDao
+import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.tool.Tool
 import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolParameter
@@ -37,6 +38,7 @@ import javax.inject.Singleton
 class PresenceTool @Inject constructor(
     @ApplicationContext private val context: Context,
     private val presenceLogDao: PresenceLogDao,
+    private val settingsRepository: SettingsRepository,
 ) : Tool {
 
     private val json = Json { prettyPrint = true }
@@ -62,12 +64,24 @@ class PresenceTool @Inject constructor(
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult = withContext(Dispatchers.IO) {
         val start = System.currentTimeMillis()
+
+        if (!settingsRepository.current().presenceEnabled) {
+            return@withContext ToolResult.ok(
+                "Presence tracking is turned off. The user can enable it in " +
+                    "Settings > Assistant > Presence.",
+                System.currentTimeMillis() - start,
+            )
+        }
+
         val latest = presenceLogDao.getLatest()
 
         val (batteryLevel, isCharging) = getBatteryStatus()
         val screenOn = isScreenOn()
-        val place = latest?.locationName ?: "unknown"
-        val motion = latest?.activity ?: "UNKNOWN"
+        // A snapshot older than the beacon's own cadence tells us nothing about
+        // where the user is now, so it degrades to "unknown" rather than lying.
+        val fresh = latest?.takeIf { System.currentTimeMillis() - it.timestamp <= STALE_AFTER_MS }
+        val place = fresh?.locationName?.takeIf { it.isNotBlank() } ?: "unknown"
+        val motion = fresh?.activity?.takeIf { it.isNotBlank() } ?: "unknown"
         val powerStr = if (isCharging) "charging ($batteryLevel%)" else "$batteryLevel%"
         val idleMinutes = if (!screenOn && latest != null) {
             ((System.currentTimeMillis() - latest.timestamp) / (60 * 1000L)).toInt().coerceAtLeast(0)
@@ -84,6 +98,11 @@ class PresenceTool @Inject constructor(
 
         val output = json.encodeToString(snapshot)
         ToolResult.ok(output, System.currentTimeMillis() - start)
+    }
+
+    private companion object {
+        /** Beacon cadence is 15 min; allow one missed cycle before going stale. */
+        const val STALE_AFTER_MS = 35L * 60 * 1000
     }
 
     @kotlinx.serialization.Serializable

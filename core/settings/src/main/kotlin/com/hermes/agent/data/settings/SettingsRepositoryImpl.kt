@@ -1,5 +1,6 @@
 package com.hermes.agent.data.settings
 import com.hermes.agent.domain.llm.*
+import com.hermes.agent.domain.model.StandingInstructions
 import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.settings.UserSettings
 import com.hermes.agent.domain.settings.CloudProviderProfile
@@ -104,6 +105,10 @@ class SettingsRepositoryImpl(
         val HEARTBEAT_ENABLED = booleanPreferencesKey("heartbeat_enabled")
         val HEARTBEAT_INTERVAL_MINUTES = intPreferencesKey("heartbeat_interval_minutes")
         val STANDING_ORDERS_JSON = stringPreferencesKey("standing_orders_json")
+        val STANDING_INSTRUCTIONS = stringPreferencesKey("standing_instructions")
+        val PRESENCE_ENABLED = booleanPreferencesKey("presence_enabled")
+        val PRESENCE_PLACES_JSON = stringPreferencesKey("presence_places_json")
+        val NOTIFICATIONS_AGENT_READ_ENABLED = booleanPreferencesKey("notifications_agent_read_enabled")
     }
 
     /**
@@ -374,6 +379,25 @@ class SettingsRepositoryImpl(
         context.hermesDataStore.edit { it[Keys.STANDING_ORDERS_JSON] = json }
     }
 
+    override suspend fun setStandingInstructions(text: String) {
+        // Screened on write as well as on injection, so a stored value can never
+        // be longer or more dangerous than what the prompt path would accept.
+        val screened = StandingInstructions.screen(text)
+        context.hermesDataStore.edit { it[Keys.STANDING_INSTRUCTIONS] = screened.content }
+    }
+
+    override suspend fun setPresenceEnabled(enabled: Boolean) {
+        context.hermesDataStore.edit { it[Keys.PRESENCE_ENABLED] = enabled }
+    }
+
+    override suspend fun setPresencePlacesJson(json: String) {
+        context.hermesDataStore.edit { it[Keys.PRESENCE_PLACES_JSON] = json }
+    }
+
+    override suspend fun setNotificationsAgentReadEnabled(enabled: Boolean) {
+        context.hermesDataStore.edit { it[Keys.NOTIFICATIONS_AGENT_READ_ENABLED] = enabled }
+    }
+
     private fun Preferences.toUserSettings(): UserSettings {
         return UserSettings(
             cloudEnabled = this[Keys.CLOUD_ENABLED] ?: false,
@@ -420,6 +444,10 @@ class SettingsRepositoryImpl(
             heartbeatEnabled = this[Keys.HEARTBEAT_ENABLED] ?: false,
             heartbeatIntervalMinutes = this[Keys.HEARTBEAT_INTERVAL_MINUTES] ?: 30,
             standingOrdersJson = this[Keys.STANDING_ORDERS_JSON] ?: "[]",
+            standingInstructions = this[Keys.STANDING_INSTRUCTIONS] ?: "",
+            presenceEnabled = this[Keys.PRESENCE_ENABLED] ?: false,
+            presencePlacesJson = this[Keys.PRESENCE_PLACES_JSON] ?: "[]",
+            notificationsAgentReadEnabled = this[Keys.NOTIFICATIONS_AGENT_READ_ENABLED] ?: false,
         )
     }
 

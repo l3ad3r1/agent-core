@@ -84,6 +84,10 @@ class TranscribeAudioToolTest {
         override suspend fun setHeartbeatEnabled(enabled: Boolean) {}
         override suspend fun setHeartbeatIntervalMinutes(minutes: Int) {}
         override suspend fun setStandingOrdersJson(json: String) {}
+        override suspend fun setStandingInstructions(text: String) {}
+        override suspend fun setPresenceEnabled(enabled: Boolean) {}
+        override suspend fun setPresencePlacesJson(json: String) {}
+        override suspend fun setNotificationsAgentReadEnabled(enabled: Boolean) {}
     }
 
     @Before

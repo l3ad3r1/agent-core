@@ -4,6 +4,10 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.hermes.agent.data.notifications.CapturedNotification
 import com.hermes.agent.data.notifications.NotificationGateway
+import com.hermes.agent.domain.settings.SettingsRepository
+import com.hermes.agent.domain.settings.UserSettings
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
@@ -22,13 +26,37 @@ class NotificationToolsTest {
     private lateinit var gateway: NotificationGateway
     private lateinit var postTool: PostNotificationTool
     private lateinit var readTool: ReadNotificationsTool
+    private lateinit var settings: SettingsRepository
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         gateway = NotificationGateway(context)
+        settings = mockk(relaxed = true)
+        coEvery { settings.current() } returns UserSettings(notificationsAgentReadEnabled = true)
         postTool = PostNotificationTool(gateway)
-        readTool = ReadNotificationsTool(context, gateway)
+        readTool = ReadNotificationsTool(context, gateway, settings)
+    }
+
+    @Test
+    fun readNotifications_returnsNothingWithoutTheSecondOptIn() = runTest {
+        coEvery { settings.current() } returns UserSettings(notificationsAgentReadEnabled = false)
+        NotificationGateway.updateActiveNotifications(
+            listOf(
+                CapturedNotification(
+                    id = 1,
+                    packageName = "com.whatsapp",
+                    title = "WhatsApp",
+                    text = "3 new messages",
+                    postTime = System.currentTimeMillis(),
+                    key = "k1",
+                    isClearable = true,
+                ),
+            ),
+        )
+        val output = readTool.execute(emptyMap()).output
+        assertTrue("must explain the switch is off", output.contains("turned off", ignoreCase = true))
+        assertFalse("must not leak notification text", output.contains("3 new messages"))
     }
 
     @Test

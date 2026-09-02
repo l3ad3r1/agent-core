@@ -107,6 +107,17 @@ data class UserSettings(
     val heartbeatEnabled: Boolean = false,
     val heartbeatIntervalMinutes: Int = 30,
     val standingOrdersJson: String = "[]",
+
+    // Standing instructions: free text prepended to every agent's system prompt.
+    val standingInstructions: String = "",
+
+    // Presence & ambient signals (OpenClaw docs/nodes/presence.md). Off by default.
+    val presenceEnabled: Boolean = false,
+    val presencePlacesJson: String = "[]",
+
+    // Second, in-app opt-in before the agent may read captured notifications.
+    // The OS notification-listener grant alone is not enough.
+    val notificationsAgentReadEnabled: Boolean = false,
 )
 
 /** First-party module catalog, published from the hermes-jeeves-modules repo. */

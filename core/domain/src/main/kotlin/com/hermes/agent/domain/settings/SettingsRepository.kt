@@ -89,4 +89,12 @@ interface SettingsRepository {
     suspend fun setHeartbeatEnabled(enabled: Boolean)
     suspend fun setHeartbeatIntervalMinutes(minutes: Int)
     suspend fun setStandingOrdersJson(json: String)
+    suspend fun setStandingInstructions(text: String)
+
+    // Presence & ambient signals
+    suspend fun setPresenceEnabled(enabled: Boolean)
+    suspend fun setPresencePlacesJson(json: String)
+
+    // Notification read access for the agent (second opt-in, on top of the OS grant)
+    suspend fun setNotificationsAgentReadEnabled(enabled: Boolean)
 }

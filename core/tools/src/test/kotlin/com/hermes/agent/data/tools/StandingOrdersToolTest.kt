@@ -66,6 +66,10 @@ class StandingOrdersToolTest {
         override suspend fun setHeartbeatEnabled(enabled: Boolean) { settings = settings.copy(heartbeatEnabled = enabled) }
         override suspend fun setHeartbeatIntervalMinutes(minutes: Int) { settings = settings.copy(heartbeatIntervalMinutes = minutes) }
         override suspend fun setStandingOrdersJson(json: String) { settings = settings.copy(standingOrdersJson = json) }
+        override suspend fun setStandingInstructions(text: String) { settings = settings.copy(standingInstructions = text) }
+        override suspend fun setPresenceEnabled(enabled: Boolean) { settings = settings.copy(presenceEnabled = enabled) }
+        override suspend fun setPresencePlacesJson(json: String) { settings = settings.copy(presencePlacesJson = json) }
+        override suspend fun setNotificationsAgentReadEnabled(enabled: Boolean) { settings = settings.copy(notificationsAgentReadEnabled = enabled) }
     }
 
     private lateinit var settingsRepository: FakeSettingsRepository
