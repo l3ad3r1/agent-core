@@ -32,15 +32,24 @@ object UsagePricingEngine {
         "claude-3-sonnet" to PricingTier(3.00, 15.00, 0.30),
         "claude-3-haiku" to PricingTier(0.25, 1.25, 0.025),
 
-        // OpenAI
-        "gpt-4o" to PricingTier(2.50, 10.00, 1.25),
+        // OpenAI — most specific keys first: resolveTier() matches by substring, so
+        // "gpt-4.1-mini" must be listed before "gpt-4.1", and both before "gpt-4".
+        "gpt-5-nano" to PricingTier(0.05, 0.40, 0.005),
+        "gpt-5-mini" to PricingTier(0.25, 2.00, 0.025),
+        "gpt-5" to PricingTier(1.25, 10.00, 0.125),
+        "gpt-4.1-nano" to PricingTier(0.10, 0.40, 0.025),
+        "gpt-4.1-mini" to PricingTier(0.40, 1.60, 0.10),
+        "gpt-4.1" to PricingTier(2.00, 8.00, 0.50),
         "gpt-4o-mini" to PricingTier(0.15, 0.60, 0.075),
+        "gpt-4o" to PricingTier(2.50, 10.00, 1.25),
         "gpt-4-turbo" to PricingTier(10.00, 30.00),
         "gpt-4" to PricingTier(30.00, 60.00),
         "gpt-3.5-turbo" to PricingTier(0.50, 1.50),
-        "o1" to PricingTier(15.00, 60.00, 7.50),
-        "o1-mini" to PricingTier(3.00, 12.00, 1.50),
+        "o4-mini" to PricingTier(1.10, 4.40, 0.275),
         "o3-mini" to PricingTier(1.10, 4.40, 0.55),
+        "o3" to PricingTier(2.00, 8.00, 0.50),
+        "o1-mini" to PricingTier(3.00, 12.00, 1.50),
+        "o1" to PricingTier(15.00, 60.00, 7.50),
 
         // Google Gemini
         "gemini-2.0-flash" to PricingTier(0.10, 0.40, 0.025),
