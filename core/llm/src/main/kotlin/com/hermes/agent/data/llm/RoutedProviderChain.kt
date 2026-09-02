@@ -35,7 +35,17 @@ internal class RoutedProviderChain(
     override suspend fun completeWithTools(
         messages: List<LlmMessage>,
         tools: List<ToolDescriptor>,
-    ): LlmToolResponse = execute("tool completion") { it.completeWithTools(messages, tools) }
+    ): LlmToolResponse = execute("tool completion") { provider ->
+        provider.completeWithTools(messages, tools).also {
+            // A completion with no text and no tool calls is a dead turn —
+            // portal-proxied refusals and flaky decodes look like this. Treat
+            // it as a failure so the chain tries a provider that actually
+            // answers, instead of surfacing a blank reply. (empty_response_guard)
+            if (it.content.isBlank() && it.toolCalls.isEmpty()) {
+                throw IOException("${provider.name} returned an empty response")
+            }
+        }
+    }
 
     override fun stream(messages: List<LlmMessage>): Flow<LlmStreamChunk> =
         streamExecute { it.stream(messages) }
@@ -54,38 +64,46 @@ internal class RoutedProviderChain(
         call: suspend (LlmProvider) -> T,
     ): T {
         var lastFailure: Throwable? = null
-        for (index in activeIndex.get() until providers.size) {
+        var index = activeIndex.get()
+        var retriedSame = false
+        while (index < providers.size) {
             val provider = providers[index]
+            // Reasoning models think for minutes before the first token; the
+            // default 30 s cap would fail them over to a weaker model mid-think.
+            val attemptTimeout = ReasoningStaleTimeout.floorMillis(provider.model)
+                ?.coerceAtLeast(PROVIDER_ATTEMPT_TIMEOUT_MS)
+                ?: PROVIDER_ATTEMPT_TIMEOUT_MS
             try {
-                val result = withTimeout(PROVIDER_ATTEMPT_TIMEOUT_MS) { call(provider) }
+                val result = withTimeout(attemptTimeout) { call(provider) }
                 activeIndex.set(index)
                 return result
-            } catch (timeout: TimeoutCancellationException) {
-                lastFailure = IOException(
-                    "${provider.name} timed out after ${PROVIDER_ATTEMPT_TIMEOUT_MS / 1_000}s",
-                    timeout,
-                )
-                if (index == providers.lastIndex) throw checkNotNull(lastFailure)
-                Timber.tag("LlmRouter").w(
-                    lastFailure,
-                    "%s timed out on %s; trying %s",
-                    operation,
-                    provider.name,
-                    providers[index + 1].name,
-                )
             } catch (cancelled: CancellationException) {
-                throw cancelled
+                if (cancelled !is TimeoutCancellationException) throw cancelled
+                lastFailure = IOException(
+                    "${provider.name} timed out after ${attemptTimeout / 1_000}s", cancelled,
+                )
+                if (!retriedSame) { retriedSame = true; continue }   // one retry on the same provider
+                if (index == providers.lastIndex) throw checkNotNull(lastFailure)
+                Timber.tag("LlmRouter").w(lastFailure, "%s timed out on %s; trying %s",
+                    operation, provider.name, providers[index + 1].name)
             } catch (failure: Throwable) {
                 lastFailure = failure
-                if (!failure.isProviderFailoverFailure() || index == providers.lastIndex) throw failure
-                Timber.tag("LlmRouter").w(
-                    failure,
-                    "%s failed on %s; trying %s",
-                    operation,
-                    provider.name,
-                    providers[index + 1].name,
-                )
+                when (ApiErrorClassifier.classify(failure)) {
+                    FailoverAction.SURFACE -> throw failure
+                    FailoverAction.RETRY_SAME -> if (!retriedSame) {
+                        retriedSame = true
+                        Timber.tag("LlmRouter").w(failure, "%s hit a transient error on %s; retrying once",
+                            operation, provider.name)
+                        continue
+                    }
+                    FailoverAction.FALLBACK -> Unit
+                }
+                if (index == providers.lastIndex) throw failure
+                Timber.tag("LlmRouter").w(failure, "%s failed on %s; trying %s",
+                    operation, provider.name, providers[index + 1].name)
             }
+            retriedSame = false
+            index++
         }
         throw checkNotNull(lastFailure)
     }

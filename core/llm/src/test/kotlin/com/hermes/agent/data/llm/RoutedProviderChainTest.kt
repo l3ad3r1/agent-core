@@ -104,9 +104,9 @@ class RoutedProviderChainTest {
         val first = provider("OpenCode Zen", "thinking-model")
         val second = provider("OpenCode Go", "tool-model")
         val expected = LlmToolResponse(
-            content = "",
+            content = "Continued the tool task on the fallback provider.",
             toolCalls = emptyList(),
-            tokensUsed = 1,
+            tokensUsed = 8,
             model = "tool-model",
             finishReason = "stop",
         )
