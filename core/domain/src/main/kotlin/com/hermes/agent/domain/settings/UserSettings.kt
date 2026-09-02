@@ -101,8 +101,19 @@ data class UserSettings(
     val wakeWordEnabled: Boolean = false,
     val wakeWordTriggers: List<String> = listOf("Hey Hermes"),
     val wakeWordRoutingRules: Map<String, String> = emptyMap(),
+    /**
+     * Detection threshold for the neural wake engine, 0..1. Higher = more
+     * sensitive (fires more easily, more false positives). Mapped to an
+     * openWakeWord score threshold of roughly `1 - sensitivity`.
+     */
     val wakeWordSensitivity: Float = 0.5f,
     val wakeWordRestartOnBoot: Boolean = false,
+    /**
+     * Use the on-device neural wake engine (openWakeWord) when a model is
+     * available for the configured trigger. Falls back to the platform
+     * SpeechRecognizer when off or when no model matches.
+     */
+    val wakeWordUseNeural: Boolean = true,
     // Heartbeat & Standing Orders Automation (OpenClaw port)
     val heartbeatEnabled: Boolean = false,
     val heartbeatIntervalMinutes: Int = 30,

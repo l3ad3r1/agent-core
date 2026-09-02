@@ -71,6 +71,7 @@ class HomeAssistantToolTest {
         override suspend fun setWakeWordRoutingRules(rules: Map<String, String>) { settings = settings.copy(wakeWordRoutingRules = rules) }
         override suspend fun setWakeWordSensitivity(sensitivity: Float) { settings = settings.copy(wakeWordSensitivity = sensitivity) }
         override suspend fun setWakeWordRestartOnBoot(restartOnBoot: Boolean) { settings = settings.copy(wakeWordRestartOnBoot = restartOnBoot) }
+        override suspend fun setWakeWordUseNeural(useNeural: Boolean) { settings = settings.copy(wakeWordUseNeural = useNeural) }
         override suspend fun setHeartbeatEnabled(enabled: Boolean) { settings = settings.copy(heartbeatEnabled = enabled) }
         override suspend fun setHeartbeatIntervalMinutes(minutes: Int) { settings = settings.copy(heartbeatIntervalMinutes = minutes) }
         override suspend fun setStandingOrdersJson(json: String) { settings = settings.copy(standingOrdersJson = json) }

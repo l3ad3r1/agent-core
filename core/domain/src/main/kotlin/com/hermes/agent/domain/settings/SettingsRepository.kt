@@ -84,6 +84,7 @@ interface SettingsRepository {
     suspend fun setWakeWordRoutingRules(rules: Map<String, String>)
     suspend fun setWakeWordSensitivity(sensitivity: Float)
     suspend fun setWakeWordRestartOnBoot(restartOnBoot: Boolean)
+    suspend fun setWakeWordUseNeural(useNeural: Boolean)
 
     // Heartbeat & Standing Orders Automation (OpenClaw port)
     suspend fun setHeartbeatEnabled(enabled: Boolean)
