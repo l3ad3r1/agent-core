@@ -58,12 +58,6 @@ class StandingOrdersToolTest {
         override suspend fun setHomeAssistantUrl(url: String) {}
         override suspend fun setHomeAssistantToken(token: String) {}
         override suspend fun setFilesRootUri(uri: String) {}
-        override suspend fun setWakeWordEnabled(enabled: Boolean) {}
-        override suspend fun setWakeWordTriggers(triggers: List<String>) {}
-        override suspend fun setWakeWordRoutingRules(rules: Map<String, String>) {}
-        override suspend fun setWakeWordSensitivity(sensitivity: Float) {}
-        override suspend fun setWakeWordRestartOnBoot(restartOnBoot: Boolean) {}
-        override suspend fun setWakeWordUseNeural(useNeural: Boolean) {}
         override suspend fun setHeartbeatEnabled(enabled: Boolean) { settings = settings.copy(heartbeatEnabled = enabled) }
         override suspend fun setHeartbeatIntervalMinutes(minutes: Int) { settings = settings.copy(heartbeatIntervalMinutes = minutes) }
         override suspend fun setStandingOrdersJson(json: String) { settings = settings.copy(standingOrdersJson = json) }
