@@ -95,6 +95,8 @@ class SettingsRepositoryImpl(
         val LOCAL_LLM_ENABLED = booleanPreferencesKey("local_llm_enabled")
         val HOME_ASSISTANT_URL = stringPreferencesKey("home_assistant_url")
         val HOME_ASSISTANT_TOKEN = stringPreferencesKey("home_assistant_token")
+        val HOME_ASSISTANT_DASHBOARD_PATH = stringPreferencesKey("home_assistant_dashboard_path")
+        val HOME_ASSISTANT_DASHBOARD_ENABLED = booleanPreferencesKey("home_assistant_dashboard_enabled")
         val FILES_ROOT_URI = stringPreferencesKey("files_root_uri")
         val HEARTBEAT_ENABLED = booleanPreferencesKey("heartbeat_enabled")
         val HEARTBEAT_INTERVAL_MINUTES = intPreferencesKey("heartbeat_interval_minutes")
@@ -333,6 +335,14 @@ class SettingsRepositoryImpl(
         putSecret(Keys.HOME_ASSISTANT_TOKEN, token.trim())
     }
 
+    override suspend fun setHomeAssistantDashboardPath(path: String) {
+        context.hermesDataStore.edit { it[Keys.HOME_ASSISTANT_DASHBOARD_PATH] = path.trim().trim('/') }
+    }
+
+    override suspend fun setHomeAssistantDashboardEnabled(enabled: Boolean) {
+        context.hermesDataStore.edit { it[Keys.HOME_ASSISTANT_DASHBOARD_ENABLED] = enabled }
+    }
+
     override suspend fun setFilesRootUri(uri: String) {
         context.hermesDataStore.edit { it[Keys.FILES_ROOT_URI] = uri.trim() }
     }
@@ -406,6 +416,8 @@ class SettingsRepositoryImpl(
             localLlmEnabled = this[Keys.LOCAL_LLM_ENABLED] ?: true,
             homeAssistantUrl = this[Keys.HOME_ASSISTANT_URL] ?: "http://homeassistant.local:8123",
             homeAssistantToken = this.secret(Keys.HOME_ASSISTANT_TOKEN) ?: "",
+            homeAssistantDashboardPath = this[Keys.HOME_ASSISTANT_DASHBOARD_PATH] ?: "",
+            homeAssistantDashboardEnabled = this[Keys.HOME_ASSISTANT_DASHBOARD_ENABLED] ?: false,
             filesRootUri = this[Keys.FILES_ROOT_URI] ?: "",
             heartbeatEnabled = this[Keys.HEARTBEAT_ENABLED] ?: false,
             heartbeatIntervalMinutes = this[Keys.HEARTBEAT_INTERVAL_MINUTES] ?: 30,

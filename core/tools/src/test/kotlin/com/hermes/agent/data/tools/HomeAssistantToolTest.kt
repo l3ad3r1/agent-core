@@ -65,6 +65,8 @@ class HomeAssistantToolTest {
         override suspend fun setLocalLlmEnabled(enabled: Boolean) {}
         override suspend fun setHomeAssistantUrl(url: String) { settings = settings.copy(homeAssistantUrl = url) }
         override suspend fun setHomeAssistantToken(token: String) { settings = settings.copy(homeAssistantToken = token) }
+        override suspend fun setHomeAssistantDashboardPath(path: String) {}
+        override suspend fun setHomeAssistantDashboardEnabled(enabled: Boolean) {}
         override suspend fun setFilesRootUri(uri: String) { settings = settings.copy(filesRootUri = uri) }
         override suspend fun setHeartbeatEnabled(enabled: Boolean) { settings = settings.copy(heartbeatEnabled = enabled) }
         override suspend fun setHeartbeatIntervalMinutes(minutes: Int) { settings = settings.copy(heartbeatIntervalMinutes = minutes) }

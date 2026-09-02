@@ -75,6 +75,8 @@ class TranscribeAudioToolTest {
         override suspend fun setLocalLlmEnabled(enabled: Boolean) {}
         override suspend fun setHomeAssistantUrl(url: String) {}
         override suspend fun setHomeAssistantToken(token: String) {}
+        override suspend fun setHomeAssistantDashboardPath(path: String) {}
+        override suspend fun setHomeAssistantDashboardEnabled(enabled: Boolean) {}
         override suspend fun setFilesRootUri(uri: String) {}
         override suspend fun setHeartbeatEnabled(enabled: Boolean) {}
         override suspend fun setHeartbeatIntervalMinutes(minutes: Int) {}

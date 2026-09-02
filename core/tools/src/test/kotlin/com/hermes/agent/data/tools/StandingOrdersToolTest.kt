@@ -57,6 +57,8 @@ class StandingOrdersToolTest {
         override suspend fun setLocalLlmEnabled(enabled: Boolean) {}
         override suspend fun setHomeAssistantUrl(url: String) {}
         override suspend fun setHomeAssistantToken(token: String) {}
+        override suspend fun setHomeAssistantDashboardPath(path: String) {}
+        override suspend fun setHomeAssistantDashboardEnabled(enabled: Boolean) {}
         override suspend fun setFilesRootUri(uri: String) {}
         override suspend fun setHeartbeatEnabled(enabled: Boolean) { settings = settings.copy(heartbeatEnabled = enabled) }
         override suspend fun setHeartbeatIntervalMinutes(minutes: Int) { settings = settings.copy(heartbeatIntervalMinutes = minutes) }

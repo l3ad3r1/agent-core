@@ -95,6 +95,14 @@ data class UserSettings(
     // Home Assistant connection
     val homeAssistantUrl: String = "http://homeassistant.local:8123",
     val homeAssistantToken: String = "",
+    /**
+     * Lovelace dashboard path shown in the embedded WebView and, when
+     * [homeAssistantDashboardEnabled], as a Home-screen tile. Relative to
+     * [homeAssistantUrl] — e.g. `lovelace/0` or `dashboard-mobile`. Blank = the
+     * default dashboard.
+     */
+    val homeAssistantDashboardPath: String = "",
+    val homeAssistantDashboardEnabled: Boolean = false,
     // Files access root (SAF tree URI or path). When blank, defaults to app workspace directory.
     val filesRootUri: String = "",
     // Heartbeat & Standing Orders Automation (OpenClaw port)
