@@ -145,6 +145,16 @@ class CloudLlmProvider @Inject constructor(
         fixedProfile?.apiKey
             ?: if (modelSource == CloudModelSource.AUX && auxApiKey.isNotBlank()) auxApiKey else cloudApiKey
 
+    /**
+     * Reasoning effort to send: the active provider profile's value, else the
+     * global [UserSettings.reasoningEffort]. Null when it is blank or `medium`
+     * (the API default) so the parameter is omitted entirely.
+     */
+    private fun UserSettings.effectiveReasoningEffort(): String? {
+        val v = fixedProfile?.reasoningEffort?.ifBlank { null } ?: reasoningEffort
+        return v.takeIf { it.isNotBlank() && it != "medium" }
+    }
+
     private fun resolveProviderName(s: UserSettings): String =
         fixedProfile?.name ?: if (modelSource == CloudModelSource.AUX) "cloud-aux" else "cloud-primary"
 
@@ -194,7 +204,7 @@ class CloudLlmProvider @Inject constructor(
             model = s.selectedModel().cleaned(),
             messages = messages.map { it.toDto() },
             stream = false,
-            reasoningEffort = s.reasoningEffort.takeIf { it != "medium" && it.isNotBlank() },
+            reasoningEffort = s.effectiveReasoningEffort(),
         )
         val auth = "Bearer ${apiKey.cleaned()}"
         val resp = try {
@@ -230,6 +240,7 @@ class CloudLlmProvider @Inject constructor(
             append('{')
             append("\"model\":\"").append(s.selectedModel().cleaned()).append("\",")
             append("\"stream\":false,")
+            s.effectiveReasoningEffort()?.let { append("\"reasoning_effort\":\"").append(it).append("\",") }
             append("\"messages\":")
             append(json.encodeToString(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.map { it.toDto() }))
             if (tools.isNotEmpty()) {
@@ -276,6 +287,7 @@ class CloudLlmProvider @Inject constructor(
             model = s.selectedModel().cleaned(),
             messages = messages.map { it.toDto() },
             stream = true,
+            reasoningEffort = s.effectiveReasoningEffort(),
         )
         val auth = "Bearer ${s.activeApiKey().cleaned()}"
 
@@ -301,6 +313,7 @@ class CloudLlmProvider @Inject constructor(
             model = modelOverride.cleaned(),
             messages = messages.map { it.toDto() },
             stream = true,
+            reasoningEffort = s.effectiveReasoningEffort(),
         )
         val auth = "Bearer ${s.activeApiKey().cleaned()}"
 
@@ -315,6 +328,7 @@ class CloudLlmProvider @Inject constructor(
                     model = modelOverride.cleaned(),
                     messages = messages.map { it.toDto() },
                     stream = false,
+                    reasoningEffort = s.effectiveReasoningEffort(),
                 )
                 api.completion(chatUrl(s.activeBaseUrl()), auth, req)
             } catch (err: Throwable) {

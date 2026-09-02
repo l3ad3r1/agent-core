@@ -17,4 +17,11 @@ data class CloudProviderProfile(
     val latency: Double,
     val toolReliability: Double,
     val supportsVision: Boolean = false,
+    /**
+     * Per-provider reasoning / thinking effort for o-series and extended-thinking
+     * models: `minimal` | `low` | `medium` | `high`. Blank means "inherit the
+     * global [UserSettings.reasoningEffort]". `medium` is the API default and is
+     * never sent on the wire.
+     */
+    val reasoningEffort: String = "",
 )
