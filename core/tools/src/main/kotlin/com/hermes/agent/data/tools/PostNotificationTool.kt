@@ -52,7 +52,8 @@ class PostNotificationTool @Inject constructor(
             ),
         ),
         category = "system",
-        capabilities = setOf("notification", "system", "automation"),
+        capabilities = setOf("notifications_post", "deferrable"),
+        requiresConfirmation = true,
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult = withContext(Dispatchers.IO) {

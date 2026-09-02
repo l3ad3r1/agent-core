@@ -28,9 +28,10 @@ class CameraCaptureToolTest {
     @Test
     fun descriptor_hasCorrectMetadata() {
         assertEquals("take_photo", tool.descriptor.name)
-        assertEquals("vision", tool.descriptor.category)
+        assertEquals("device", tool.descriptor.category)
         assertTrue(tool.descriptor.capabilities.contains("camera"))
-        assertTrue(tool.descriptor.capabilities.contains("vision"))
+        assertFalse(tool.descriptor.capabilities.contains("vision"))
+        assertTrue(tool.descriptor.requiresConfirmation)
 
         val facingParam = tool.descriptor.parameters.firstOrNull { it.name == "facing" }
         assertNotNull(facingParam)

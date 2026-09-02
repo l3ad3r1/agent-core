@@ -28,14 +28,15 @@ class NotificationToolsTest {
         context = ApplicationProvider.getApplicationContext()
         gateway = NotificationGateway(context)
         postTool = PostNotificationTool(gateway)
-        readTool = ReadNotificationsTool(gateway)
+        readTool = ReadNotificationsTool(context, gateway)
     }
 
     @Test
     fun postNotificationDescriptor_hasCorrectMetadata() {
         assertEquals("post_notification", postTool.descriptor.name)
         assertEquals("system", postTool.descriptor.category)
-        assertTrue(postTool.descriptor.capabilities.contains("notification"))
+        assertTrue(postTool.descriptor.capabilities.contains("notifications_post"))
+        assertTrue(postTool.descriptor.requiresConfirmation)
 
         val titleParam = postTool.descriptor.parameters.firstOrNull { it.name == "title" }
         assertNotNull(titleParam)
@@ -50,7 +51,8 @@ class NotificationToolsTest {
     fun readNotificationsDescriptor_hasCorrectMetadata() {
         assertEquals("read_notifications", readTool.descriptor.name)
         assertEquals("system", readTool.descriptor.category)
-        assertTrue(readTool.descriptor.capabilities.contains("notification"))
+        assertTrue(readTool.descriptor.capabilities.contains("notifications_read"))
+        assertFalse(readTool.descriptor.requiresConfirmation)
 
         val pkgParam = readTool.descriptor.parameters.firstOrNull { it.name == "package_name" }
         assertNotNull(pkgParam)

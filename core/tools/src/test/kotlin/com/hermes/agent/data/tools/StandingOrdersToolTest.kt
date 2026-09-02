@@ -81,6 +81,8 @@ class StandingOrdersToolTest {
     fun `descriptor properties match specification`() {
         assertEquals("standing_orders", tool.descriptor.name)
         assertEquals("automation", tool.descriptor.category)
+        assertTrue(tool.descriptor.capabilities.contains("standing_orders"))
+        assertTrue(tool.descriptor.requiresConfirmation)
         assertTrue(tool.descriptor.parameters.any { it.name == "action" && it.required })
     }
 

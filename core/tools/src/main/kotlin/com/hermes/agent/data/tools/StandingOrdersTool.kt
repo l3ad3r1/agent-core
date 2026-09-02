@@ -71,7 +71,8 @@ class StandingOrdersTool @Inject constructor(
             ),
         ),
         category = "automation",
-        capabilities = setOf("automation", "scheduler", "productivity"),
+        capabilities = setOf("standing_orders", "deferrable"),
+        requiresConfirmation = true,
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult = withContext(Dispatchers.IO) {

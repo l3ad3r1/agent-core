@@ -82,6 +82,12 @@ class NotificationGateway @Inject constructor(
         priority: String = "default",
         channelId: String = CHANNEL_ID_ASSISTANT_ALERTS,
     ): Int {
+        val safeTitle = title.trim().take(120)
+        val safeMessage = message.trim().take(2000)
+        if (safeTitle.isEmpty() && safeMessage.isEmpty()) {
+            return -1
+        }
+
         val notifId = notificationIdCounter.incrementAndGet()
         val importance = when (priority.lowercase()) {
             "low" -> NotificationCompat.PRIORITY_LOW
@@ -101,9 +107,9 @@ class NotificationGateway @Inject constructor(
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentTitle(safeTitle)
+            .setContentText(safeMessage)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(safeMessage))
             .setPriority(importance)
             .setAutoCancel(true)
 

@@ -63,6 +63,8 @@ class ToolExecutionPolicy @Inject constructor(
             "communication",
             "media_control",
             "device_control",
+            "take_photo",
+            "camera_capture",
         )
 
         /** UI automation may continue after the user approves app_launch, but never in scheduled runs. */

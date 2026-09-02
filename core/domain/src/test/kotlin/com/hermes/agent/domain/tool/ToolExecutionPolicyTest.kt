@@ -100,6 +100,16 @@ class ToolExecutionPolicyTest {
     }
 
     @Test
+    fun `take_photo is denied in background and confirmed in interactive`() = runTest {
+        val policy = policy()
+        val bgDecision = policy.evaluate(ExecutionOrigin.BACKGROUND, "take_photo", requiresConfirmation = true)
+        assertTrue("take_photo must be denied in background", bgDecision is ToolExecutionDecision.Deny)
+
+        val fgDecision = policy.evaluate(ExecutionOrigin.INTERACTIVE, "take_photo", requiresConfirmation = true)
+        assertEquals(ToolExecutionDecision.Confirm, fgDecision)
+    }
+
+    @Test
     fun `authenticated trusted mode allows only the background-safe phone subset`() = runTest {
         val policy = policy(trustedBackground = true)
 

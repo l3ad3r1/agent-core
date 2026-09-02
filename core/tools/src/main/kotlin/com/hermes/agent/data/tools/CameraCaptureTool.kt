@@ -77,8 +77,9 @@ class CameraCaptureTool @Inject constructor(
                 enumValues = listOf("off", "on", "auto"),
             ),
         ),
-        category = "vision",
-        capabilities = setOf("vision", "camera", "deferrable"),
+        category = "device",
+        capabilities = setOf("camera", "deferrable"),
+        requiresConfirmation = true,
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult = withContext(Dispatchers.IO) {
