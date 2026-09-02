@@ -118,6 +118,37 @@ data class WakeWordConfig(
             return null
         }
 
+        /** How many words past the trigger phrase a wake utterance may run and still count. */
+        private const val WAKE_TAIL_WORD_BUDGET = 4
+
+        /**
+         * Stricter matcher for the always-on wake service: the trigger must sit at
+         * the **start** of the utterance and the utterance must be short (the phrase
+         * plus at most [WAKE_TAIL_WORD_BUDGET] trailing words). This is what stops
+         * "hey hermes" buried in ordinary conversation, or a long dictated sentence
+         * that merely contains the words, from opening the assistant.
+         *
+         * "hey hermes"                         -> match
+         * "hey hermes what's the time"         -> match (3 tail words)
+         * "so I told hey hermes about it"      -> no match (not at the start)
+         * "hey hermes remind me to call the plumber tomorrow afternoon" -> no match (too long)
+         */
+        fun matchWakeTrigger(heardText: String, triggers: List<String>): String? {
+            if (heardText.isBlank()) return null
+            val text = normalizeRoutingKey(heardText)
+            val textWords = text.split(' ').filter { it.isNotBlank() }
+            for (trigger in triggers) {
+                val phrase = normalizeRoutingKey(trigger)
+                if (phrase.isBlank()) continue
+                val phraseWords = phrase.split(' ').filter { it.isNotBlank() }
+                if (phraseWords.isEmpty() || textWords.size < phraseWords.size) continue
+                val startsWithPhrase = textWords.subList(0, phraseWords.size) == phraseWords
+                val shortEnough = textWords.size <= phraseWords.size + WAKE_TAIL_WORD_BUDGET
+                if (startsWithPhrase && shortEnough) return trigger
+            }
+            return null
+        }
+
         /**
          * Resolves the target agent role for a matched trigger based on routing rules.
          */

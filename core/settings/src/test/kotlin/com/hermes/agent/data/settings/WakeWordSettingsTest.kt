@@ -67,6 +67,29 @@ class WakeWordSettingsTest {
     }
 
     @Test
+    fun matchWakeTrigger_requiresTheTriggerAtTheStartAndAShortUtterance() {
+        val triggers = listOf("Hey Hermes", "Computer")
+
+        assertEquals("Hey Hermes", WakeWordConfig.matchWakeTrigger("hey hermes", triggers))
+        assertEquals("Hey Hermes", WakeWordConfig.matchWakeTrigger("hey hermes what's the time", triggers))
+        assertEquals("Computer", WakeWordConfig.matchWakeTrigger("computer lights on", triggers))
+
+        // Not at the start.
+        assertNull(WakeWordConfig.matchWakeTrigger("so I said hey hermes to my friend", triggers))
+        assertNull(WakeWordConfig.matchWakeTrigger("my new computer is fast", triggers))
+        // At the start but a whole sentence, not a wake phrase.
+        assertNull(
+            WakeWordConfig.matchWakeTrigger(
+                "hey hermes could you please add milk and eggs to my shopping list for tomorrow",
+                triggers,
+            ),
+        )
+        // Nothing heard.
+        assertNull(WakeWordConfig.matchWakeTrigger("", triggers))
+        assertNull(WakeWordConfig.matchWakeTrigger("what time is it", triggers))
+    }
+
+    @Test
     fun resolveTargetAgent_mapsTriggerToTargetOrDefault() {
         val rules = mapOf("turn on lights" to "device_control")
         val agent1 = WakeWordConfig.resolveTargetAgent("Turn on lights!", rules, "conversational")
