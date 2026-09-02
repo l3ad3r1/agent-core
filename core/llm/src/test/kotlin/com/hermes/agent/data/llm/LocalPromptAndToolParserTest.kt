@@ -117,6 +117,24 @@ class LocalPromptAndToolParserTest {
     }
 
     @Test
+    fun `the system block is capped so a huge agent prompt cannot blow up the on-device prefill`() {
+        val hugeAgentPrompt = "You are Hermes. " + "capability line ".repeat(3_000) // ~48 KB
+        val prompt = buildLocalPrompt(
+            messages = listOf(
+                LlmMessage("system", hugeAgentPrompt),
+                LlmMessage("user", "hi"),
+            ),
+            maxSystemChars = 3_000,
+        )
+
+        // The persona head survives; the rest is dropped well under the cap
+        // (plus the small fixed "How to reply" footer the builder always adds).
+        assertTrue(prompt.system.startsWith("You are Hermes."))
+        assertTrue("system block was ${prompt.system.length} chars", prompt.system.length < 3_500)
+        assertTrue(prompt.system.contains("Answer the user's message directly"))
+    }
+
+    @Test
     fun `shared text parser extracts object arguments and cleans content`() {
         val (content, calls) = extractTextToolCalls(
             "Checking. <tool_call>{\"name\":\"calculator\",\"arguments\":{\"expression\":\"2+2\"}}</tool_call>",

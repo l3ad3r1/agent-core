@@ -13,6 +13,9 @@ internal data class LocalPrompt(
     val conversation: String,
 )
 
+/** How many tool descriptors the on-device model is shown at once. */
+private const val MAX_LOCAL_TOOLS = 8
+
 /**
  * Splits the conversation into a system block and the single live user turn.
  *
@@ -29,11 +32,21 @@ internal data class LocalPrompt(
  */
 internal fun buildLocalPrompt(
     messages: List<LlmMessage>,
-    maxConversationChars: Int = 12_000,
+    maxConversationChars: Int = 6_000,
+    // A phone-class 1B model prefills roughly 40-80 tokens/sec. The agent's full
+    // system prompt (persona + memory + skills + the whole tool catalogue) runs
+    // to ~25 KB / ~7k tokens, and decoding that in one uninterruptible native
+    // pass takes long enough that ART's GC SuspendAll watchdog kills the app
+    // mid-turn — the "freezing mid chat" that a cloud-to-local failover triggers.
+    // Keep the head of the system block (the part that says who the model is and
+    // how to answer) and drop the rest; this is a "cloud is down, give a basic
+    // answer" path, not the agent.
+    maxSystemChars: Int = 3_000,
 ): LocalPrompt {
     val instructions = messages.filter { it.role == "system" }
         .joinToString("\n\n") { it.content.trim() }
         .trim()
+        .let { if (it.length > maxSystemChars) it.take(maxSystemChars).trimEnd() + "\n…" else it }
     val rendered = messages.filterNot { it.role == "system" }.map { message ->
         val label = when (message.role) {
             "user" -> "User"
@@ -276,17 +289,24 @@ class LocalLlmProvider @Inject constructor(
 }
 
 private fun List<LlmMessage>.withLocalToolInstructions(tools: List<ToolDescriptor>): List<LlmMessage> {
+    // A 1B model cannot juggle a large tool catalogue, and every extra line is
+    // prefill the device pays for on a path that already risks a watchdog kill.
+    // Cap the count and trim each description.
+    val listed = tools.take(MAX_LOCAL_TOOLS)
     val instruction = buildString {
         appendLine("You may use only the tools listed below.")
-        tools.forEach { tool ->
-            append("- ").append(tool.name).append(": ").append(tool.description)
-            if (tool.parameters.isNotEmpty()) {
-                append(" Arguments: ")
-                tool.parameters.joinTo(this, ", ") { parameter ->
-                    "${parameter.name} (${parameter.type.name.lowercase()}${if (parameter.required) ", required" else ""})"
-                }
+        listed.forEach { tool ->
+            append("- ").append(tool.name).append(": ")
+            append(tool.description.substringBefore('\n').take(100))
+            val required = tool.parameters.filter { it.required }
+            if (required.isNotEmpty()) {
+                append(" Required arguments: ")
+                required.joinTo(this) { it.name }
             }
             appendLine()
+        }
+        if (tools.size > listed.size) {
+            appendLine("(${tools.size - listed.size} more tools are available but not listed here.)")
         }
         append(
             "To call a tool, reply with exactly " +
