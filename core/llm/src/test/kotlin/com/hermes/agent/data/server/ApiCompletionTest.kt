@@ -42,6 +42,40 @@ class ApiCompletionTest {
     }
 
     @Test
+    fun `persist fields default to null and parse when present`() {
+        val plain = ApiCompletion.parseRequest("""{"messages":[{"role":"user","content":"hi"}]}""")!!
+        assertNull(plain.persistConversationId)
+        assertNull(plain.persistConversationTitle)
+
+        val body = """
+            {"messages":[{"role":"user","content":"hi"}],
+             "hermes_persist_conversation":"po-your-note",
+             "hermes_persist_title":"PO: your note"}
+        """.trimIndent()
+        val req = ApiCompletion.parseRequest(body)!!
+        assertEquals("po-your-note", req.persistConversationId)
+        assertEquals("PO: your note", req.persistConversationTitle)
+        assertFalse(req.deliverOnly)
+    }
+
+    @Test
+    fun `deliver-only flag parses`() {
+        val req = ApiCompletion.parseRequest(
+            """{"messages":[{"role":"user","content":"hi"}],
+               "hermes_persist_conversation":"po-x","hermes_deliver_only":true}""",
+        )!!
+        assertTrue(req.deliverOnly)
+    }
+
+    @Test
+    fun `blank persist conversation id parses as null`() {
+        val req = ApiCompletion.parseRequest(
+            """{"messages":[{"role":"user","content":"hi"}],"hermes_persist_conversation":"  "}""",
+        )!!
+        assertNull(req.persistConversationId)
+    }
+
+    @Test
     fun `handles array-style content parts`() {
         val body = """
             {"messages":[{"role":"user","content":[{"type":"text","text":"part one "},{"type":"text","text":"part two"}]}]}

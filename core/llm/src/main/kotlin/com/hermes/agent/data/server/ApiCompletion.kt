@@ -35,6 +35,21 @@ object ApiCompletion {
         val messages: List<Message>,
         val stream: Boolean,
         val model: String,
+        /**
+         * Non-standard opt-in extension. When set, the turn is persisted to a
+         * real conversation with this id — so it shows up in the app's chat
+         * history — instead of running under a throwaway id. Used by the post
+         * office courier so pushed mail and Hermes' reply are visible in-app.
+         */
+        val persistConversationId: String? = null,
+        /** Title for the conversation created on first [persistConversationId] use. */
+        val persistConversationTitle: String? = null,
+        /**
+         * With [persistConversationId], only file the incoming user turn into the
+         * conversation and return immediately — do not run the agent. Lets the post
+         * office courier drop `fyi`/`note` mail into the app with zero inference.
+         */
+        val deliverOnly: Boolean = false,
     ) {
         /** The last user message drives the turn. */
         val lastUserMessage: String?
@@ -65,6 +80,11 @@ object ApiCompletion {
             messages = messages,
             stream = root["stream"]?.jsonPrimitive?.content?.toBoolean() ?: false,
             model = root["model"]?.jsonPrimitive?.content ?: MODEL_ID,
+            persistConversationId = root["hermes_persist_conversation"]
+                ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() },
+            persistConversationTitle = root["hermes_persist_title"]
+                ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() },
+            deliverOnly = root["hermes_deliver_only"]?.jsonPrimitive?.content?.toBoolean() ?: false,
         )
     }.getOrNull()
 
