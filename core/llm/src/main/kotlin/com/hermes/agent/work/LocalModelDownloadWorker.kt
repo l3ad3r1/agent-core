@@ -15,6 +15,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.hermes.agent.data.llm.LocalModelInstaller
 import com.hermes.agent.data.llm.ModelCatalog
+import com.hermes.agent.data.llm.ToolCallerCatalog
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
@@ -41,7 +42,13 @@ class LocalModelDownloadWorker @AssistedInject constructor(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val modelId = inputData.getString(KEY_MODEL_ID)
             ?: return@withContext failure("The selected model was not supplied. Choose it again.")
+        // Both catalogues, not just the chat one: the tool caller is deliberately
+        // kept out of ModelCatalog so it can never be picked as a chat model, but
+        // it is enqueued through this same worker. Looking in ModelCatalog alone
+        // made every FunctionGemma download fail instantly with "no longer
+        // available" -- the model was never there to find.
         val model = ModelCatalog.MODELS.firstOrNull { it.id == modelId }
+            ?: ToolCallerCatalog.MODELS.firstOrNull { it.id == modelId }
             ?: return@withContext failure("The selected model is no longer available. Choose another model.")
         val destinationPath = inputData.getString(KEY_DESTINATION_DIR)
             ?: return@withContext failure("The model folder was not supplied. Choose it again.")

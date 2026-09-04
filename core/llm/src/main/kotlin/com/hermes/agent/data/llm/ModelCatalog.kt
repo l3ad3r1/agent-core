@@ -37,7 +37,8 @@ data class DownloadableModel(
  * read from this single list, so no other code needs to change.
  *
  * Every URL, commit SHA, size, and SHA-256 digest below was verified live against
- * HuggingFace (verified 2026-08-24). All are bartowski Q4_K_M quantisations.
+ * HuggingFace (verified 2026-08-24; MiniCPM5 1B added and verified
+ * 2026-09-04). All are Q4_K_M quantisations.
  */
 object ModelCatalog {
     val MODELS: List<DownloadableModel> = listOf(
@@ -76,6 +77,20 @@ object ModelCatalog {
             sizeBytes = 2_019_377_696L,
             revision = "5ab33fa94d1d04e903623ae72c95d1696f09f9e8",
             sha256 = "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff",
+        ),
+        // openbmb's own GGUF. Despite the name it declares
+        // general.architecture = "llama", so it loads on the runtime already
+        // built here -- and the MiniCPM5 pre-tokenizer landed in the vendored
+        // llama.cpp (b9976). A newer generation than MiniCPM3 4B below at a
+        // third of the size, which matters on a phone.
+        DownloadableModel(
+            id = "minicpm5-1b-q4km",
+            displayName = "MiniCPM5 1B Instruct (Q4_K_M)",
+            fileName = "MiniCPM5-1B-Q4_K_M.gguf",
+            url = "https://huggingface.co/openbmb/MiniCPM5-1B-GGUF/resolve/3d55fac80935ae6456986ad2384b5cbcc4d6c948/MiniCPM5-1B-Q4_K_M.gguf",
+            sizeBytes = 688_065_920L,
+            revision = "3d55fac80935ae6456986ad2384b5cbcc4d6c948",
+            sha256 = "81b64d05a23b17b34c475f42b3e72fbde62d4b92cc34541f7a8031d0752deafa",
         ),
         DownloadableModel(
             id = "minicpm3-4b-q4km",

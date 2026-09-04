@@ -42,4 +42,13 @@ object ToolCallerCatalog {
 
     /** The model the tool-caller path uses. Single-entry for now, by design. */
     val DEFAULT: DownloadableModel = FUNCTION_GEMMA_270M
+
+    /**
+     * Every model this catalogue can hand to the downloader.
+     *
+     * Kept separate from [ModelCatalog.MODELS] -- these are not chat models and
+     * must not appear in the chat dropdown -- but the download worker resolves
+     * an id against both, so anything listed here is downloadable.
+     */
+    val MODELS: List<DownloadableModel> = listOf(FUNCTION_GEMMA_270M)
 }
