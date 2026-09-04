@@ -93,6 +93,7 @@ class SettingsRepositoryImpl(
         val MODULE_CATALOG_URL = stringPreferencesKey("module_catalog_url")
         val PRIVILEGED_SHELL_ENABLED = booleanPreferencesKey("privileged_shell_enabled")
         val LOCAL_LLM_ENABLED = booleanPreferencesKey("local_llm_enabled")
+        val ON_DEVICE_TOOL_CALLER_ENABLED = booleanPreferencesKey("on_device_tool_caller_enabled")
         val HOME_ASSISTANT_URL = stringPreferencesKey("home_assistant_url")
         val HOME_ASSISTANT_TOKEN = stringPreferencesKey("home_assistant_token")
         val HOME_ASSISTANT_DASHBOARD_PATH = stringPreferencesKey("home_assistant_dashboard_path")
@@ -327,6 +328,10 @@ class SettingsRepositoryImpl(
         context.hermesDataStore.edit { it[Keys.LOCAL_LLM_ENABLED] = enabled }
     }
 
+    override suspend fun setOnDeviceToolCallerEnabled(enabled: Boolean) {
+        context.hermesDataStore.edit { it[Keys.ON_DEVICE_TOOL_CALLER_ENABLED] = enabled }
+    }
+
     override suspend fun setHomeAssistantUrl(url: String) {
         context.hermesDataStore.edit { it[Keys.HOME_ASSISTANT_URL] = url.trim() }
     }
@@ -414,6 +419,7 @@ class SettingsRepositoryImpl(
             moduleCatalogUrl = this[Keys.MODULE_CATALOG_URL] ?: DEFAULT_MODULE_CATALOG_URL,
             privilegedShellEnabled = this[Keys.PRIVILEGED_SHELL_ENABLED] ?: false,
             localLlmEnabled = this[Keys.LOCAL_LLM_ENABLED] ?: true,
+            onDeviceToolCallerEnabled = this[Keys.ON_DEVICE_TOOL_CALLER_ENABLED] ?: false,
             homeAssistantUrl = this[Keys.HOME_ASSISTANT_URL] ?: "http://homeassistant.local:8123",
             homeAssistantToken = this.secret(Keys.HOME_ASSISTANT_TOKEN) ?: "",
             homeAssistantDashboardPath = this[Keys.HOME_ASSISTANT_DASHBOARD_PATH] ?: "",

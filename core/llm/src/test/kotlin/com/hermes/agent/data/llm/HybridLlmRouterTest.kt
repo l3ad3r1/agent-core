@@ -21,6 +21,7 @@ class HybridLlmRouterTest {
     private lateinit var cloud: CloudLlmProvider
     private lateinit var specialised: CloudLlmProvider
     private lateinit var local: LocalLlmProvider
+    private lateinit var toolCaller: ToolCallerLlmProvider
     private lateinit var settings: SettingsRepository
 
     @Before
@@ -28,6 +29,7 @@ class HybridLlmRouterTest {
         cloud = mockk(relaxed = true)
         specialised = mockk(relaxed = true)
         local = mockk(relaxed = true)
+        toolCaller = mockk(relaxed = true)
         settings = mockk(relaxed = true)
         every { cloud.name } returns "Primary cloud"
         every { cloud.model } returns "primary-model"
@@ -35,6 +37,11 @@ class HybridLlmRouterTest {
         every { specialised.model } returns "specialist-model"
         every { local.name } returns "Local"
         every { local.model } returns "local-model"
+        every { toolCaller.name } returns "On-device tool caller"
+        every { toolCaller.model } returns "tool-caller-model"
+        // Off unless a test turns it on, so every existing expectation about
+        // which provider leads the chain still holds.
+        coEvery { toolCaller.isAvailable() } returns false
     }
 
     @Test
@@ -48,7 +55,7 @@ class HybridLlmRouterTest {
         val messages = listOf(LlmMessage("user", "refine this"))
         coEvery { cloud.complete(messages) } throws IOException("network down")
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(messages, RoutingContext(cloudOnly = true))
 
         assertTrue("expected Ready decision", decision is RoutingDecision.Ready)
@@ -72,7 +79,7 @@ class HybridLlmRouterTest {
         coEvery { specialised.isAvailable() } returns false
         coEvery { local.isAvailable() } returns true
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(
             listOf(LlmMessage("user", "refine this")),
             RoutingContext(cloudOnly = true),
@@ -98,7 +105,7 @@ class HybridLlmRouterTest {
         coEvery { cloud.complete(messages) } throws IOException("network down")
         coEvery { local.complete(messages) } returns localResponse
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(
             messages,
             RoutingContext(requiresReliableToolCalls = true),
@@ -121,7 +128,7 @@ class HybridLlmRouterTest {
         coEvery { cloud.isAvailable() } returns true
         coEvery { local.isAvailable() } returns true
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(
             listOf(LlmMessage("user", "Analyze and compare these options")),
             RoutingContext(requiredAlias = "quick"),
@@ -140,7 +147,7 @@ class HybridLlmRouterTest {
         coEvery { cloud.isAvailable() } returns true
         coEvery { specialised.isAvailable() } returns true
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(listOf(LlmMessage("user", "Please analyze and compare these options")))
 
         assertTrue(decision is RoutingDecision.Ready)
@@ -158,7 +165,7 @@ class HybridLlmRouterTest {
         coEvery { cloud.isAvailable() } returns true
         coEvery { specialised.isAvailable() } returns true
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(listOf(LlmMessage("user", "hi")))
 
         assertTrue(decision is RoutingDecision.Ready)
@@ -178,7 +185,7 @@ class HybridLlmRouterTest {
         coEvery { specialised.isAvailable() } returns true
         coEvery { local.isAvailable() } returns true
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(listOf(LlmMessage("user", "hi")))
 
         assertTrue(decision is RoutingDecision.Ready)
@@ -198,7 +205,7 @@ class HybridLlmRouterTest {
         coEvery { specialised.isAvailable() } returns true
         coEvery { local.isAvailable() } returns true
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(
             listOf(LlmMessage("user", "Create a calendar event today at 3 PM")),
             RoutingContext(requiresReliableToolCalls = true),
@@ -242,6 +249,7 @@ class HybridLlmRouterTest {
             cloud,
             specialised,
             local,
+            toolCaller,
             settings,
             factory,
             QualityAwareLlmRoutingPolicy(),
@@ -264,7 +272,7 @@ class HybridLlmRouterTest {
         coEvery { cloud.isAvailable() } returns true
         coEvery { specialised.isAvailable() } returns false
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(listOf(LlmMessage("user", "Please analyze and compare these options")))
 
         assertTrue(decision is RoutingDecision.Ready)
@@ -280,7 +288,7 @@ class HybridLlmRouterTest {
         coEvery { cloud.isAvailable() } returns false
         coEvery { local.isAvailable() } returns false
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(listOf(LlmMessage("user", "hello")))
 
         assertTrue("expected Unavailable", decision is RoutingDecision.Unavailable)
@@ -295,7 +303,7 @@ class HybridLlmRouterTest {
         coEvery { cloud.isAvailable() } returns false
         coEvery { local.isAvailable() } returns true
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(listOf(LlmMessage("user", "hello")))
 
         assertTrue(decision is RoutingDecision.Ready)
@@ -311,7 +319,7 @@ class HybridLlmRouterTest {
         coEvery { cloud.isAvailable() } returns false
         coEvery { local.isAvailable() } returns false
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(listOf(LlmMessage("user", "anything")))
 
         assertTrue(decision is RoutingDecision.Unavailable)
@@ -331,7 +339,7 @@ class HybridLlmRouterTest {
         coEvery { cloud.isAvailable() } returns false
         coEvery { local.isAvailable() } returns true
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val decision = router.route(listOf(LlmMessage("user", "anything")))
 
         assertTrue(decision is RoutingDecision.Ready)
@@ -346,7 +354,7 @@ class HybridLlmRouterTest {
         )
         coEvery { cloud.isAvailable() } returns true
 
-        val router = HybridLlmRouter(cloud, specialised, local, settings)
+        val router = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
         val d1 = router.route(listOf(LlmMessage("user", "hi")))
         val d2 = router.route(listOf(LlmMessage("user", "hi")))
         assertEquals(d1::class, d2::class)
@@ -373,4 +381,152 @@ class HybridLlmRouterTest {
         val long = "a".repeat(500)
         assertEquals(RequestComplexity.COMPLEX, ComplexityClassifier.classify(long))
     }
+
+    // ── on-device tool caller ─────────────────────────────────────────────────
+
+    private fun toolTurnSettings() = UserSettings(
+        cloudEnabled = true,
+        cloudApiKey = "sk-test",
+        onDeviceToolCallerEnabled = true,
+    )
+
+    @Test
+    fun `tool caller leads the chain on a tool turn`() = runTest {
+        coEvery { settings.current() } returns toolTurnSettings()
+        coEvery { cloud.isAvailable() } returns true
+        coEvery { toolCaller.isAvailable() } returns true
+
+        val decision = router().route(
+            listOf(LlmMessage("user", "turn on the torch")),
+            RoutingContext(toolCount = 12),
+        )
+
+        assertTrue(decision is RoutingDecision.Ready)
+        assertEquals(
+            "On-device tool caller",
+            (decision as RoutingDecision.Ready).provider.name,
+        )
+    }
+
+    @Test
+    fun `tool caller stays out of a chat turn`() = runTest {
+        coEvery { settings.current() } returns toolTurnSettings()
+        coEvery { cloud.isAvailable() } returns true
+        coEvery { toolCaller.isAvailable() } returns true
+
+        // No tools advertised, so there is nothing for it to call and no reason
+        // to pay for its prefill.
+        val decision = router().route(
+            listOf(LlmMessage("user", "how are you?")),
+            RoutingContext(toolCount = 0),
+        )
+
+        assertTrue(decision is RoutingDecision.Ready)
+        assertEquals("Primary cloud", (decision as RoutingDecision.Ready).provider.name)
+    }
+
+    @Test
+    fun `cloudOnly keeps the tool caller out of the chain`() = runTest {
+        coEvery { settings.current() } returns toolTurnSettings()
+        coEvery { cloud.isAvailable() } returns true
+        coEvery { toolCaller.isAvailable() } returns true
+
+        val decision = router().route(
+            listOf(LlmMessage("user", "rewrite this skill")),
+            RoutingContext(toolCount = 12, cloudOnly = true),
+        )
+
+        assertTrue(decision is RoutingDecision.Ready)
+        assertEquals("Primary cloud", (decision as RoutingDecision.Ready).provider.name)
+    }
+
+    @Test
+    fun `the disabled toggle keeps the tool caller out even when downloaded`() = runTest {
+        coEvery { settings.current() } returns UserSettings(
+            cloudEnabled = true,
+            cloudApiKey = "sk-test",
+            onDeviceToolCallerEnabled = false,
+        )
+        coEvery { cloud.isAvailable() } returns true
+        coEvery { toolCaller.isAvailable() } returns true
+
+        val decision = router().route(
+            listOf(LlmMessage("user", "turn on the torch")),
+            RoutingContext(toolCount = 12),
+        )
+
+        assertEquals(
+            "Primary cloud",
+            ((decision as RoutingDecision.Ready).provider).name,
+        )
+    }
+
+    @Test
+    fun `an abstaining tool caller hands the turn to the cloud`() = runTest {
+        coEvery { settings.current() } returns toolTurnSettings()
+        coEvery { cloud.isAvailable() } returns true
+        coEvery { toolCaller.isAvailable() } returns true
+
+        val messages = listOf(LlmMessage("user", "book me a haircut"))
+        val cloudAnswer = LlmToolResponse("done", emptyList(), 7, "primary-model", "stop")
+        coEvery { toolCaller.completeWithTools(any(), any()) } throws
+            ToolCallerAbstained("confidence 0.20")
+        coEvery { cloud.completeWithTools(any(), any()) } returns cloudAnswer
+
+        val decision = router().route(messages, RoutingContext(toolCount = 12))
+        val result = (decision as RoutingDecision.Ready).provider
+            .completeWithTools(messages, emptyList())
+
+        // The abstain is not an error the user ever sees — the chain absorbs it.
+        assertEquals(cloudAnswer, result)
+        coVerify(exactly = 1) { toolCaller.completeWithTools(any(), any()) }
+    }
+
+    @Test
+    fun `offline tool turns put the tool caller ahead of the local model`() = runTest {
+        coEvery { settings.current() } returns UserSettings(
+            cloudEnabled = false,
+            localLlmEnabled = true,
+            onDeviceToolCallerEnabled = true,
+        )
+        coEvery { cloud.isAvailable() } returns false
+        coEvery { specialised.isAvailable() } returns false
+        coEvery { local.isAvailable() } returns true
+        coEvery { toolCaller.isAvailable() } returns true
+
+        val decision = router().route(
+            listOf(LlmMessage("user", "turn on the torch")),
+            RoutingContext(toolCount = 12),
+        )
+
+        assertTrue(decision is RoutingDecision.Ready)
+        assertEquals(
+            "On-device tool caller",
+            (decision as RoutingDecision.Ready).provider.name,
+        )
+    }
+
+    @Test
+    fun `the tool caller is never alone in a chain`() = runTest {
+        // Nothing to hand an abstain to: with no cloud and no local model, a
+        // lone tool caller would turn "not sure" into a hard failure.
+        coEvery { settings.current() } returns UserSettings(
+            cloudEnabled = false,
+            localLlmEnabled = false,
+            onDeviceToolCallerEnabled = true,
+        )
+        coEvery { cloud.isAvailable() } returns false
+        coEvery { specialised.isAvailable() } returns false
+        coEvery { local.isAvailable() } returns false
+        coEvery { toolCaller.isAvailable() } returns true
+
+        val decision = router().route(
+            listOf(LlmMessage("user", "turn on the torch")),
+            RoutingContext(toolCount = 12),
+        )
+
+        assertTrue(decision is RoutingDecision.Unavailable)
+    }
+
+    private fun router() = HybridLlmRouter(cloud, specialised, local, settings, toolCaller)
 }

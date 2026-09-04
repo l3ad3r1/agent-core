@@ -73,6 +73,7 @@ class TranscribeAudioToolTest {
         override suspend fun setModuleCatalogUrl(url: String) {}
         override suspend fun setPrivilegedShellEnabled(enabled: Boolean) {}
         override suspend fun setLocalLlmEnabled(enabled: Boolean) {}
+        override suspend fun setOnDeviceToolCallerEnabled(enabled: Boolean) {}
         override suspend fun setHomeAssistantUrl(url: String) {}
         override suspend fun setHomeAssistantToken(token: String) {}
         override suspend fun setHomeAssistantDashboardPath(path: String) {}

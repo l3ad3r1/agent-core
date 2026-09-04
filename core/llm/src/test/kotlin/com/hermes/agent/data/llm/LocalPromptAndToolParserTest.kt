@@ -157,6 +157,44 @@ class LocalPromptAndToolParserTest {
     }
 
     @Test
+    fun `a JSON envelope naming no tool is stripped, not shown as markup`() {
+        // Captured from a small cloud model behind the Telegram gateway: asked to
+        // "reply on Telegram" it invented a send envelope that matches no tool.
+        // The raw <tool_call> tags must not survive into the user-facing reply.
+        val (content, calls) = extractTextToolCalls(
+            """<tool_call>{"message": "test", "platform": "Telegram"}</tool_call>""",
+            json,
+        )
+
+        assertTrue(calls.isEmpty())
+        assertEquals("", content)
+    }
+
+    @Test
+    fun `an OpenAI-in-text function envelope is parsed`() {
+        val (content, calls) = extractTextToolCalls(
+            """<tool_call>{"function":{"name":"calculator","arguments":{"expression":"2+2"}}}</tool_call>""",
+            json,
+        )
+
+        assertEquals(1, calls.size)
+        assertEquals("calculator", calls.single().name)
+        assertEquals("2+2", calls.single().arguments["expression"]?.jsonPrimitive?.content)
+        assertEquals("", content)
+    }
+
+    @Test
+    fun `a parameters key is accepted as the argument object`() {
+        val (_, calls) = extractTextToolCalls(
+            """<tool_call>{"name":"calculator","parameters":{"expression":"7*6"}}</tool_call>""",
+            json,
+        )
+
+        assertEquals(1, calls.size)
+        assertEquals("7*6", calls.single().arguments["expression"]?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun `local provider advertises tools and returns parsed tool calls`() = runTest {
         val manager = mockk<LocalLlmManager>()
         every { manager.generateResponse(any(), any()) } returns flowOf(

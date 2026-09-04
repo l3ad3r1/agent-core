@@ -63,6 +63,7 @@ class HomeAssistantToolTest {
         override suspend fun setModuleCatalogUrl(url: String) {}
         override suspend fun setPrivilegedShellEnabled(enabled: Boolean) {}
         override suspend fun setLocalLlmEnabled(enabled: Boolean) {}
+        override suspend fun setOnDeviceToolCallerEnabled(enabled: Boolean) {}
         override suspend fun setHomeAssistantUrl(url: String) { settings = settings.copy(homeAssistantUrl = url) }
         override suspend fun setHomeAssistantToken(token: String) { settings = settings.copy(homeAssistantToken = token) }
         override suspend fun setHomeAssistantDashboardPath(path: String) {}

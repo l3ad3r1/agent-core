@@ -23,6 +23,7 @@ internal fun extractTextToolCalls(
         return recoverLooseToolCall(content, json, knownToolNames)
     }
     val calls = mutableListOf<ToolCall>()
+    var sawStructuredEnvelope = false
     TOOL_CALL_TAG.findAll(content).forEach { match ->
         val element = parseRelaxed(match.groupValues[1].trim(), json) ?: return@forEach
         val objects = when (element) {
@@ -30,25 +31,44 @@ internal fun extractTextToolCalls(
             is JsonObject -> listOf(element)
             else -> emptyList()
         }
+        if (objects.isNotEmpty()) sawStructuredEnvelope = true
         objects.forEach { obj ->
-            val name = obj["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-                ?: return@forEach
-            val arguments: Map<String, JsonElement> = when (val value = obj["arguments"]) {
-                is JsonObject -> value
-                is JsonPrimitive -> runCatching {
-                    json.parseToJsonElement(value.content).jsonObject
-                }.getOrNull() ?: emptyMap()
-                else -> emptyMap()
-            }
-            calls += ToolCall(
-                id = "text_call_${TOOL_CALL_ID.incrementAndGet()}",
-                name = name,
-                arguments = arguments,
-            )
+            calls += toolCallFromObject(obj, json) ?: return@forEach
         }
     }
-    if (calls.isEmpty()) return recoverLooseToolCall(content, json, knownToolNames)
-    return TOOL_CALL_TAG.replace(content, "").trim() to calls
+    if (calls.isNotEmpty()) return TOOL_CALL_TAG.replace(content, "").trim() to calls
+    // A parseable JSON envelope that named no runnable tool is still a failed
+    // tool call, not prose — strip it so raw <tool_call> markup never reaches
+    // the user (a small model asked to "reply on Telegram" invents an envelope
+    // like {"message": "...", "platform": "Telegram"} that matches no tool).
+    // Genuinely malformed junk falls through to the loose recovery, which
+    // leaves ordinary text untouched.
+    if (sawStructuredEnvelope) return TOOL_CALL_TAG.replace(content, "").trim() to emptyList()
+    return recoverLooseToolCall(content, json, knownToolNames)
+}
+
+/**
+ * Reads one `{…}` tool envelope. Accepts the shapes small models actually emit:
+ * `{"name": …, "arguments": {…}}`, `{"name": …, "parameters": {…}}`, and the
+ * OpenAI-in-text `{"function": {"name": …, "arguments": {…}}}`. `arguments` may
+ * itself be a JSON string. Returns null when no tool name is present.
+ */
+private fun toolCallFromObject(obj: JsonObject, json: Json): ToolCall? {
+    val fn = (obj["function"] as? JsonObject) ?: obj
+    val name = fn["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+        ?: return null
+    val arguments: Map<String, JsonElement> = when (val value = fn["arguments"] ?: fn["parameters"]) {
+        is JsonObject -> value
+        is JsonPrimitive -> runCatching {
+            json.parseToJsonElement(value.content).jsonObject
+        }.getOrNull() ?: emptyMap()
+        else -> emptyMap()
+    }
+    return ToolCall(
+        id = "text_call_${TOOL_CALL_ID.incrementAndGet()}",
+        name = name,
+        arguments = arguments,
+    )
 }
 
 /**

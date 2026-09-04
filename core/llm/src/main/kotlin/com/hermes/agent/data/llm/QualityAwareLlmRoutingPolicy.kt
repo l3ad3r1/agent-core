@@ -21,6 +21,15 @@ data class RoutingContext(
      */
     val cloudOnly: Boolean = false,
     val requiresVision: Boolean = false,
+    /**
+     * How many tools this turn advertises.
+     *
+     * [LlmRouter.route] is handed messages and this context, never the tool
+     * list, so without it the router cannot tell a tool turn from a chat turn —
+     * and the on-device tool caller is only worth inserting on the former.
+     * Zero, the default, leaves every existing caller routing exactly as before.
+     */
+    val toolCount: Int = 0,
 )
 
 /** The role and normalized operating characteristics of one runnable model. */

@@ -44,6 +44,7 @@ class HybridLlmRouter @Inject constructor(
     private val cloud: CloudLlmProvider,
     @Named("cloudAux") private val specialised: CloudLlmProvider,
     private val local: LocalLlmProvider,
+    private val toolCaller: ToolCallerLlmProvider,
     private val settings: SettingsRepository,
     private val profileProviderFactory: ProfileCloudProviderFactory,
     private val routingPolicy: LlmRoutingPolicy,
@@ -54,10 +55,12 @@ class HybridLlmRouter @Inject constructor(
         specialised: CloudLlmProvider,
         local: LocalLlmProvider,
         settings: SettingsRepository,
+        toolCaller: ToolCallerLlmProvider,
     ) : this(
         cloud,
         specialised,
         local,
+        toolCaller,
         settings,
         object : ProfileCloudProviderFactory {
             override fun create(profile: com.hermes.agent.domain.settings.CloudProviderProfile): CloudLlmProvider =
@@ -75,6 +78,28 @@ class HybridLlmRouter @Inject constructor(
         // The user-facing "Local model" toggle is a hard off switch: even a
         // downloaded model is never routed to while it's disabled.
         val localAvailable = s.localLlmEnabled && available(local) && !context.cloudOnly
+
+        // The on-device tool caller leads the chain rather than competing in it:
+        // it either produces a call it is confident in or throws, and the chain
+        // moves on. It is only worth a turn that actually carries tools, and —
+        // like the local model — never on a cloudOnly turn.
+        val toolCallerDownloaded = s.onDeviceToolCallerEnabled && available(toolCaller)
+        val toolCallerEligible = toolCallerDownloaded &&
+            !context.cloudOnly &&
+            context.toolCount > 0
+
+        // Says why the tool caller sat out a turn it was switched on for. Three
+        // separate conditions gate it and none are visible from the outside, so
+        // without this a feature that silently never runs looks exactly like one
+        // that runs and always abstains.
+        if (s.onDeviceToolCallerEnabled && !toolCallerEligible) {
+            Timber.tag("LlmRouter").d(
+                "Tool caller not used: toolCount=%d, downloaded=%b, cloudOnly=%b",
+                context.toolCount,
+                toolCallerDownloaded,
+                context.cloudOnly,
+            )
+        }
 
         // OMH Maestro alias enforcement
         if (context.requiredAlias == "quick" && localAvailable) {
@@ -152,6 +177,18 @@ class HybridLlmRouter @Inject constructor(
 
         if (cloudCandidates.isEmpty()) {
             if (localAvailable) {
+                // Offline device control is the best case for the tool caller —
+                // a 270M model that can fire `set_torch` beats a 1B model
+                // describing how it would. Still only ahead of the local model,
+                // never alone: an abstain needs somewhere to land.
+                if (toolCallerEligible) {
+                    Timber.tag("LlmRouter")
+                        .d("No cloud provider is available; tool caller ahead of local fallback")
+                    return RoutingDecision.Ready(
+                        RoutedProviderChain(listOf(toolCaller, local)),
+                        "all cloud providers unavailable → on-device tool caller → local fallback",
+                    )
+                }
                 Timber.tag("LlmRouter").d("No cloud provider is available; using final local fallback")
                 return RoutingDecision.Ready(local, "all cloud providers unavailable → local fallback")
             }
@@ -184,16 +221,29 @@ class HybridLlmRouter @Inject constructor(
             .map { it.provider }
             .toList()
         val localFallback = if (localAvailable) listOf(local) else emptyList()
-        val chain = (rankedProviders + remainingProviders + localFallback)
+        val downstream = (rankedProviders + remainingProviders + localFallback)
             .distinctBy { "${it.name}|${it.model}" }
+        // Prepended, never the whole chain: this provider's failure mode is a
+        // deliberate abstain, and a chain that is only the tool caller turns
+        // "not sure" into a hard error in front of the user.
+        val chain = if (toolCallerEligible && downstream.isNotEmpty()) {
+            listOf<LlmProvider>(toolCaller) + downstream
+        } else {
+            downstream
+        }
         val target = if (chain.size == 1) chain.first() else RoutedProviderChain(chain)
         val requirement = if (selected.satisfiesRequirements) "quality gate met" else "best available"
-        val reason = "%s → %s (%s, required quality %.2f)".format(
-            candidate.tier.name.lowercase(),
-            candidate.provider.model,
-            requirement,
-            selected.requiredQuality,
-        )
+        val reason = buildString {
+            if (chain.firstOrNull() === toolCaller) append("on-device tool caller → ")
+            append(
+                "%s → %s (%s, required quality %.2f)".format(
+                    candidate.tier.name.lowercase(),
+                    candidate.provider.model,
+                    requirement,
+                    selected.requiredQuality,
+                ),
+            )
+        }
         Timber.tag("LlmRouter").d("Route=%s, score=%.3f, %s", candidate.tier, selected.score, reason)
         return RoutingDecision.Ready(target, reason)
     }

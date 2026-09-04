@@ -92,6 +92,11 @@ data class UserSettings(
     // On-device model fallback. Off skips the local engine entirely — cloud
     // fails loudly instead of silently dropping to local when unreachable.
     val localLlmEnabled: Boolean = true,
+    // Experimental: a small on-device model that attempts tool turns ahead of
+    // every cloud provider and abstains when it is not confident. Off by
+    // default — it needs its own model download, and it changes which model
+    // answers device commands.
+    val onDeviceToolCallerEnabled: Boolean = false,
     // Home Assistant connection
     val homeAssistantUrl: String = "http://homeassistant.local:8123",
     val homeAssistantToken: String = "",

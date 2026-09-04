@@ -5,6 +5,7 @@ import com.hermes.agent.domain.settings.*
 import android.Manifest
 import android.app.ActivityManager
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -30,6 +31,24 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
+/**
+ * Which of the two on-device models a caller wants.
+ *
+ * They cannot both be resident. `InferenceEngineImpl` is a process-wide
+ * singleton over global native state — its JNI entry points (`load`, `unload`,
+ * `processUserPrompt`) take no model handle, and every call is serialised onto
+ * one thread — so llama.cpp holds exactly one model for the whole app. Asking
+ * for a role that is not the loaded one evicts the other model and loads this
+ * one, which costs a reload, so the roles are worth keeping few and coarse.
+ */
+enum class LocalModelRole {
+    /** Conversation. The model the user picks in Settings. */
+    CHAT,
+
+    /** Tool calls only. The small model from [ToolCallerCatalog]. */
+    TOOL_CALLER,
+}
+
 @Singleton
 class LocalLlmManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -39,6 +58,12 @@ class LocalLlmManager @Inject constructor(
     private val productIdentity: ProductIdentity,
 ) {
     private val modelMutex = Mutex()
+
+    /**
+     * The role whose weights are currently in the engine, or null when nothing
+     * is loaded. Guarded by [modelMutex] along with every engine transition.
+     */
+    private var loadedRole: LocalModelRole? = null
 
     private suspend fun activeModel(): DownloadableModel =
         ModelCatalog.byId(settingsRepository.current().selectedModelId)
@@ -50,6 +75,20 @@ class LocalLlmManager @Inject constructor(
     }
 
     private suspend fun currentModelFile(): File = File(destinationDir(), activeModel().fileName)
+
+    private suspend fun toolCallerFile(): File =
+        File(destinationDir(), ToolCallerCatalog.DEFAULT.fileName)
+
+    /**
+     * Whether this build is debuggable.
+     *
+     * Gates logging of raw model output. [com.hermes.agent.data.log.FileLogTree]
+     * is planted on every build type and writes every priority to a log file the
+     * user can export, so a debug line carrying a model reply — which is derived
+     * from whatever they typed — would persist in release builds too.
+     */
+    val isDebuggable: Boolean
+        get() = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     /**
      * Reads current device memory info.
@@ -129,6 +168,26 @@ class LocalLlmManager @Inject constructor(
         }
     }
 
+    /**
+     * Whether the tool-calling model is present.
+     *
+     * Same size-then-sidecar check as [isModelDownloaded]'s catalog path, minus
+     * the custom-URI branch: this model is never user-supplied.
+     */
+    suspend fun isToolCallerDownloaded(): Boolean = withContext(Dispatchers.IO) {
+        val model = ToolCallerCatalog.DEFAULT
+        val file = toolCallerFile()
+        if (!file.isFile || file.length() != model.sizeBytes) {
+            return@withContext false
+        }
+        if (LocalModelInstaller.sidecarFile(file).isFile) {
+            LocalModelInstaller.isSidecarValid(file, model.sha256, model.sizeBytes)
+        } else {
+            LocalModelInstaller.writeSidecar(file, model.sha256)
+            true
+        }
+    }
+
     val isDownloading: StateFlow<Boolean> = downloadCoordinator.isDownloading
     val downloadProgress: StateFlow<Float> = downloadCoordinator.progress
     val downloadError: StateFlow<String> = downloadCoordinator.error
@@ -144,21 +203,104 @@ class LocalLlmManager @Inject constructor(
         downloadCoordinator.enqueue(activeModel(), destinationDir())
     }
 
+    /**
+     * Fetches the tool-calling model.
+     *
+     * Shares the coordinator — and therefore the single [isDownloading] /
+     * [downloadProgress] slot — with the chat model, so the two downloads cannot
+     * be shown separately and the second is refused while the first runs. That
+     * is acceptable while this is one 291 MB fetch behind a settings toggle; a
+     * second progress slot is the fix if the UI ever offers both at once.
+     */
+    suspend fun startToolCallerDownload() {
+        if (isDownloading.value || isToolCallerDownloaded()) return
+        if (!hasStorageAccess(context)) {
+            downloadCoordinator.reportError(
+                "Storage access is required to save the model. Grant it above and try again.",
+            )
+            return
+        }
+        downloadCoordinator.enqueue(ToolCallerCatalog.DEFAULT, destinationDir())
+    }
+
     fun clearDownloadError() = downloadCoordinator.clearError()
 
     fun cancelDownload() = downloadCoordinator.cancelDownload()
 
-    private suspend fun initializeLocked() {
+    private suspend fun initializeLocked(role: LocalModelRole) {
         val settledState = engine.state.first {
             it !is State.Uninitialized && it !is State.Initializing
         }
+        if (settledState.isModelLoaded && loadedRole == null) {
+            // Resident before this manager recorded a role. It can only be the
+            // chat model — nothing else ever loaded one — and adopting it keeps
+            // a warm engine from being evicted and reloaded for the role it is
+            // already serving.
+            loadedRole = LocalModelRole.CHAT
+        }
         when {
-            settledState.isModelLoaded -> return
-            settledState is State.Error -> engine.cleanUp()
+            settledState.isModelLoaded && loadedRole == role -> return
+            settledState.isModelLoaded -> {
+                // Only one model fits in the process — see [LocalModelRole] —
+                // so serving this role evicts the other. Logged because a turn
+                // that alternates roles pays a full reload each way, and that
+                // thrash is invisible otherwise.
+                Timber.i("Swapping on-device model: %s -> %s", loadedRole, role)
+                engine.cleanUp()
+                loadedRole = null
+            }
+            settledState is State.Error -> {
+                engine.cleanUp()
+                loadedRole = null
+            }
             settledState !is State.Initialized -> throw IllegalStateException(
                 "Local model is busy (${settledState.javaClass.simpleName}). Try again.",
             )
         }
+
+        when (role) {
+            LocalModelRole.TOOL_CALLER -> loadToolCallerLocked()
+            LocalModelRole.CHAT -> loadChatModelLocked()
+        }
+        loadedRole = role
+    }
+
+    /**
+     * Loads the tool-calling model.
+     *
+     * Catalog-only: no custom-URI branch, because this model is fixed and
+     * validated against a pinned digest rather than chosen by the user.
+     */
+    private suspend fun loadToolCallerLocked() {
+        val model = ToolCallerCatalog.DEFAULT
+        if (!isToolCallerDownloaded()) {
+            throw IllegalStateException(
+                "The on-device tool caller is not downloaded. Download it in settings.",
+            )
+        }
+        val modelFile = toolCallerFile()
+
+        when (val validation = LocalModelValidator.validate(modelFile, expectedSizeBytes = model.sizeBytes)) {
+            is ModelValidation.Rejected -> {
+                throw IllegalStateException("Tool caller validation rejected: ${validation.reason}")
+            }
+            is ModelValidation.Valid -> {
+                Timber.i("Validated tool-caller GGUF model: %s", validation.summary)
+            }
+        }
+
+        val preflight = evaluatePreflight(model)
+        if (!preflight.allowed || preflight.level == PreflightLevel.BLOCKED) {
+            throw IllegalStateException("Tool caller load blocked by preflight: ${preflight.detail}")
+        }
+        if (preflight.level == PreflightLevel.WARNING) {
+            Timber.w("Tool caller preflight warning: %s", preflight.detail)
+        }
+
+        engine.loadModel(modelFile.absolutePath)
+    }
+
+    private suspend fun loadChatModelLocked() {
         if (!isModelDownloaded()) {
             throw IllegalStateException("Model not downloaded yet. Please download it in settings.")
         }
@@ -216,9 +358,18 @@ class LocalLlmManager @Inject constructor(
         }
     }
 
-    fun generateResponse(systemPrompt: String, userPrompt: String): Flow<String> = flow {
+    fun generateResponse(systemPrompt: String, userPrompt: String): Flow<String> =
+        generateResponse(LocalModelRole.CHAT, systemPrompt, userPrompt)
+
+    fun generateResponse(
+        role: LocalModelRole,
+        systemPrompt: String,
+        userPrompt: String,
+    ): Flow<String> = flow {
         modelMutex.withLock {
-            if (!engine.state.value.isModelLoaded) initializeLocked()
+            // Checking the role as well as the loaded flag: a model may well be
+            // resident and still be the wrong one.
+            if (!engine.state.value.isModelLoaded || loadedRole != role) initializeLocked(role)
             // Always reset native chat state: the provider supplies a bounded transcript
             // on every call, including internal calls that have no explicit system message.
             engine.setSystemPrompt(
@@ -251,6 +402,7 @@ class LocalLlmManager @Inject constructor(
             // (SettingsViewModel starts these on viewModelScope = Main).
             withContext(Dispatchers.IO) {
                 engine.cleanUp()
+                loadedRole = null
                 persist()
             }
         } catch (error: Exception) {
