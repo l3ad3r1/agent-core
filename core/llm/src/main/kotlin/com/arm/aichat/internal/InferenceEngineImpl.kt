@@ -5,7 +5,6 @@ import android.util.Log
 import com.arm.aichat.InferenceEngine
 import com.arm.aichat.UnsupportedArchitectureException
 import com.arm.aichat.internal.InferenceEngineImpl.Companion.getInstance
-import dalvik.annotation.optimization.FastNative
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,35 +77,35 @@ internal class InferenceEngineImpl private constructor(
     /**
      * JNI methods
      * @see ai_chat.cpp
+     *
+     * These are deliberately plain `external` declarations, NOT @FastNative.
+     * @FastNative skips the kRunnable -> kNative thread state transition, so the
+     * calling thread stays Runnable for the whole call and the GC can never
+     * suspend it at a safepoint. That is only safe for calls that return in
+     * microseconds. Ours are transformer forward passes: processUserPrompt and
+     * generateNextToken sit in ggml matmuls for tens of milliseconds to seconds.
+     * With @FastNative a GC raised during a long prompt aborted the process --
+     * "Caused HeapTaskDaemon failure : SuspendAll timeout ... Runnable ...
+     * ggml_gemm_q4_K_8x4_q8_K". The transition costs nanoseconds; do not re-add it.
      */
-    @FastNative
     private external fun init(nativeLibDir: String)
 
-    @FastNative
     private external fun load(modelPath: String): Int
 
-    @FastNative
     private external fun prepare(): Int
 
-    @FastNative
     private external fun systemInfo(): String
 
-    @FastNative
     private external fun benchModel(pp: Int, tg: Int, pl: Int, nr: Int): String
 
-    @FastNative
     private external fun processSystemPrompt(systemPrompt: String): Int
 
-    @FastNative
     private external fun processUserPrompt(userPrompt: String, predictLength: Int): Int
 
-    @FastNative
     private external fun generateNextToken(): String?
 
-    @FastNative
     private external fun unload()
 
-    @FastNative
     private external fun shutdown()
 
     private val _state =
