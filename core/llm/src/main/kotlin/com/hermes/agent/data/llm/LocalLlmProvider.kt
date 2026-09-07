@@ -43,10 +43,21 @@ internal fun buildLocalPrompt(
     // answer" path, not the agent.
     maxSystemChars: Int = 3_000,
 ): LocalPrompt {
-    val instructions = messages.filter { it.role == "system" }
+    val systemMessages = messages.filter { it.role == "system" }
+    // The first system message is the stable one; anything after it is per-turn
+    // recall. They are kept apart so the stable half can head the prompt and the
+    // volatile half can sit after the history — see the assembly below.
+    // Budget is shared, stable first, which is what flattening and truncating
+    // the pair used to do.
+    val instructions = systemMessages.firstOrNull()?.content?.trim().orEmpty()
+        .let { if (it.length > maxSystemChars) it.take(maxSystemChars).trimEnd() + "\n…" else it }
+    val perTurnContext = systemMessages.drop(1)
         .joinToString("\n\n") { it.content.trim() }
         .trim()
-        .let { if (it.length > maxSystemChars) it.take(maxSystemChars).trimEnd() + "\n…" else it }
+        .let {
+            val budget = (maxSystemChars - instructions.length).coerceAtLeast(0)
+            if (it.length > budget) it.take(budget).trimEnd() + "\n…" else it
+        }
     val rendered = messages.filterNot { it.role == "system" }.map { message ->
         val label = when (message.role) {
             "user" -> "User"
@@ -66,6 +77,22 @@ internal fun buildLocalPrompt(
         }
     }
 
+    // How many of the oldest entries the window drops is rounded up to a
+    // multiple of this. Dropping exactly as many as the budget requires moves
+    // the front of the history by one entry every single turn, and the front of
+    // the history is the start of the reusable token prefix — so the native KV
+    // cache (see processSystemPrompt in ai_chat.cpp) threw the whole history
+    // away and re-decoded it on every turn once the conversation outgrew
+    // [maxConversationChars]. Quantising the drop holds the front still for a
+    // run of turns, at the cost of forgetting a few entries earlier than
+    // strictly necessary; the prefill is then paid once per run instead of once
+    // per turn.
+    // 6 was measured against 12 on a synthetic growing conversation: 6 gives a
+    // full re-prefill every 3rd turn and costs ~19% of the window at the trim,
+    // 12 gives every 6th turn but costs ~43%. The extra turns were not worth
+    // that much forgotten conversation.
+    val historyDropQuantum = 6
+
     val selected = ArrayDeque<String>()
     var used = 0
     for (entry in rendered.asReversed()) {
@@ -80,6 +107,16 @@ internal fun buildLocalPrompt(
         selected.addFirst(fitted)
         used += cost.coerceAtMost(maxConversationChars)
     }
+    // Round the drop up to the quantum, so the oldest kept entry only moves
+    // every [historyDropQuantum] turns instead of every turn. Never drop the
+    // whole window — the live turn and its immediate context must survive.
+    val dropped = rendered.size - selected.size
+    if (dropped > 0) {
+        val quantised = ((dropped + historyDropQuantum - 1) / historyDropQuantum) * historyDropQuantum
+        repeat((quantised - dropped).coerceAtMost(selected.size - 1).coerceAtLeast(0)) {
+            selected.removeFirst()
+        }
+    }
     // The newest user message is the live turn; everything before it is history.
     val liveTurnIndex = messages.indexOfLast { it.role == "user" }
     val liveTurn = messages.getOrNull(liveTurnIndex)?.content?.trim().orEmpty()
@@ -92,12 +129,25 @@ internal fun buildLocalPrompt(
         selected.toList()
     }
 
+    // Order matters for more than readability. The native side reuses the KV
+    // cache for whatever token prefix is unchanged since the last turn
+    // (processSystemPrompt in ai_chat.cpp), and both the stable instructions and
+    // the history are prefix-stable: history only ever gains an entry at its
+    // end. Per-turn recall is not — it is retrieved against the current message,
+    // so it differs every turn. Putting it between the two, as this did, moved
+    // the first differing token to the end of the instructions and forced the
+    // whole history to be decoded again on every turn. Placing it after the
+    // history keeps the reusable prefix as long as possible.
     val system = buildString {
         if (instructions.isNotBlank()) append(instructions)
         if (historyEntries.isNotEmpty()) {
             if (isNotEmpty()) append("\n\n")
             append("## Conversation so far\n")
             append(historyEntries.joinToString("\n\n"))
+        }
+        if (perTurnContext.isNotBlank()) {
+            if (isNotEmpty()) append("\n\n")
+            append(perTurnContext)
         }
         // Always last, and always present. This used to sit inside the history
         // branch, so the very first message of a conversation arrived with a

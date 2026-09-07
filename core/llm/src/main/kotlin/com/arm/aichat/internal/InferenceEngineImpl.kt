@@ -98,11 +98,11 @@ internal class InferenceEngineImpl private constructor(
 
     private external fun benchModel(pp: Int, tg: Int, pl: Int, nr: Int): String
 
-    private external fun processSystemPrompt(systemPrompt: String): Int
+    private external fun processSystemPrompt(systemPrompt: String, lane: Int): Int
 
-    private external fun processUserPrompt(userPrompt: String, predictLength: Int): Int
+    private external fun processUserPrompt(userPrompt: String, predictLength: Int, lane: Int): Int
 
-    private external fun generateNextToken(): String?
+    private external fun generateNextToken(lane: Int): String?
 
     private external fun unload()
 
@@ -186,7 +186,7 @@ internal class InferenceEngineImpl private constructor(
      *
      * TODO-han.yin: return error code if system prompt not correct processed?
      */
-    override suspend fun setSystemPrompt(systemPrompt: String) =
+    override suspend fun setSystemPrompt(systemPrompt: String, lane: InferenceEngine.Lane) =
         withContext(llamaDispatcher) {
             require(systemPrompt.isNotBlank()) { "Cannot process empty system prompt!" }
             check(_state.value is InferenceEngine.State.ModelReady) {
@@ -195,7 +195,7 @@ internal class InferenceEngineImpl private constructor(
 
             Log.i(TAG, "Sending system prompt...")
             _state.value = InferenceEngine.State.ProcessingSystemPrompt
-            processSystemPrompt(systemPrompt).let { result ->
+            processSystemPrompt(systemPrompt, lane.index).let { result ->
                 if (result != 0) {
                     RuntimeException("Failed to process system prompt: $result").also {
                         _state.value = InferenceEngine.State.Error(it)
@@ -213,6 +213,7 @@ internal class InferenceEngineImpl private constructor(
     override fun sendUserPrompt(
         message: String,
         predictLength: Int,
+        lane: InferenceEngine.Lane,
     ): Flow<String> = flow {
         require(message.isNotEmpty()) { "User prompt discarded due to being empty!" }
         check(_state.value is InferenceEngine.State.ModelReady) {
@@ -223,7 +224,7 @@ internal class InferenceEngineImpl private constructor(
             Log.i(TAG, "Sending user prompt...")
             _state.value = InferenceEngine.State.ProcessingUserPrompt
 
-            processUserPrompt(message, predictLength).let { result ->
+            processUserPrompt(message, predictLength, lane.index).let { result ->
                 if (result != 0) {
                     throw IllegalStateException("Native model could not process the user prompt (code $result). Reload the model and try again.")
                 }
@@ -232,7 +233,7 @@ internal class InferenceEngineImpl private constructor(
             Log.i(TAG, "User prompt processed. Generating assistant prompt...")
             _state.value = InferenceEngine.State.Generating
             while (!_cancelGeneration) {
-                generateNextToken()?.let { utf8token ->
+                generateNextToken(lane.index)?.let { utf8token ->
                     if (utf8token.isNotEmpty()) emit(utf8token)
                 } ?: break
             }
