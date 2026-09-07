@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import androidx.core.content.ContextCompat
+import com.arm.aichat.AiChat
 import com.arm.aichat.InferenceEngine
 import com.arm.aichat.InferenceEngine.State
 import com.arm.aichat.isModelLoaded
@@ -66,6 +67,13 @@ object AuxiliaryInference : CoroutineContext.Element {
     object Key : CoroutineContext.Key<AuxiliaryInference>
 }
 
+/**
+ * Free memory required, on top of the tool caller's own weights, before both
+ * models are allowed to stay resident. Covers the second KV cache and leaves the
+ * rest of the app room to work.
+ */
+private const val BOTH_MODELS_HEADROOM_BYTES = 900L * 1024 * 1024
+
 enum class LocalModelRole {
     /** Conversation. The model the user picks in Settings. */
     CHAT,
@@ -87,8 +95,43 @@ class LocalLlmManager @Inject constructor(
     /**
      * The role whose weights are currently in the engine, or null when nothing
      * is loaded. Guarded by [modelMutex] along with every engine transition.
+     *
+     * Only meaningful when the two roles are sharing one slot — see
+     * [canHoldBothModels]. When they are not, each role has its own engine and
+     * neither evicts the other.
      */
     private var loadedRole: LocalModelRole? = null
+
+    /**
+     * The engine driving the tool caller's own model slot.
+     *
+     * Built lazily so a device that never uses the tool caller never pays for a
+     * second slot. The injected [engine] drives the chat slot.
+     */
+    private val toolCallerEngine: InferenceEngine by lazy {
+        AiChat.getInferenceEngine(context, InferenceEngine.Slot.TOOL_CALLER)
+    }
+
+    /**
+     * Whether both models may stay resident at once.
+     *
+     * Two slots means two sets of weights and two KV caches. That is the whole
+     * point — a tool turn stops evicting the conversation and rebuilding its
+     * context — but it is only affordable where there is headroom, so a
+     * low-memory device keeps the old behaviour of swapping one model in and
+     * out of a single slot. Weights are mmap'd, so the kernel can still reclaim
+     * them; the reserve here is for the KV caches and the app itself.
+     */
+    private fun canHoldBothModels(): Boolean {
+        val mem = getMemoryInfo()
+        if (mem.lowMemory) return false
+        val needed = ToolCallerCatalog.DEFAULT.sizeBytes + BOTH_MODELS_HEADROOM_BYTES
+        return mem.availMem >= needed
+    }
+
+    /** The engine that serves [role], which may or may not be its own slot. */
+    private fun engineFor(role: LocalModelRole): InferenceEngine =
+        if (role == LocalModelRole.TOOL_CALLER && canHoldBothModels()) toolCallerEngine else engine
 
     private suspend fun activeModel(): DownloadableModel =
         ModelCatalog.byId(settingsRepository.current().selectedModelId)
@@ -253,6 +296,19 @@ class LocalLlmManager @Inject constructor(
     fun cancelDownload() = downloadCoordinator.cancelDownload()
 
     private suspend fun initializeLocked(role: LocalModelRole) {
+        val target = engineFor(role)
+        if (target !== engine) {
+            // This role has its own slot, so nothing is evicted and `loadedRole`
+            // — which tracks the shared slot — does not apply.
+            val settled = target.state.first {
+                it !is State.Uninitialized && it !is State.Initializing
+            }
+            if (settled.isModelLoaded) return
+            if (settled is State.Error) target.cleanUp()
+            loadToolCallerLocked()
+            return
+        }
+
         val settledState = engine.state.first {
             it !is State.Uninitialized && it !is State.Initializing
         }
@@ -322,7 +378,10 @@ class LocalLlmManager @Inject constructor(
             Timber.w("Tool caller preflight warning: %s", preflight.detail)
         }
 
-        engine.loadModel(modelFile.absolutePath)
+        // Its own slot when there is room for both, the shared one otherwise —
+        // loading into the chat engine here would evict the conversation and
+        // undo the point of slots.
+        engineFor(LocalModelRole.TOOL_CALLER).loadModel(modelFile.absolutePath)
     }
 
     private suspend fun loadChatModelLocked() {
@@ -394,7 +453,15 @@ class LocalLlmManager @Inject constructor(
         modelMutex.withLock {
             // Checking the role as well as the loaded flag: a model may well be
             // resident and still be the wrong one.
-            if (!engine.state.value.isModelLoaded || loadedRole != role) initializeLocked(role)
+            val target = engineFor(role)
+            // With its own slot a role is ready when *its* engine has a model;
+            // loadedRole only describes the shared slot.
+            val ready = if (target !== engine) {
+                target.state.value.isModelLoaded
+            } else {
+                engine.state.value.isModelLoaded && loadedRole == role
+            }
+            if (!ready) initializeLocked(role)
             // Always reset native chat state: the provider supplies a bounded transcript
             // on every call, including internal calls that have no explicit system message.
             val lane = if (currentCoroutineContext()[AuxiliaryInference.Key] != null) {
@@ -402,13 +469,13 @@ class LocalLlmManager @Inject constructor(
             } else {
                 InferenceEngine.Lane.CHAT
             }
-            engine.setSystemPrompt(
+            target.setSystemPrompt(
                 systemPrompt.ifBlank {
                     "You are ${productIdentity.displayName}, a helpful on-device assistant."
                 },
                 lane,
             )
-            engine.sendUserPrompt(userPrompt, lane = lane).collect { emit(it) }
+            target.sendUserPrompt(userPrompt, lane = lane).collect { emit(it) }
         }
     }.flowOn(Dispatchers.IO)
 
