@@ -9,6 +9,22 @@ import kotlinx.coroutines.flow.StateFlow
  */
 interface InferenceEngine {
     /**
+     * Which KV lane a call runs on.
+     *
+     * The engine keeps one KV cache per lane, so work on one cannot evict the
+     * other's prefix. Conversation turns and the background work that runs
+     * alongside them share no prompt prefix, so before lanes existed each one's
+     * prefill wiped the other and both were permanently cold.
+     */
+    enum class Lane(val index: Int) {
+        /** The user's conversation. */
+        CHAT(0),
+
+        /** Background inference that must not disturb the conversation. */
+        AUXILIARY(1),
+    }
+
+    /**
      * Current state of the inference engine
      */
     val state: StateFlow<State>
@@ -23,12 +39,16 @@ interface InferenceEngine {
     /**
      * Sends a system prompt to the loaded model
      */
-    suspend fun setSystemPrompt(systemPrompt: String)
+    suspend fun setSystemPrompt(systemPrompt: String, lane: Lane = Lane.CHAT)
 
     /**
      * Sends a user prompt to the loaded model and returns a Flow of generated tokens.
      */
-    fun sendUserPrompt(message: String, predictLength: Int = DEFAULT_PREDICT_LENGTH): Flow<String>
+    fun sendUserPrompt(
+        message: String,
+        predictLength: Int = DEFAULT_PREDICT_LENGTH,
+        lane: Lane = Lane.CHAT,
+    ): Flow<String>
 
     /**
      * Runs a benchmark with the specified parameters.

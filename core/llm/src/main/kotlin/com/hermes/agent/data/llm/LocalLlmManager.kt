@@ -18,6 +18,8 @@ import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.product.ProductIdentity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.currentCoroutineContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +43,29 @@ import timber.log.Timber
  * for a role that is not the loaded one evicts the other model and loads this
  * one, which costs a reload, so the roles are worth keeping few and coarse.
  */
+/**
+ * Marks the current coroutine as background inference.
+ *
+ * Work tagged this way runs on its own KV lane, so it cannot evict the
+ * conversation's cached prefix — the two prompts share almost nothing, so
+ * before lanes existed each background call left the next chat turn cold.
+ *
+ * This rides in the coroutine context rather than a parameter because the call
+ * reaches the engine through the provider-agnostic [LlmProvider] interface,
+ * which cloud providers implement too and which has no business knowing about
+ * KV lanes. Deliberately not a [LocalModelRole]: a role picks which *model* is
+ * loaded, a lane picks which cache a call uses within one model.
+ */
+object AuxiliaryInference : CoroutineContext.Element {
+    // Resolved on access, not in the initialiser: an object that hands itself to
+    // its own superclass constructor fails static init, and the failure surfaces
+    // far away — runCatching around the call site swallows the Error and the
+    // summary just silently returns null.
+    override val key: CoroutineContext.Key<*> get() = Key
+
+    object Key : CoroutineContext.Key<AuxiliaryInference>
+}
+
 enum class LocalModelRole {
     /** Conversation. The model the user picks in Settings. */
     CHAT,
@@ -372,12 +397,18 @@ class LocalLlmManager @Inject constructor(
             if (!engine.state.value.isModelLoaded || loadedRole != role) initializeLocked(role)
             // Always reset native chat state: the provider supplies a bounded transcript
             // on every call, including internal calls that have no explicit system message.
+            val lane = if (currentCoroutineContext()[AuxiliaryInference.Key] != null) {
+                InferenceEngine.Lane.AUXILIARY
+            } else {
+                InferenceEngine.Lane.CHAT
+            }
             engine.setSystemPrompt(
                 systemPrompt.ifBlank {
                     "You are ${productIdentity.displayName}, a helpful on-device assistant."
                 },
+                lane,
             )
-            engine.sendUserPrompt(userPrompt).collect { emit(it) }
+            engine.sendUserPrompt(userPrompt, lane = lane).collect { emit(it) }
         }
     }.flowOn(Dispatchers.IO)
 
