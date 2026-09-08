@@ -1,57 +1,109 @@
-# Hermes / Jeeves Shared Agent Core
+# agent-core — the shared Hermes / Jeeves engine
 
-This repository contains the shared Kotlin/Android engine consumed by the public Hermes
-app and the private Jeeves app. Both products map their `:core:*` Gradle projects to this
-source tree so domain contracts, plugin delivery, LLM routing, tools, memory, persistence,
-and settings evolve together.
+The Kotlin engine behind two shipping Android apps: **[Hermes Agent](https://github.com/l3ad3r1/Hermes-Agent-Android)**
+(`com.hermes.agent`) and **[Jeeves](https://github.com/l3ad3r1/Jeeves)** (`com.jeeves.app`).
+Both map their `:core:*` Gradle projects onto this source tree, so model routing,
+tools, memory, persistence and settings are written once and change in one place.
+
+Nothing here is Android-app-specific: no UI, no app identity, no signing. That
+separation is deliberate — it is what keeps a desktop or second-platform target a
+port rather than a rewrite.
+
+## Direction
+
+The engine's current priorities, roughly in order:
+
+1. **Make on-device inference genuinely usable.** The last two app releases were
+   almost entirely this: KV prefix reuse, separate KV lanes for background work,
+   and one model slot per role so a tool call stops evicting the chat model.
+   Prefill on a long thread is ~9× faster than it was.
+2. **Retrieval that survives a restart.** Real MiniLM embeddings are wired; the
+   vector index is still in-memory. See *Known limitations* below.
+3. **Keep the engine platform-neutral** so the Compose Multiplatform desktop
+   target stays viable.
 
 ## Modules
 
-- `core:domain` — stable contracts and domain models.
-- `core:plugin` — catalog codec, APK verification/download, install review, and completion.
-- `core:llm` — provider contracts and local/cloud routing.
-- `core:tools` — deterministic phone tools and approval boundaries.
-- `core:memory`, `core:persistence`, `core:settings`, `core:theme`, `core:util` — shared
-  storage, settings, presentation, and platform support.
+| Module | Contents |
+|---|---|
+| `core:domain` | Platform-neutral contracts and domain models. No Android imports. |
+| `core:llm` | Provider contracts, cloud/local routing, the local `llama.cpp` bridge, conversation compression. |
+| `core:tools` | Deterministic phone tools and the approval boundary. |
+| `core:memory` | Embeddings, vector store, RAG pipeline, memory consolidation. |
+| `core:persistence` | Room entities, DAOs and migrations. |
+| `core:plugin` | Script-plugin engine plus the signed native-module catalog, verification and install review. |
+| `core:settings` | Settings repository and encrypted credential storage. |
+| `core:theme`, `core:util` | Shared presentation and platform support. |
 
-## Build and test
+Every module has a test source set.
 
-```powershell
-.\gradlew.bat :core:domain:test :core:plugin:test
+## Using it
+
+This repository is **not vendored** into the apps. Each app resolves it as a
+sibling checkout, so clone them side by side:
+
+```bash
+git clone https://github.com/l3ad3r1/agent-core.git
+git clone https://github.com/l3ad3r1/Hermes-Agent-Android.git
+cd Hermes-Agent-Android && ./gradlew :app:assembleDebug
 ```
 
-Hermes and Jeeves use a composite checkout during development. From either app checkout,
-place this repository beside the app directory as `../agent-core`, then run the app's
-normal Gradle tests or release build.
+Run the engine's own tests from either app checkout, or standalone:
+
+```bash
+./gradlew :core:llm:testDebugUnitTest :core:domain:test
+```
 
 ## Consumer pinning (`agent-core.ref`)
 
-Each host app pins the agent-core commit it builds against in a top-level
-`agent-core.ref` file. That pin is **load-bearing, not documentation**: the apps'
-CI and release workflows check this repository out at exactly that commit. Local
-builds do not — they map `:core:*` straight onto a working tree — so a mismatch
-is invisible until CI runs.
+Each app pins the engine commit it builds against in a top-level `agent-core.ref`.
+That pin is **load-bearing, not documentation**: the apps' CI and release
+workflows check this repository out at exactly that commit. Local builds do not —
+they map `:core:*` straight onto your working tree — so a mismatch is invisible
+until CI runs.
 
-The rule that follows: **a change to a shared API or JNI signature here, and the
-app-side change that depends on it, must be repinned in the same change.** Bump
-`agent-core.ref` in every consuming app in the commit that needs the new engine.
+**A change to a shared API or JNI signature here, and the app-side change that
+depends on it, must be repinned in the same change.**
 
-Skipping this is quiet. v1.0.2 of both apps shipped with red CI for exactly this
-reason — the apps had moved to a `ConversationCompressor.brief()` without its
+Skipping it is quiet. Both apps shipped v1.0.2 with red CI for exactly this
+reason: they had moved to a `ConversationCompressor.brief()` without its
 `anchorId` parameter while still pinned to a commit that required it, so CI
 compiled new app code against old engine code and failed on a signature nothing
 locally disagreed with.
 
+## Known limitations
+
+- **The vector index is in-memory.** `InMemoryVectorStore` loses every vector on
+  process death and rebuilds by re-embedding. A persistent backend behind the
+  `VectorStore` interface is the single highest-value engine contribution.
+- **The embedding model is not downloaded by the apps.** `MiniLmEmbeddingService`
+  is real (ONNX Runtime, all-MiniLM-L6-v2 int8, 384-dim) and is what DI binds,
+  but it reads `model.onnx` and `vocab.txt` from `AI Models/embeddings/all-MiniLM-L6-v2`
+  on shared storage and silently falls back to `HashingEmbeddingService` when they
+  are absent. Nothing in either app fetches them yet, so a fresh install gets
+  hash vectors and no warning.
+- **`GrpcPluginSandbox` is a stub.** Third-party plugins do not yet run in an
+  isolated process.
+- **Memory consolidation uses a regex extractor** rather than the model.
+
+Issues are tracked on the [Hermes issue tracker](https://github.com/l3ad3r1/Hermes-Agent-Android/issues);
+engine-level ones carry the `llm-backend` or `plugin` labels.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). In short: keep `core:domain` free of
+Android imports, put infrastructure behind interfaces, preserve fail-closed
+verification, add tests for persistence, cancellation, idempotence and failure
+paths, and never commit signing credentials or local machine properties.
+
 ## Plugin modules
 
-The host products expose **Settings → Features → Modules**. Public module publishing and
-the catalog authoring guide live in the [Hermes/Jeeves Modules repository](https://github.com/l3ad3r1/hermes-jeeves-modules).
-The full catalog, package, signing, trust, and installer contract is documented in
+The apps expose **Settings → Features → Modules**. Public module publishing and
+the catalog authoring guide live in the
+[Hermes/Jeeves Modules repository](https://github.com/l3ad3r1/hermes-jeeves-modules);
+the catalog, package, signing, trust and installer contract is in
 [`docs/PLUGIN_REPOSITORY.md`](docs/PLUGIN_REPOSITORY.md).
 
-## Contribution rules
+## License
 
-Keep domain contracts platform-neutral, inject infrastructure behind interfaces, preserve
-fail-closed verification, and add tests for persistence, cancellation, idempotence, and
-failure paths. Do not commit signing credentials, APK secrets, or local machine properties.
-
+MIT — see [LICENSE](LICENSE).
