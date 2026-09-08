@@ -87,5 +87,6 @@ open the PR.
   catalogue would make good retrieval the default instead of a lucky accident.
 - **Model-agnostic tool calling** — local tool-call parsing still has
   format-specific fallbacks.
-- **`GrpcPluginSandbox`** — currently a stub; real process isolation for
-  third-party plugins.
+- **A gRPC plugin transport.** The sandbox and registry are real and bound, but
+  `GrpcPluginTransportModule` declares an empty `@Multibinds` set, so nothing can
+  run out-of-process. Implementing a transport is the whole job.

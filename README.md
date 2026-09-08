@@ -82,8 +82,11 @@ locally disagreed with.
   on shared storage and silently falls back to `HashingEmbeddingService` when they
   are absent. Nothing in either app fetches them yet, so a fresh install gets
   hash vectors and no warning.
-- **`GrpcPluginSandbox` is a stub.** Third-party plugins do not yet run in an
-  isolated process.
+- **No out-of-process plugin transport is bound.** `GrpcPluginSandbox` and the
+  registry plumbing are real and DI-bound, but `GrpcPluginTransportModule`
+  declares the transport set with `@Multibinds` and nothing implements it, so
+  every plugin runs in-process with full access to app memory. The missing piece
+  is a transport, not the sandbox.
 - **Memory consolidation uses a regex extractor** rather than the model.
 
 Issues are tracked on the [Hermes issue tracker](https://github.com/l3ad3r1/Hermes-Agent-Android/issues);
