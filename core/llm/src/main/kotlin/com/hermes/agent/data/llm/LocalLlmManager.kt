@@ -103,12 +103,6 @@ class LocalLlmManager @Inject constructor(
     private var loadedRole: LocalModelRole? = null
 
     /**
-     * The engine driving the tool caller's own model slot.
-     *
-     * Built lazily so a device that never uses the tool caller never pays for a
-     * second slot. The injected [engine] drives the chat slot.
-     */
-    /**
      * How the tool caller's engine is built.
      *
      * A seam rather than a constructor parameter: this class is Hilt-injected,
@@ -120,7 +114,11 @@ class LocalLlmManager @Inject constructor(
         AiChat.getInferenceEngine(context, InferenceEngine.Slot.TOOL_CALLER)
     }
 
-    /** Null until this device actually uses the tool caller. */
+    /**
+     * The engine driving the tool caller's own slot; the injected [engine]
+     * drives the chat slot. Null until this device actually uses the tool
+     * caller, so one that never does never pays for a second slot.
+     */
     private var residentToolCallerEngine: InferenceEngine? = null
 
     /**
