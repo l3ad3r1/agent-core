@@ -10,5 +10,8 @@ object AiChat {
     /**
      * Get the inference engine single instance.
      */
-    fun getInferenceEngine(context: Context) = InferenceEngineImpl.getInstance(context)
+    fun getInferenceEngine(
+        context: Context,
+        slot: InferenceEngine.Slot = InferenceEngine.Slot.CHAT,
+    ) = InferenceEngineImpl.getInstance(context, slot)
 }

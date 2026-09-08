@@ -43,14 +43,21 @@ import java.io.IOException
  * @see ai_chat.cpp for the native implementation details
  */
 internal class InferenceEngineImpl private constructor(
-    private val nativeLibDir: String
+    private val nativeLibDir: String,
+    private val slot: InferenceEngine.Slot,
 ) : InferenceEngine {
 
     companion object {
         private val TAG = InferenceEngineImpl::class.java.simpleName
 
-        @Volatile
-        private var instance: InferenceEngine? = null
+        /**
+         * One engine per model slot. They share the process-wide native backend
+         * registry but drive independent llama.cpp models, so the chat model
+         * stays resident while the tool caller loads.
+         */
+        private val instances = java.util.EnumMap<InferenceEngine.Slot, InferenceEngine>(
+            InferenceEngine.Slot::class.java,
+        )
 
         /**
          * Create or obtain [InferenceEngineImpl]'s single instance.
@@ -59,19 +66,23 @@ internal class InferenceEngineImpl private constructor(
          * @throws IllegalArgumentException if native library path is invalid
          * @throws UnsatisfiedLinkError if library failed to load
          */
-        internal fun getInstance(context: Context) =
-            instance ?: synchronized(this) {
+        internal fun getInstance(
+            context: Context,
+            slot: InferenceEngine.Slot = InferenceEngine.Slot.CHAT,
+        ): InferenceEngine = synchronized(this) {
+            instances[slot] ?: run {
                 val nativeLibDir = context.applicationInfo.nativeLibraryDir
                 require(nativeLibDir.isNotBlank()) { "Expected a valid native library path!" }
 
                 try {
-                    Log.i(TAG, "Instantiating InferenceEngineImpl,,,")
-                    InferenceEngineImpl(nativeLibDir).also { instance = it }
+                    Log.i(TAG, "Instantiating InferenceEngineImpl for slot $slot")
+                    InferenceEngineImpl(nativeLibDir, slot).also { instances[slot] = it }
                 } catch (e: UnsatisfiedLinkError) {
                     Log.e(TAG, "Failed to load native library from $nativeLibDir", e)
                     throw e
                 }
             }
+        }
     }
 
     /**
@@ -90,21 +101,21 @@ internal class InferenceEngineImpl private constructor(
      */
     private external fun init(nativeLibDir: String)
 
-    private external fun load(modelPath: String): Int
+    private external fun load(modelPath: String, slot: Int): Int
 
-    private external fun prepare(): Int
+    private external fun prepare(slot: Int): Int
 
     private external fun systemInfo(): String
 
-    private external fun benchModel(pp: Int, tg: Int, pl: Int, nr: Int): String
+    private external fun benchModel(pp: Int, tg: Int, pl: Int, nr: Int, slot: Int): String
 
-    private external fun processSystemPrompt(systemPrompt: String, lane: Int): Int
+    private external fun processSystemPrompt(systemPrompt: String, lane: Int, slot: Int): Int
 
-    private external fun processUserPrompt(userPrompt: String, predictLength: Int, lane: Int): Int
+    private external fun processUserPrompt(userPrompt: String, predictLength: Int, lane: Int, slot: Int): Int
 
-    private external fun generateNextToken(lane: Int): String?
+    private external fun generateNextToken(lane: Int, slot: Int): String?
 
-    private external fun unload()
+    private external fun unload(slot: Int)
 
     private external fun shutdown()
 
@@ -163,11 +174,11 @@ internal class InferenceEngineImpl private constructor(
 
                 Log.i(TAG, "Loading model... \n$pathToModel")
                 _state.value = InferenceEngine.State.LoadingModel
-                load(pathToModel).let {
+                load(pathToModel, slot.index).let {
                     // TODO-han.yin: find a better way to pass other error codes
                     if (it != 0) throw UnsupportedArchitectureException()
                 }
-                prepare().let {
+                prepare(slot.index).let {
                     if (it != 0) throw IOException("Failed to prepare resources")
                 }
                 Log.i(TAG, "Model loaded!")
@@ -195,7 +206,7 @@ internal class InferenceEngineImpl private constructor(
 
             Log.i(TAG, "Sending system prompt...")
             _state.value = InferenceEngine.State.ProcessingSystemPrompt
-            processSystemPrompt(systemPrompt, lane.index).let { result ->
+            processSystemPrompt(systemPrompt, lane.index, slot.index).let { result ->
                 if (result != 0) {
                     RuntimeException("Failed to process system prompt: $result").also {
                         _state.value = InferenceEngine.State.Error(it)
@@ -224,7 +235,7 @@ internal class InferenceEngineImpl private constructor(
             Log.i(TAG, "Sending user prompt...")
             _state.value = InferenceEngine.State.ProcessingUserPrompt
 
-            processUserPrompt(message, predictLength, lane.index).let { result ->
+            processUserPrompt(message, predictLength, lane.index, slot.index).let { result ->
                 if (result != 0) {
                     throw IllegalStateException("Native model could not process the user prompt (code $result). Reload the model and try again.")
                 }
@@ -233,7 +244,7 @@ internal class InferenceEngineImpl private constructor(
             Log.i(TAG, "User prompt processed. Generating assistant prompt...")
             _state.value = InferenceEngine.State.Generating
             while (!_cancelGeneration) {
-                generateNextToken(lane.index)?.let { utf8token ->
+                generateNextToken(lane.index, slot.index)?.let { utf8token ->
                     if (utf8token.isNotEmpty()) emit(utf8token)
                 } ?: break
             }
@@ -264,7 +275,7 @@ internal class InferenceEngineImpl private constructor(
             }
             Log.i(TAG, "Start benchmark (pp: $pp, tg: $tg, pl: $pl, nr: $nr)")
             _state.value = InferenceEngine.State.Benchmarking
-            benchModel(pp, tg, pl, nr).also {
+            benchModel(pp, tg, pl, nr, slot.index).also {
                 _state.value = InferenceEngine.State.ModelReady
             }
         }
@@ -280,7 +291,7 @@ internal class InferenceEngineImpl private constructor(
                     Log.i(TAG, "Unloading model and free resources...")
                     _state.value = InferenceEngine.State.UnloadingModel
 
-                    unload()
+                    unload(slot.index)
 
                     _state.value = InferenceEngine.State.Initialized
                     Log.i(TAG, "Model unloaded!")
@@ -321,7 +332,7 @@ internal class InferenceEngineImpl private constructor(
                 when(_state.value) {
                     is InferenceEngine.State.Uninitialized -> {}
                     is InferenceEngine.State.Initialized -> shutdown()
-                    else -> { unload(); shutdown() }
+                    else -> { unload(slot.index); shutdown() }
                 }
             }
         }

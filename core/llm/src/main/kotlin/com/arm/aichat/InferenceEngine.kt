@@ -16,6 +16,22 @@ interface InferenceEngine {
      * alongside them share no prompt prefix, so before lanes existed each one's
      * prefill wiped the other and both were permanently cold.
      */
+    /**
+      * Which model slot an engine drives.
+      *
+      * llama.cpp holds one model per slot, each with its own context and lanes,
+      * so a role that needs a different model no longer evicts the one already
+      * loaded — asking for the tool caller used to throw away the chat model's
+      * context and both its KV lanes.
+      */
+    enum class Slot(val index: Int) {
+        /** The conversation model the user picks in Settings. */
+        CHAT(0),
+
+        /** The small tool-calling model. */
+        TOOL_CALLER(1),
+    }
+
     enum class Lane(val index: Int) {
         /** The user's conversation. */
         CHAT(0),
