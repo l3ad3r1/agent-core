@@ -108,9 +108,30 @@ class LocalLlmManager @Inject constructor(
      * Built lazily so a device that never uses the tool caller never pays for a
      * second slot. The injected [engine] drives the chat slot.
      */
-    private val toolCallerEngine: InferenceEngine by lazy {
+    /**
+     * How the tool caller's engine is built.
+     *
+     * A seam rather than a constructor parameter: this class is Hilt-injected,
+     * so an extra parameter would have to be bound in every app's module purely
+     * for tests. Overridden in tests to stand in for an engine that cannot be
+     * built off-device — the real one loads the native library.
+     */
+    internal var toolCallerEngineFactory: () -> InferenceEngine = {
         AiChat.getInferenceEngine(context, InferenceEngine.Slot.TOOL_CALLER)
     }
+
+    /** Null until this device actually uses the tool caller. */
+    private var residentToolCallerEngine: InferenceEngine? = null
+
+    /**
+     * The tool caller's engine, built on first use.
+     *
+     * Deliberately not a `lazy`: whether the slot exists yet is something the
+     * cleanup path has to ask, and a null check reads more plainly than
+     * `isInitialized()` on a delegate.
+     */
+    internal fun toolCallerEngine(): InferenceEngine =
+        residentToolCallerEngine ?: toolCallerEngineFactory().also { residentToolCallerEngine = it }
 
     /**
      * Whether both models may stay resident at once.
@@ -131,7 +152,7 @@ class LocalLlmManager @Inject constructor(
 
     /** The engine that serves [role], which may or may not be its own slot. */
     private fun engineFor(role: LocalModelRole): InferenceEngine =
-        if (role == LocalModelRole.TOOL_CALLER && canHoldBothModels()) toolCallerEngine else engine
+        if (role == LocalModelRole.TOOL_CALLER && canHoldBothModels()) toolCallerEngine() else engine
 
     private suspend fun activeModel(): DownloadableModel =
         ModelCatalog.byId(settingsRepository.current().selectedModelId)
@@ -487,12 +508,19 @@ class LocalLlmManager @Inject constructor(
         settingsRepository.setSelectedModelId(id)
     }
 
-    suspend fun setModelDownloadDir(dir: String) = updateModelSelection("change the model folder") {
-        settingsRepository.setModelDownloadDir(dir)
-    }
+    /**
+     * Both models live in this folder, so moving it invalidates the tool
+     * caller's resident model as well as the chat one — unlike the settings
+     * above, which only pick a chat model.
+     */
+    suspend fun setModelDownloadDir(dir: String) =
+        updateModelSelection("change the model folder", alsoToolCaller = true) {
+            settingsRepository.setModelDownloadDir(dir)
+        }
 
     private suspend fun updateModelSelection(
         action: String,
+        alsoToolCaller: Boolean = false,
         persist: suspend () -> Unit,
     ) = modelMutex.withLock {
         try {
@@ -501,6 +529,12 @@ class LocalLlmManager @Inject constructor(
             withContext(Dispatchers.IO) {
                 engine.cleanUp()
                 loadedRole = null
+                // The tool caller has its own slot now, so unloading the chat
+                // engine no longer touches it — it would go on serving a model
+                // loaded from a folder the user just moved. Null-safe on
+                // purpose: a device that never used the tool caller must not
+                // build an engine, and load a native library, just to unload it.
+                if (alsoToolCaller) residentToolCallerEngine?.cleanUp()
                 persist()
             }
         } catch (error: Exception) {
