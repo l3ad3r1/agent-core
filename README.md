@@ -24,6 +24,24 @@ Hermes and Jeeves use a composite checkout during development. From either app c
 place this repository beside the app directory as `../agent-core`, then run the app's
 normal Gradle tests or release build.
 
+## Consumer pinning (`agent-core.ref`)
+
+Each host app pins the agent-core commit it builds against in a top-level
+`agent-core.ref` file. That pin is **load-bearing, not documentation**: the apps'
+CI and release workflows check this repository out at exactly that commit. Local
+builds do not — they map `:core:*` straight onto a working tree — so a mismatch
+is invisible until CI runs.
+
+The rule that follows: **a change to a shared API or JNI signature here, and the
+app-side change that depends on it, must be repinned in the same change.** Bump
+`agent-core.ref` in every consuming app in the commit that needs the new engine.
+
+Skipping this is quiet. v1.0.2 of both apps shipped with red CI for exactly this
+reason — the apps had moved to a `ConversationCompressor.brief()` without its
+`anchorId` parameter while still pinned to a commit that required it, so CI
+compiled new app code against old engine code and failed on a signature nothing
+locally disagreed with.
+
 ## Plugin modules
 
 The host products expose **Settings → Features → Modules**. Public module publishing and
