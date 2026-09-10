@@ -107,6 +107,9 @@ class SettingsRepositoryImpl(
         val PRESENCE_ENABLED = booleanPreferencesKey("presence_enabled")
         val PRESENCE_PLACES_JSON = stringPreferencesKey("presence_places_json")
         val NOTIFICATIONS_AGENT_READ_ENABLED = booleanPreferencesKey("notifications_agent_read_enabled")
+        val REMOTE_GATEWAY_ENABLED = booleanPreferencesKey("remote_gateway_enabled")
+        val REMOTE_GATEWAY_URL = stringPreferencesKey("remote_gateway_url")
+        val REMOTE_GATEWAY_API_KEY = stringPreferencesKey("remote_gateway_api_key")
     }
 
     /**
@@ -123,6 +126,7 @@ class SettingsRepositoryImpl(
             Keys.TELEGRAM_BOT_TOKEN,
             Keys.BACKUP_PASSPHRASE,
             Keys.HOME_ASSISTANT_TOKEN,
+            Keys.REMOTE_GATEWAY_API_KEY,
         )
 
     private suspend fun putSecret(key: Preferences.Key<String>, value: String) {
@@ -389,6 +393,18 @@ class SettingsRepositoryImpl(
         context.hermesDataStore.edit { it[Keys.NOTIFICATIONS_AGENT_READ_ENABLED] = enabled }
     }
 
+    override suspend fun setRemoteGatewayEnabled(enabled: Boolean) {
+        context.hermesDataStore.edit { it[Keys.REMOTE_GATEWAY_ENABLED] = enabled }
+    }
+
+    override suspend fun setRemoteGatewayUrl(url: String) {
+        context.hermesDataStore.edit { it[Keys.REMOTE_GATEWAY_URL] = url.trim() }
+    }
+
+    override suspend fun setRemoteGatewayApiKey(key: String) {
+        putSecret(Keys.REMOTE_GATEWAY_API_KEY, key)
+    }
+
     private fun Preferences.toUserSettings(): UserSettings {
         return UserSettings(
             cloudEnabled = this[Keys.CLOUD_ENABLED] ?: false,
@@ -438,6 +454,9 @@ class SettingsRepositoryImpl(
             presenceEnabled = this[Keys.PRESENCE_ENABLED] ?: false,
             presencePlacesJson = this[Keys.PRESENCE_PLACES_JSON] ?: "[]",
             notificationsAgentReadEnabled = this[Keys.NOTIFICATIONS_AGENT_READ_ENABLED] ?: false,
+            remoteGatewayEnabled = this[Keys.REMOTE_GATEWAY_ENABLED] ?: false,
+            remoteGatewayUrl = this[Keys.REMOTE_GATEWAY_URL] ?: "",
+            remoteGatewayApiKey = this.secret(Keys.REMOTE_GATEWAY_API_KEY) ?: "",
         )
     }
 

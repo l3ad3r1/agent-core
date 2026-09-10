@@ -95,4 +95,9 @@ interface SettingsRepository {
 
     // Notification read access for the agent (second opt-in, on top of the OS grant)
     suspend fun setNotificationsAgentReadEnabled(enabled: Boolean)
+
+    // Remote gateway thin-client mode
+    suspend fun setRemoteGatewayEnabled(enabled: Boolean) = Unit
+    suspend fun setRemoteGatewayUrl(url: String) = Unit
+    suspend fun setRemoteGatewayApiKey(key: String) = Unit
 }

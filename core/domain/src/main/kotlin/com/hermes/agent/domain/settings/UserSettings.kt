@@ -129,6 +129,14 @@ data class UserSettings(
     // Second, in-app opt-in before the agent may read captured notifications.
     // The OS notification-listener grant alone is not enough.
     val notificationsAgentReadEnabled: Boolean = false,
+
+    // Remote gateway thin-client mode: when enabled, the phone delegates all
+    // agent execution to a PC Hermes gateway (NousResearch/hermes-agent) over
+    // HTTP. The PC is the canonical conversation store (seamless handoff),
+    // and tool approvals are forwarded to the phone via ToolConfirmationService.
+    val remoteGatewayEnabled: Boolean = false,
+    val remoteGatewayUrl: String = "",
+    val remoteGatewayApiKey: String = "",
 )
 
 /** First-party module catalog, published from the hermes-jeeves-modules repo. */

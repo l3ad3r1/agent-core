@@ -122,6 +122,7 @@ class EncryptedSettingsRepository @Inject constructor(
         sweep(raw.sshPassword, KeystoreManager.ALIAS_SSH_PASSWORD) { delegate.setSshPassword("") }
         sweep(raw.telegramBotToken, KeystoreManager.ALIAS_TELEGRAM_BOT_TOKEN) { delegate.setTelegramBotToken("") }
         sweep(raw.homeAssistantToken, KeystoreManager.ALIAS_HOME_ASSISTANT_TOKEN) { delegate.setHomeAssistantToken("") }
+        sweep(raw.remoteGatewayApiKey, KeystoreManager.ALIAS_REMOTE_GATEWAY_API_KEY) { delegate.setRemoteGatewayApiKey("") }
 
         val profiles = raw.cloudProviderProfiles
         val dead = profiles.count { isUnreadable(it.apiKey, KeystoreManager.ALIAS_PROVIDER_API_KEYS) }
@@ -181,6 +182,9 @@ class EncryptedSettingsRepository @Inject constructor(
             homeAssistantToken = decryptSecret(
                 plain.homeAssistantToken, KeystoreManager.ALIAS_HOME_ASSISTANT_TOKEN,
             ),
+            remoteGatewayApiKey = decryptSecret(
+                plain.remoteGatewayApiKey, KeystoreManager.ALIAS_REMOTE_GATEWAY_API_KEY,
+            ),
         )
     }
 
@@ -198,6 +202,9 @@ class EncryptedSettingsRepository @Inject constructor(
                 ),
                 homeAssistantToken = decryptSecret(
                     plain.homeAssistantToken, KeystoreManager.ALIAS_HOME_ASSISTANT_TOKEN,
+                ),
+                remoteGatewayApiKey = decryptSecret(
+                    plain.remoteGatewayApiKey, KeystoreManager.ALIAS_REMOTE_GATEWAY_API_KEY,
                 ),
             )
         }
@@ -251,6 +258,12 @@ class EncryptedSettingsRepository @Inject constructor(
     override suspend fun setHomeAssistantToken(token: String) {
         delegate.setHomeAssistantToken(
             encryptSecret(token, KeystoreManager.ALIAS_HOME_ASSISTANT_TOKEN),
+        )
+    }
+
+    override suspend fun setRemoteGatewayApiKey(key: String) {
+        delegate.setRemoteGatewayApiKey(
+            encryptSecret(key, KeystoreManager.ALIAS_REMOTE_GATEWAY_API_KEY),
         )
     }
 
