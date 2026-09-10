@@ -3,6 +3,7 @@
 import com.hermes.agent.data.local.dao.ScriptPluginDao
 import com.hermes.agent.data.local.entity.ScriptPluginEntity
 import com.hermes.agent.domain.tool.Tool
+import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolRegistry
 import com.hermes.agent.data.plugin.script.ScriptPluginEngine
 import com.hermes.agent.data.plugin.script.ScriptPluginHost
@@ -148,6 +149,30 @@ class ScriptPluginRepositoryTest {
         repository.uninstall("del-plugin")
         assertNull(dao.getById("del-plugin"))
         assertNull(registry.byName("del_tool"))
+    }
+
+    @Test
+    fun `install rejects a module that collides with a built in tool`() = runTest {
+        val dao = FakeScriptPluginDao()
+        val engine = ScriptPluginEngine()
+        val registry = FakeToolRegistry()
+        val builtIn = object : Tool {
+            override val descriptor = ToolDescriptor(
+                name = "shell",
+                description = "built in",
+                parameters = emptyList(),
+            )
+            override suspend fun execute(arguments: Map<String, kotlinx.serialization.json.JsonElement>) =
+                com.hermes.agent.domain.tool.ToolResult.ok("built in")
+        }
+        registry.register(builtIn)
+        val repository = ScriptPluginRepository(dao, engine, registry, FakeScriptPluginHost())
+
+        val result = repository.install(sampleManifest("collision", "shell"), "https://example.com/manifest.json")
+
+        assertTrue(result.isFailure)
+        assertEquals(builtIn, registry.byName("shell"))
+        assertNull(dao.getById("collision"))
     }
 
     @Test

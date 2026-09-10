@@ -99,8 +99,24 @@ class McpClientTest {
         assertEquals(1, tools!!.size)
         val tool = tools[0]
         assertEquals("echo", tool.toolName)
+        assertEquals("echo", tool.remoteName)
         assertEquals("mcp__github__echo", tool.qualifiedName)
         assertEquals("Echoes back input", tool.description)
+    }
+
+    @Test
+    fun `listTools preserves mixed case and punctuation remote names`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(
+                """{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"repo.searchV2","inputSchema":{"type":"object"}}]}}""",
+            ),
+        )
+        val client = McpClient(McpServerConfig("server-1", "demo", server.url("/mcp").toString()))
+
+        val tool = client.listTools().getOrThrow().single()
+
+        assertEquals("repo.searchV2", tool.remoteName)
+        assertEquals("repo_searchv2", tool.toolName)
     }
 
     @Test

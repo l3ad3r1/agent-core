@@ -106,15 +106,20 @@ class ShellTool @Inject constructor(
                         val available = inputStream.available()
                         if (available > 0) {
                             val n = inputStream.read(buf, 0, minOf(available, buf.size))
-                            if (n > 0) rawBytes.write(buf, 0, n)
+                            if (n > 0) rawBytes.writeCapped(buf, n)
                         }
                         if (process.waitFor(50, TimeUnit.MILLISECONDS)) break
                     }
-                    // True if the process exited within the deadline
+                    // Kill before trying to drain. readBytes() waits for EOF,
+                    // which made a 10 second timeout wait for the child anyway.
                     process.waitFor(0, TimeUnit.MILLISECONDS).also { exited ->
                         if (!exited) {
-                            // Drain any last output before killing
-                            rawBytes.write(inputStream.readBytes())
+                            process.destroyForcibly()
+                            // Do not turn the advertised deadline into an
+                            // unbounded wait if a broken child ignores or
+                            // delays termination. Closing the streams below
+                            // also releases our pipe resources.
+                            process.waitFor(250, TimeUnit.MILLISECONDS)
                         }
                     }
                 } finally {
@@ -231,10 +236,12 @@ class ShellTool @Inject constructor(
             port = s.sshPort,
             username = s.sshUser,
             password = s.sshPassword,
+            expectedHostFingerprint = s.sshHostFingerprint,
         )
         if (!config.isConfigured) {
             return ToolResult.error(
-                "remote shell is not configured — set the host, port, and username in " +
+                "remote shell is not configured — set the host, port, username, and verified host " +
+                    "fingerprint in " +
                     "Settings → Remote shell before using target='remote'.",
             )
         }
@@ -259,6 +266,12 @@ class ShellTool @Inject constructor(
             },
         )
     }
+}
+
+/** Retain at most the amount the descriptor promises to return. */
+private fun ByteArrayOutputStream.writeCapped(buffer: ByteArray, length: Int) {
+    val remaining = MAX_OUTPUT_CHARS - size()
+    if (remaining > 0) write(buffer, 0, minOf(length, remaining))
 }
 
 @Module

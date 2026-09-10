@@ -42,8 +42,13 @@ class ToolRegistryImpl @Inject constructor(
         toolMap[tool.descriptor.name] = tool
     }
 
+    override fun registerIfAbsent(tool: Tool): Boolean =
+        toolMap.putIfAbsent(tool.descriptor.name, tool) == null
+
     override fun unregister(name: String) {
         toolMap.remove(name)
     }
-}
 
+    override fun unregisterIfSame(name: String, tool: Tool): Boolean =
+        toolMap.remove(name, tool)
+}

@@ -6,6 +6,7 @@ import com.hermes.agent.data.local.entity.DocumentChunkEntity
 import com.hermes.agent.data.local.entity.DocumentEntity
 import com.hermes.agent.data.memory.EmbeddingService
 import com.hermes.agent.data.memory.VectorEntry
+import com.hermes.agent.data.memory.VectorNamespaces
 import com.hermes.agent.data.memory.VectorStore
 import com.hermes.agent.domain.rag.Document
 import com.hermes.agent.domain.rag.RagPipeline
@@ -99,7 +100,7 @@ class RagPipelineImpl @Inject constructor(
         chunkEntities.forEachIndexed { i, entity ->
             vectorStore.upsert(
                 VectorEntry(
-                    id = entity.id,
+                    id = VectorNamespaces.ragId(entity.id),
                     vector = embeddings[i],
                     payload = entity.text,
                 )
@@ -117,7 +118,7 @@ class RagPipelineImpl @Inject constructor(
     override suspend fun deleteDocument(documentId: String) = withContext(dispatchers.io) {
         val chunks = chunkDao.getByDocument(documentId)
         for (chunk in chunks) {
-            vectorStore.delete(chunk.id)
+            vectorStore.delete(VectorNamespaces.ragId(chunk.id))
             bm25.removeDocument(chunk.id)
         }
         chunkDao.deleteByDocument(documentId)
@@ -137,8 +138,10 @@ class RagPipelineImpl @Inject constructor(
                 .getOrNull()
                 ?: return@withContext emptyList()
 
-            val vectorHits = vectorStore.search(queryVec, limit = limit)
-                .associateBy { it.entry.id }
+            val vectorHits = vectorStore.search(queryVec, limit = limit) {
+                VectorNamespaces.isRagId(it.id)
+            }
+                .associateBy { VectorNamespaces.rawRagId(it.entry.id) }
                 .mapValues { it.value.score }
 
             val keywordHits = bm25.search(query, limit = limit).toMap()
@@ -218,7 +221,11 @@ class RagPipelineImpl @Inject constructor(
             }.getOrDefault(List(chunks.size) { FloatArray(embeddingService.dimension) })
             chunks.forEachIndexed { i, chunk ->
                 vectorStore.upsert(
-                    VectorEntry(id = chunk.id, vector = embeddings[i], payload = chunk.text)
+                    VectorEntry(
+                        id = VectorNamespaces.ragId(chunk.id),
+                        vector = embeddings[i],
+                        payload = chunk.text,
+                    )
                 )
                 bm25.addDocument(chunk.id, chunk.text)
             }
@@ -237,4 +244,3 @@ private fun DocumentEntity.toDomain() = Document(
     createdAt = createdAt,
     chunkCount = chunkCount,
 )
-

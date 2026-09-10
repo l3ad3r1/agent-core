@@ -56,6 +56,8 @@ interface SettingsRepository {
     suspend fun setSshPort(port: Int)
     suspend fun setSshUser(user: String)
     suspend fun setSshPassword(password: String)
+    /** Stores the SSH host key fingerprint verified out of band by the user. */
+    suspend fun setSshHostFingerprint(fingerprint: String) = Unit
 
     // Telegram Bot Gateway
     suspend fun setTelegramBotEnabled(enabled: Boolean)

@@ -7,6 +7,8 @@ import com.hermes.agent.domain.tool.ToolParameterType
 import com.hermes.agent.domain.tool.ToolRegistry
 import com.hermes.agent.domain.tool.ToolResult
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertFalse
@@ -142,5 +144,28 @@ class DeferredToolScopeTest {
         )
 
         assertFalse(result.success)
+    }
+
+    @Test
+    fun `concurrent request scopes retain their own grants`() = runTest {
+        val scope = DeferredToolScope()
+        val results = awaitAll(
+            async {
+                scope.withScope(setOf("kanban")) {
+                    ToolCallTool(registry(), scope).execute(
+                        mapOf("tool_name" to JsonPrimitive("kanban")),
+                    ).success
+                }
+            },
+            async {
+                scope.withScope(setOf("read_file")) {
+                    ToolCallTool(registry(), scope).execute(
+                        mapOf("tool_name" to JsonPrimitive("read_file")),
+                    ).success
+                }
+            },
+        )
+
+        assertTrue(results.all { it })
     }
 }

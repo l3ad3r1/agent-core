@@ -29,6 +29,8 @@ data class McpToolDefinition(
     val qualifiedName: String,
     val description: String,
     val inputSchemaJson: String,
+    /** Exact protocol identifier returned by the remote MCP server. */
+    val remoteName: String = toolName,
 )
 
 interface McpRepository {

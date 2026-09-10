@@ -15,9 +15,16 @@ interface RemoteTerminalBackend {
         val port: Int,
         val username: String,
         val password: String,
+        /**
+         * The remote host's expected JSch fingerprint (for example
+         * `aa:bb:...`). Connections fail before authentication when it is
+         * absent or differs. This is deliberately separate from credentials.
+         */
+        val expectedHostFingerprint: String = "",
     ) {
         val isConfigured: Boolean
-            get() = host.isNotBlank() && username.isNotBlank() && port in 1..65535
+            get() = host.isNotBlank() && username.isNotBlank() && port in 1..65535 &&
+                expectedHostFingerprint.isNotBlank()
     }
 
     data class ExecResult(

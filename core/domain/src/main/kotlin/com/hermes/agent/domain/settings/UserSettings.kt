@@ -62,6 +62,10 @@ data class UserSettings(
     val sshPort: Int = 22,
     val sshUser: String = "",
     val sshPassword: String = "",
+    // SSH host-key fingerprint accepted for the configured remote host. This
+    // is public host identity data, not a credential; it prevents a network
+    // attacker from substituting a host before password authentication.
+    val sshHostFingerprint: String = "",
     /**
      * Passphrase that protects credentials inside a backup archive.
      *

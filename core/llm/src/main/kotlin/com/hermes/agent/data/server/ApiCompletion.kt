@@ -99,12 +99,13 @@ object ApiCompletion {
     }
 
     /**
-     * Authorization decision. When [configuredKey] is blank, no auth is
-     * required. Otherwise the request must carry `Authorization: Bearer
-     * <configuredKey>` (constant-time compared).
+     * Authorization decision. A blank configured key is an invalid server
+     * configuration and fails closed. The service must create or obtain a key
+     * before listening; accepting blank-key requests turns a startup race into
+     * an unauthenticated API server.
      */
     fun isAuthorized(configuredKey: String, authorizationHeader: String?): Boolean {
-        if (configuredKey.isBlank()) return true
+        if (configuredKey.isBlank()) return false
         // Require the standard `Bearer <token>` form — a bare token is rejected.
         val header = authorizationHeader ?: return false
         if (!header.startsWith("Bearer ")) return false

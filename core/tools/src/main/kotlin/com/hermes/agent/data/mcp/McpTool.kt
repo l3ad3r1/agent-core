@@ -45,7 +45,9 @@ class McpTool(
             if (client == null) {
                 errorMsg = "MCP server is not connected or disabled for tool '${definition.qualifiedName}'"
             } else {
-                val callResult = client.callTool(definition.toolName, arguments)
+                // `toolName` is a local, safe alias. MCP requires the exact
+                // remote identifier, including case and punctuation.
+                val callResult = client.callTool(definition.remoteName, arguments)
                 callResult.fold(
                     onSuccess = { output = it },
                     onFailure = { errorMsg = it.message ?: "MCP tool call failed" }

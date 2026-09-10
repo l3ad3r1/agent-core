@@ -314,9 +314,21 @@ class LocalLlmManager @Inject constructor(
 
     fun cancelDownload() = downloadCoordinator.cancelDownload()
 
-    private suspend fun initializeLocked(role: LocalModelRole) {
-        val target = engineFor(role)
+    /**
+     * Initializes the engine chosen by the caller while holding [modelMutex].
+     * The residency decision must not be re-evaluated during one request: RAM
+     * can change between checks, yielding a model loaded in one slot and a
+     * prompt sent to another.
+     */
+    private suspend fun initializeLocked(role: LocalModelRole, target: InferenceEngine) {
         if (target !== engine) {
+            // This request moved the tool caller from the shared slot to its
+            // dedicated slot. The old shared model cannot be the requested
+            // role at the same time.
+            if (loadedRole == LocalModelRole.TOOL_CALLER && engine.state.value.isModelLoaded) {
+                engine.cleanUp()
+                loadedRole = null
+            }
             // This role has its own slot, so nothing is evicted and `loadedRole`
             // — which tracks the shared slot — does not apply.
             val settled = target.state.first {
@@ -324,8 +336,17 @@ class LocalLlmManager @Inject constructor(
             }
             if (settled.isModelLoaded) return
             if (settled is State.Error) target.cleanUp()
-            loadToolCallerLocked()
+            loadToolCallerLocked(target)
             return
+        }
+
+        // The residency decision moved from a dedicated tool slot back to the
+        // shared slot. Release the old dedicated model deliberately rather
+        // than leaving two models resident on a low-memory device.
+        if (role == LocalModelRole.TOOL_CALLER) {
+            residentToolCallerEngine
+                ?.takeIf { it.state.value.isModelLoaded }
+                ?.cleanUp()
         }
 
         val settledState = engine.state.first {
@@ -359,7 +380,7 @@ class LocalLlmManager @Inject constructor(
         }
 
         when (role) {
-            LocalModelRole.TOOL_CALLER -> loadToolCallerLocked()
+            LocalModelRole.TOOL_CALLER -> loadToolCallerLocked(target)
             LocalModelRole.CHAT -> loadChatModelLocked()
         }
         loadedRole = role
@@ -371,7 +392,7 @@ class LocalLlmManager @Inject constructor(
      * Catalog-only: no custom-URI branch, because this model is fixed and
      * validated against a pinned digest rather than chosen by the user.
      */
-    private suspend fun loadToolCallerLocked() {
+    private suspend fun loadToolCallerLocked(target: InferenceEngine) {
         val model = ToolCallerCatalog.DEFAULT
         if (!isToolCallerDownloaded()) {
             throw IllegalStateException(
@@ -397,10 +418,8 @@ class LocalLlmManager @Inject constructor(
             Timber.w("Tool caller preflight warning: %s", preflight.detail)
         }
 
-        // Its own slot when there is room for both, the shared one otherwise —
-        // loading into the chat engine here would evict the conversation and
-        // undo the point of slots.
-        engineFor(LocalModelRole.TOOL_CALLER).loadModel(modelFile.absolutePath)
+        // [target] was selected once for this request under [modelMutex].
+        target.loadModel(modelFile.absolutePath)
     }
 
     private suspend fun loadChatModelLocked() {
@@ -480,7 +499,7 @@ class LocalLlmManager @Inject constructor(
             } else {
                 engine.state.value.isModelLoaded && loadedRole == role
             }
-            if (!ready) initializeLocked(role)
+            if (!ready) initializeLocked(role, target)
             // Always reset native chat state: the provider supplies a bounded transcript
             // on every call, including internal calls that have no explicit system message.
             val lane = if (currentCoroutineContext()[AuxiliaryInference.Key] != null) {

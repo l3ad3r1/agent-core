@@ -103,9 +103,9 @@ class ApiCompletionTest {
     // --- auth ---
 
     @Test
-    fun `no configured key allows any request`() {
-        assertTrue(ApiCompletion.isAuthorized("", null))
-        assertTrue(ApiCompletion.isAuthorized("", "Bearer whatever"))
+    fun `blank configured key rejects every request`() {
+        assertFalse(ApiCompletion.isAuthorized("", null))
+        assertFalse(ApiCompletion.isAuthorized("", "Bearer whatever"))
     }
 
     @Test

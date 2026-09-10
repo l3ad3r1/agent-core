@@ -81,6 +81,21 @@ class ToolRegistryImplTest {
     }
 
     @Test
+    fun `conditional registration and removal preserve the original owner`() {
+        val registry = ToolRegistryImpl()
+        val builtIn = StubTool(desc("shell"))
+        val module = StubTool(desc("shell"))
+        registry.register(builtIn)
+
+        org.junit.Assert.assertFalse(registry.registerIfAbsent(module))
+        org.junit.Assert.assertTrue(registry.unregisterIfSame("shell", module).not())
+        assertEquals(builtIn, registry.byName("shell"))
+
+        org.junit.Assert.assertTrue(registry.unregisterIfSame("shell", builtIn))
+        assertNull(registry.byName("shell"))
+    }
+
+    @Test
     fun `constructor initial tools are registered and sorted deterministically`() {
         val set = setOf(
             StubTool(desc("zeta", category = "info")),
@@ -92,4 +107,3 @@ class ToolRegistryImplTest {
         assertEquals(listOf("gamma", "alpha", "zeta"), names)
     }
 }
-

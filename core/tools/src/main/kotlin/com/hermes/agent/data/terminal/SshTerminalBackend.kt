@@ -2,6 +2,8 @@ package com.hermes.agent.data.terminal
 
 import com.hermes.agent.domain.terminal.RemoteTerminalBackend
 import com.jcraft.jsch.ChannelExec
+import com.jcraft.jsch.HostKey
+import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import kotlinx.coroutines.Dispatchers
@@ -15,10 +17,9 @@ import javax.inject.Singleton
  * SSH implementation of [RemoteTerminalBackend] using JSch (mwiede fork,
  * pure-Java — no native libs, works on Android).
  *
- * Password auth against the configured host. Host-key checking is
- * disabled (`StrictHostKeyChecking=no`) because a phone app has no
- * known_hosts provisioning story; this trades MITM resistance for
- * usability and is called out as PARTIAL in the security audit.
+ * Password auth against the configured host. The caller must supply a
+ * fingerprint obtained out-of-band; the key is checked during SSH handshake,
+ * before password authentication or command execution.
  *
  * The exec channel merges stderr into the output stream so the LLM sees
  * the same combined transcript the local shell tool produces.
@@ -32,14 +33,19 @@ class SshTerminalBackend @Inject constructor() : RemoteTerminalBackend {
         timeoutMs: Long,
     ): Result<RemoteTerminalBackend.ExecResult> = withContext(Dispatchers.IO) {
         if (!config.isConfigured) {
-            return@withContext Result.failure(IllegalStateException("remote shell is not configured (host/user missing)"))
+            return@withContext Result.failure(
+                IllegalStateException("remote shell is not configured (host, user, or trusted host fingerprint missing)"),
+            )
         }
         var session: Session? = null
         var channel: ChannelExec? = null
         runCatching {
-            session = JSch().getSession(config.username, config.host, config.port).apply {
+            val jsch = JSch().apply {
+                hostKeyRepository = FingerprintHostKeyRepository(config.host, config.expectedHostFingerprint, this)
+            }
+            session = jsch.getSession(config.username, config.host, config.port).apply {
                 setPassword(config.password)
-                setConfig("StrictHostKeyChecking", "no")
+                setConfig("StrictHostKeyChecking", "yes")
                 timeout = CONNECT_TIMEOUT_MS
                 connect(CONNECT_TIMEOUT_MS)
             }
@@ -99,5 +105,31 @@ class SshTerminalBackend @Inject constructor() : RemoteTerminalBackend {
 
     private companion object {
         const val CONNECT_TIMEOUT_MS = 10_000
+    }
+
+    /** A one-host, one-fingerprint known-hosts repository. */
+    private class FingerprintHostKeyRepository(
+        private val expectedHost: String,
+        expectedFingerprint: String,
+        private val jsch: JSch,
+    ) : HostKeyRepository {
+        private val expected = normalize(expectedFingerprint)
+
+        override fun check(host: String, key: ByteArray): Int {
+            if (host != expectedHost) return HostKeyRepository.NOT_INCLUDED
+            val actual = normalize(HostKey(host, key).getFingerPrint(jsch))
+            return if (actual == expected) HostKeyRepository.OK else HostKeyRepository.CHANGED
+        }
+
+        override fun add(hostkey: HostKey?, ui: com.jcraft.jsch.UserInfo?) = Unit
+        override fun remove(host: String?, type: String?) = Unit
+        override fun remove(host: String?, type: String?, key: ByteArray?) = Unit
+        override fun getKnownHostsRepositoryID(): String = "pinned:$expectedHost"
+        override fun getHostKey(): Array<HostKey> = emptyArray()
+        override fun getHostKey(host: String?, type: String?): Array<HostKey> = emptyArray()
+
+        private companion object {
+            fun normalize(value: String): String = value.trim().lowercase().replace("-", ":")
+        }
     }
 }

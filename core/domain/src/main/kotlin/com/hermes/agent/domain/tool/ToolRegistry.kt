@@ -21,6 +21,27 @@ interface ToolRegistry {
     /** Register a tool. Idempotent — re-registering replaces. */
     fun register(tool: Tool)
 
+    /**
+     * Register [tool] only while its name is unused.
+     *
+     * Dynamic tool providers must use this instead of [register]: replacing an
+     * already registered tool changes the identity and confirmation policy the
+     * model sees. Implementations that cannot provide an atomic operation still
+     * fail closed rather than replacing the existing tool.
+     */
+    fun registerIfAbsent(tool: Tool): Boolean {
+        if (byName(tool.descriptor.name) != null) return false
+        register(tool)
+        return byName(tool.descriptor.name) === tool
+    }
+
     /** Deregister a tool by name. */
     fun unregister(name: String)
+
+    /** Remove [tool] only if it is still the entry registered under [name]. */
+    fun unregisterIfSame(name: String, tool: Tool): Boolean {
+        if (byName(name) !== tool) return false
+        unregister(name)
+        return true
+    }
 }

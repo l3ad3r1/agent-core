@@ -9,6 +9,7 @@ import com.hermes.agent.data.plugin.script.ScriptPluginManifest
 import com.hermes.agent.data.plugin.script.ScriptPluginRegistry
 import com.hermes.agent.data.plugin.script.ScriptPluginRegistryEntry
 import com.hermes.agent.data.plugin.script.ScriptPluginTool
+import com.hermes.agent.domain.tool.Tool
 import com.hermes.agent.domain.tool.ToolRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -49,8 +50,12 @@ class ScriptPluginRepository @Inject constructor(
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    /** Tool names this repository has registered, so reloads can unregister cleanly. */
-    private val registeredToolNames = mutableSetOf<String>()
+    /**
+     * Exact entries this repository published. Keeping the instance matters:
+     * unregistering by name alone could remove a built-in that was registered
+     * after a module reload.
+     */
+    private val registeredTools = mutableMapOf<String, Tool>()
 
     fun observeInstalled(): Flow<List<ScriptPluginEntity>> = dao.observeAll()
 
@@ -98,6 +103,13 @@ class ScriptPluginRepository @Inject constructor(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             validate(manifest)
+            require(manifest.tools.none { spec ->
+                toolRegistry.byName(spec.name)?.let { existing ->
+                    registeredTools[spec.name] !== existing
+                } ?: false
+            }) {
+                "Module tool name conflicts with an existing tool"
+            }
             dao.upsert(
                 ScriptPluginEntity(
                     id = manifest.id,
@@ -134,10 +146,10 @@ class ScriptPluginRepository @Inject constructor(
      * rather than lingering until the next process restart.
      */
     suspend fun reloadEnabled(): List<String> {
-        registeredToolNames.forEach { name ->
-            runCatching { toolRegistry.unregister(name) }
+        registeredTools.forEach { (name, tool) ->
+            runCatching { toolRegistry.unregisterIfSame(name, tool) }
         }
-        registeredToolNames.clear()
+        registeredTools.clear()
 
         val installed = dao.getEnabled()
         val specs = installed.mapNotNull { entity ->
@@ -160,7 +172,7 @@ class ScriptPluginRepository @Inject constructor(
             }.getOrNull()
         }
 
-        val failures = engine.reload(specs)
+        val failures = engine.reload(specs).toMutableList()
 
         installed.forEach { entity ->
             val manifest = runCatching {
@@ -172,10 +184,14 @@ class ScriptPluginRepository @Inject constructor(
             val live = engine.registeredToolNames(manifest.id).toSet()
             manifest.tools.filter { it.name in live }.forEach { spec ->
                 runCatching {
-                    toolRegistry.register(ScriptPluginTool(spec.toDescriptor(), manifest.id, engine))
-                    registeredToolNames += spec.name
+                    val tool = ScriptPluginTool(spec.toDescriptor(), manifest.id, engine)
+                    check(toolRegistry.registerIfAbsent(tool)) {
+                        "Tool name '${spec.name}' conflicts with an existing tool"
+                    }
+                    registeredTools[spec.name] = tool
                 }.onFailure {
                     Timber.tag(TAG).w(it, "Could not register %s from %s", spec.name, manifest.id)
+                    failures += "${manifest.id}: ${it.message ?: "could not register ${spec.name}"}"
                 }
             }
         }

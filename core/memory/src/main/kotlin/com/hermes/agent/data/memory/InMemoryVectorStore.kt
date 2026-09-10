@@ -31,15 +31,23 @@ class InMemoryVectorStore @Inject constructor() : VectorStore {
     }
 
     override suspend fun search(query: FloatArray, limit: Int): List<VectorSearchResult> {
+        return search(query, limit) { true }
+    }
+
+    override suspend fun search(
+        query: FloatArray,
+        limit: Int,
+        filter: (VectorEntry) -> Boolean,
+    ): List<VectorSearchResult> {
         if (entries.isEmpty()) return emptyList()
         val qNorm = l2Normalize(query)
-        val scored = entries.values.map { entry ->
+        val scored = entries.values.asSequence().filter(filter).map { entry ->
             VectorSearchResult(
                 entry = entry,
                 score = cosine(qNorm, entry.vector),
             )
         }
-        return scored.sortedByDescending { it.score }.take(limit)
+        return scored.sortedByDescending { it.score }.take(limit).toList()
     }
 
     override suspend fun count(): Int = entries.size

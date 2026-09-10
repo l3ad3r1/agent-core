@@ -53,6 +53,19 @@ interface VectorStore {
 
     suspend fun search(query: FloatArray, limit: Int = 5): List<VectorSearchResult>
 
+    /**
+     * Search only entries accepted by [filter], before applying [limit].
+     *
+     * The default preserves source compatibility for alternate stores. Stores
+     * with an index should override it to apply the predicate before their own
+     * top-K truncation as well.
+     */
+    suspend fun search(
+        query: FloatArray,
+        limit: Int = 5,
+        filter: (VectorEntry) -> Boolean,
+    ): List<VectorSearchResult> = search(query, Int.MAX_VALUE).filter { filter(it.entry) }.take(limit)
+
     suspend fun count(): Int
 
     suspend fun clear()

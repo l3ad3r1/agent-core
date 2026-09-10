@@ -95,7 +95,7 @@ enum class SecurityControl(
     ),
     REMOTE_SHELL_SSH(
         title = "Remote shell over SSH",
-        description = "The shell tool's opt-in target='remote' runs commands over SSH (JSch, pure-Java). It still requires the per-tool confirmation gate. Host-key checking is disabled because a phone has no known_hosts provisioning story — use it only on trusted networks.",
+        description = "The shell tool's opt-in target='remote' runs commands over SSH (JSch, pure-Java). It requires the per-tool confirmation gate and a user-verified host-key fingerprint before authentication or command execution.",
         status = ControlStatus.PARTIAL,
     ),
 }

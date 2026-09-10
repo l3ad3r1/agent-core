@@ -87,6 +87,7 @@ class SettingsRepositoryImpl(
         val SSH_PORT = intPreferencesKey("ssh_port")
         val SSH_USER = stringPreferencesKey("ssh_user")
         val SSH_PASSWORD = stringPreferencesKey("ssh_password")
+        val SSH_HOST_FINGERPRINT = stringPreferencesKey("ssh_host_fingerprint")
         val TELEGRAM_BOT_ENABLED = booleanPreferencesKey("telegram_bot_enabled")
         val TELEGRAM_BOT_TOKEN = stringPreferencesKey("telegram_bot_token")
         val TELEGRAM_ALLOWED_USER_IDS = stringPreferencesKey("telegram_allowed_user_ids")
@@ -304,6 +305,10 @@ class SettingsRepositoryImpl(
         putSecret(Keys.SSH_PASSWORD, password)
     }
 
+    override suspend fun setSshHostFingerprint(fingerprint: String) {
+        context.hermesDataStore.edit { it[Keys.SSH_HOST_FINGERPRINT] = fingerprint.trim() }
+    }
+
     override suspend fun setTelegramBotEnabled(enabled: Boolean) {
         context.hermesDataStore.edit { it[Keys.TELEGRAM_BOT_ENABLED] = enabled }
     }
@@ -413,6 +418,7 @@ class SettingsRepositoryImpl(
             sshPort = this[Keys.SSH_PORT] ?: 22,
             sshUser = this[Keys.SSH_USER] ?: "",
             sshPassword = this.secret(Keys.SSH_PASSWORD) ?: "",
+            sshHostFingerprint = this[Keys.SSH_HOST_FINGERPRINT] ?: "",
             telegramBotEnabled = this[Keys.TELEGRAM_BOT_ENABLED] ?: false,
             telegramBotToken = this.secret(Keys.TELEGRAM_BOT_TOKEN) ?: "",
             telegramAllowedUserIds = this[Keys.TELEGRAM_ALLOWED_USER_IDS] ?: "",

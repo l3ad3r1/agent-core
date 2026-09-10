@@ -1,6 +1,8 @@
 package com.hermes.agent.data.tools
 
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.asContextElement
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,26 +31,34 @@ import javax.inject.Singleton
  * correct behaviour when progressive disclosure is inactive (the bridge tools are
  * not advertised then, so any call naming them is a hallucination).
  *
- * Single-user app, one orchestrated turn at a time, so a single holder is
- * adequate; the value is swapped atomically and read-only during a step. If
- * concurrent orchestrations are ever introduced this must become request-scoped.
+ * Scopes travel with the coroutine executing the turn. This avoids one turn
+ * replacing another turn's grants while it is waiting for approval or a tool.
+ * [publish] remains as a compatibility bridge for app integrations that have
+ * not moved to [withScope] yet; those callers retain the legacy single-turn
+ * behaviour and should be migrated.
  */
 @Singleton
 class DeferredToolScope @Inject constructor() {
 
-    private val allowed = AtomicReference<Set<String>>(emptySet())
+    private val legacyAllowed = AtomicReference<Set<String>>(emptySet())
+    private val requestAllowed = ThreadLocal<Set<String>?>()
 
     /** Publish the deferred, already grant-filtered tool names for this step. */
     fun publish(names: Set<String>) {
-        allowed.set(names)
+        legacyAllowed.set(names)
     }
 
     /** Drop the scope once a step is done, so a later turn cannot inherit it. */
     fun clear() {
-        allowed.set(emptySet())
+        legacyAllowed.set(emptySet())
     }
 
-    fun isAllowed(toolName: String): Boolean = allowed.get().contains(toolName)
+    /** Execute [block] with grants isolated to this coroutine and its children. */
+    suspend fun <T> withScope(names: Set<String>, block: suspend () -> T): T =
+        withContext(requestAllowed.asContextElement(names.toSet())) { block() }
 
-    fun allowedNames(): Set<String> = allowed.get()
+    fun isAllowed(toolName: String): Boolean =
+        (requestAllowed.get() ?: legacyAllowed.get()).contains(toolName)
+
+    fun allowedNames(): Set<String> = requestAllowed.get() ?: legacyAllowed.get()
 }

@@ -299,9 +299,13 @@ internal class InferenceEngineImpl private constructor(
                 }
 
                 is InferenceEngine.State.Error -> {
-                    Log.i(TAG, "Resetting error states...")
+                    // An error may occur after the model or context was
+                    // allocated. Resetting Kotlin state alone loses the only
+                    // path that can free that native slot before a retry.
+                    Log.i(TAG, "Unloading native resources after error...")
+                    unload(slot.index)
                     _state.value = InferenceEngine.State.Initialized
-                    Log.i(TAG, "States reset!")
+                    Log.i(TAG, "Error state and native resources reset!")
                     Unit
                 }
 

@@ -170,6 +170,7 @@ class McpClient(
                         qualifiedName = qualifiedName,
                         description = cleanDescription,
                         inputSchemaJson = inputSchema.toString(),
+                        remoteName = rawName,
                     )
                 )
             }
