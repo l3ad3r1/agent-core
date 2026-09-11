@@ -56,7 +56,10 @@ class PublishedModulesTest {
     @Test
     fun `every module registers the tools its manifest declares`() = runTest {
         assumeTrue(modulesRoot.exists())
-        listOf("word-count", "text-tools", "unit-convert", "date-math", "json-format").forEach { id ->
+        listOf(
+            "word-count", "text-tools", "unit-convert", "date-math", "json-format",
+            "base64", "color-convert", "hash-digest", "csv-summarize", "cipher-text",
+        ).forEach { id ->
             val manifest = manifest(id)
             val engine = ScriptPluginEngine()
             engine.load(manifest)
@@ -90,6 +93,119 @@ class PublishedModulesTest {
         assertEquals("olleh", engine.run(manifest, "text_transform", mapOf("text" to "hello", "operation" to "reverse")))
         assertEquals("my-blog-post", engine.run(manifest, "text_transform", mapOf("text" to "My Blog Post!", "operation" to "slug")))
         assertEquals("a b", engine.run(manifest, "text_transform", mapOf("text" to "  a   b  ", "operation" to "strip")))
+    }
+
+    @Test
+    fun `base64 encodes and decodes text, including multi-byte UTF-8`() = runTest {
+        val manifest = manifest("base64")
+        val engine = ScriptPluginEngine()
+        engine.load(manifest)
+
+        assertEquals(
+            "SGVsbG8sIEhlcm1lcyE=",
+            engine.run(manifest, "base64_convert", mapOf("text" to "Hello, Hermes!", "operation" to "encode")),
+        )
+        assertEquals(
+            "Hello, Hermes!",
+            engine.run(manifest, "base64_convert", mapOf("text" to "SGVsbG8sIEhlcm1lcyE=", "operation" to "decode")),
+        )
+        assertEquals(
+            "Y2Fmw6kg4pyT",
+            engine.run(manifest, "base64_convert", mapOf("text" to "café ✓", "operation" to "encode")),
+        )
+        assertEquals(
+            "café ✓",
+            engine.run(manifest, "base64_convert", mapOf("text" to "Y2Fmw6kg4pyT", "operation" to "decode")),
+        )
+    }
+
+    @Test
+    fun `color convert handles hex, rgb, and hsl`() = runTest {
+        val manifest = manifest("color-convert")
+        val engine = ScriptPluginEngine()
+        engine.load(manifest)
+
+        assertEquals(
+            "rgb(255, 87, 51)",
+            engine.run(manifest, "color_convert", mapOf("value" to "#ff5733", "to" to "rgb")),
+        )
+        assertEquals(
+            "#ff5733",
+            engine.run(manifest, "color_convert", mapOf("value" to "rgb(255, 87, 51)", "to" to "hex")),
+        )
+        assertEquals(
+            "hsl(0, 100%, 50%)",
+            engine.run(manifest, "color_convert", mapOf("value" to "#ff0000", "to" to "hsl")),
+        )
+        assertEquals(
+            "#0000ff",
+            engine.run(manifest, "color_convert", mapOf("value" to "hsl(240, 100%, 50%)", "to" to "hex")),
+        )
+    }
+
+    @Test
+    fun `hash text matches known digests, including multi-byte UTF-8`() = runTest {
+        val manifest = manifest("hash-digest")
+        val engine = ScriptPluginEngine()
+        engine.load(manifest)
+
+        assertEquals(
+            "900150983cd24fb0d6963f7d28e17f72",
+            engine.run(manifest, "hash_text", mapOf("text" to "abc", "algorithm" to "md5")),
+        )
+        assertEquals(
+            "a9993e364706816aba3e25717850c26c9cd0d89d",
+            engine.run(manifest, "hash_text", mapOf("text" to "abc", "algorithm" to "sha1")),
+        )
+        assertEquals(
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            engine.run(manifest, "hash_text", mapOf("text" to "abc", "algorithm" to "sha256")),
+        )
+        assertEquals(
+            // cross-checked against Node's crypto.createHash('sha256') for this exact UTF-8 string
+            "3c15bbb0672ec7f843be05677dce1b0c2fb7e64a16618e498decbbdf3b6cd6e2",
+            engine.run(manifest, "hash_text", mapOf("text" to "café ✓", "algorithm" to "sha256")),
+        )
+    }
+
+    @Test
+    fun `csv summarize reports numeric and categorical columns`() = runTest {
+        val manifest = manifest("csv-summarize")
+        val engine = ScriptPluginEngine()
+        engine.load(manifest)
+
+        val output = engine.run(
+            manifest,
+            "csv_summarize",
+            mapOf("csv" to "name,age,city\nAlice,30,NYC\nBob,25,LA\nCarol,30,NYC\n"),
+        )
+        assertTrue(output, output.contains("Rows: 3, Columns: 3"))
+        assertTrue(output, output.contains("age: numeric, min=25, max=30, mean=28.33"))
+        assertTrue(output, output.contains("city: categorical, 2 distinct, most common=\"NYC\" (2)"))
+    }
+
+    @Test
+    fun `cipher text handles rot13, caesar, and morse`() = runTest {
+        val manifest = manifest("cipher-text")
+        val engine = ScriptPluginEngine()
+        engine.load(manifest)
+
+        assertEquals(
+            "Uryyb, Jbeyq!",
+            engine.run(manifest, "cipher_text", mapOf("text" to "Hello, World!", "cipher" to "rot13")),
+        )
+        assertEquals(
+            "def",
+            engine.run(manifest, "cipher_text", mapOf("text" to "abc", "cipher" to "caesar", "shift" to "3")),
+        )
+        assertEquals(
+            "... --- ...",
+            engine.run(manifest, "cipher_text", mapOf("text" to "SOS", "cipher" to "morse_encode")),
+        )
+        assertEquals(
+            "SOS",
+            engine.run(manifest, "cipher_text", mapOf("text" to "... --- ...", "cipher" to "morse_decode")),
+        )
     }
 
     @Test
