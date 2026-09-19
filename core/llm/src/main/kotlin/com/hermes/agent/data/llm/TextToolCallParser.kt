@@ -190,8 +190,35 @@ private fun jsonObjectSpans(text: String): List<IntRange> {
 private fun parseRelaxed(text: String, json: Json): JsonElement? {
     runCatching { json.parseToJsonElement(text) }.getOrNull()?.let { return it }
     val normalized = normalizeRelaxedJson(text)
-    if (normalized == text) return null
-    return runCatching { json.parseToJsonElement(normalized) }.getOrNull()
+    if (normalized != text) {
+        runCatching { json.parseToJsonElement(normalized) }.getOrNull()?.let { return it }
+    }
+    // A 1B model often loses count of its closing braces on a nested call and stops one
+    // (or two) short: {"name":"x","arguments":{"a":{"b":1}}  — the call is complete in
+    // every other respect, so close what is still open and try once more.
+    val balanced = closeOpenBraces(normalized)
+    if (balanced == normalized) return null
+    return runCatching { json.parseToJsonElement(balanced) }.getOrNull()
+}
+
+/** Appends the `}`s [text] is missing (braces inside string values do not count). */
+private fun closeOpenBraces(text: String): String {
+    var depth = 0
+    var inString = false
+    var escaped = false
+    for (ch in text) {
+        when {
+            escaped -> escaped = false
+            inString && ch == '\\' -> escaped = true
+            ch == '"' -> inString = !inString
+            inString -> Unit
+            ch == '{' -> depth++
+            ch == '}' -> if (depth > 0) depth--
+        }
+    }
+    // An unterminated string means the text was cut off mid-value; guessing there
+    // would invent arguments, so leave it to fail.
+    return if (depth > 0 && !inString) text + "}".repeat(depth) else text
 }
 
 /**

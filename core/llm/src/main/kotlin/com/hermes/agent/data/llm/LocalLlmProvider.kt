@@ -118,13 +118,33 @@ internal fun buildLocalPrompt(
         }
     }
     // The newest user message is the live turn; everything before it is history.
-    val liveTurnIndex = messages.indexOfLast { it.role == "user" }
-    val liveTurn = messages.getOrNull(liveTurnIndex)?.content?.trim().orEmpty()
+    // A tool result counts as a live turn too. Selecting only the newest *user*
+    // message truncated the history at that message, which in an agent loop drops
+    // both the assistant's tool request and the tool result that follow it — so
+    // round N+1's prompt came out byte-identical to round N's. The model, with no
+    // way to know the tool had already run, re-issued the same call until the loop
+    // hit its round limit.
+    val isLiveTurn: (LlmMessage) -> Boolean = { it.role == "user" || it.role == "tool" }
+    val liveTurnIndex = messages.indexOfLast(isLiveTurn)
+    val liveMessage = messages.getOrNull(liveTurnIndex)
+    val liveTurn = when {
+        liveMessage == null -> ""
+        // The native side wraps this in the model's own user markers, so an
+        // unlabelled tool result would read as something the user typed.
+        liveMessage.role == "tool" -> buildString {
+            append("Tool result:\n").append(liveMessage.content.trim())
+            append("\n\nThe tool has already run. Answer the user now, in plain words, ")
+            append("using this result. Do not call the tool again.")
+        }
+        else -> liveMessage.content.trim()
+    }
     val historyEntries = if (liveTurnIndex >= 0) {
         // `rendered` excludes system messages, so map the index across.
         val nonSystem = messages.filterNot { it.role == "system" }
-        val liveInRendered = nonSystem.indexOfLast { it.role == "user" }
-        selected.filterIndexed { i, _ -> i < selected.size - (nonSystem.size - liveInRendered) + 1 }
+        val liveInRendered = nonSystem.indexOfLast(isLiveTurn)
+        // Strictly before the live turn: the trailing `+ 1` this had repeated the
+        // live message inside the history block as well.
+        selected.filterIndexed { i, _ -> i < selected.size - (nonSystem.size - liveInRendered) }
     } else {
         selected.toList()
     }

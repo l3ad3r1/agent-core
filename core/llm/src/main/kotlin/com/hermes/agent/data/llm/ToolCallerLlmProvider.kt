@@ -196,7 +196,10 @@ internal fun buildToolCallerPrompt(
     maxHistoryChars: Int = 600,
 ): LocalPrompt {
     val nonSystem = messages.filterNot { it.role == "system" }
-    val liveIndex = nonSystem.indexOfLast { it.role == "user" }
+    // A tool result is a live turn as well — see the same selection in
+    // [buildLocalPrompt]. Taking only the newest user message drops the tool
+    // result from the prompt entirely and the loop repeats the call forever.
+    val liveIndex = nonSystem.indexOfLast { it.role == "user" || it.role == "tool" }
     val liveTurn = nonSystem.getOrNull(liveIndex)?.content?.trim().orEmpty()
 
     // A short tail of history, because device control leans on it constantly:

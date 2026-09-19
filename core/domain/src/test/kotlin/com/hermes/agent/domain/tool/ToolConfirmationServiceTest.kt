@@ -99,6 +99,20 @@ class ToolConfirmationServiceTest {
     }
 
     @Test
+    fun `phone auto-approval also covers manage_bots, and off it still asks`() = runTest {
+        val on = service(autoApprovePhoneActions = true)
+        assertTrue(on.awaitConfirmation(ToolCall("bots", "manage_bots", emptyMap())))
+        assertNull(on.pendingRequest.value)
+
+        val off = service(autoApprovePhoneActions = false)
+        val pending = async { off.awaitConfirmation(ToolCall("bots", "manage_bots", emptyMap())) }
+        runCurrent()
+        assertEquals("manage_bots", off.pendingRequest.value?.call?.name)
+        off.submitConfirmation(off.pendingRequest.value!!.id, false)
+        assertFalse(pending.await())
+    }
+
+    @Test
     fun `read-only home_assistant actions run without a confirmation prompt`() = runTest {
         val service = service()
 

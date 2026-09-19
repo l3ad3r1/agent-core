@@ -144,6 +144,10 @@ class ToolConfirmationService @Inject constructor(
             "device_control",
             "calendar",
             "app_launch",
+            // Creates/removes this phone's local bots. Only ever offered to the Chief of
+            // Bots' own thread (see OrchestratorImpl), so auto-approving it does not
+            // widen who can call it.
+            "manage_bots",
         )
 
         val BIOMETRIC_REQUIRED_TOOLS = setOf("shell", "termux")

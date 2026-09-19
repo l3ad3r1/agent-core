@@ -49,6 +49,53 @@ class LocalPromptAndToolParserTest {
     }
 
     @Test
+    fun `a tool result becomes the live turn so the next round differs from the last`() {
+        // The agent loop appends the assistant's tool request and the tool result
+        // after the user's message. Selecting the newest *user* message as the live
+        // turn cut the history off before both, so every round rebuilt the identical
+        // prompt and the model kept re-issuing the call it had already made.
+        val round1 = listOf(
+            LlmMessage("system", "You are the Chief of Bots."),
+            LlmMessage("user", "Remove the bot named scribe"),
+        )
+        val round2 = round1 + listOf(
+            LlmMessage(
+                "assistant",
+                "",
+                toolCalls = listOf(ToolCall("call_1", "manage_bots", emptyMap())),
+            ),
+            LlmMessage("tool", "Removed local bot 'scribe'.", toolCallId = "call_1"),
+        )
+
+        val first = buildLocalPrompt(round1)
+        val second = buildLocalPrompt(round2)
+
+        assertFalse(first.system == second.system && first.conversation == second.conversation)
+        assertTrue(second.conversation.contains("Removed local bot 'scribe'."))
+        assertTrue(second.conversation.contains("Do not call the tool again."))
+        // The request that produced it stays as context, so the model can see what
+        // it asked for and what the user wanted.
+        assertTrue(second.system.contains("Remove the bot named scribe"))
+        assertTrue(second.system.contains("Requested tool manage_bots"))
+    }
+
+    @Test
+    fun `the live turn is not repeated inside the history block`() {
+        val prompt = buildLocalPrompt(
+            listOf(
+                LlmMessage("system", "Be concise."),
+                LlmMessage("user", "first"),
+                LlmMessage("assistant", "ok"),
+                LlmMessage("user", "second"),
+            ),
+        )
+
+        assertEquals("second", prompt.conversation)
+        assertTrue(prompt.system.contains("first"))
+        assertFalse(prompt.system.contains("second"))
+    }
+
+    @Test
     fun `the first message of a conversation still gets reply guidance`() {
         // The guidance used to be attached to the history block, so a brand new
         // conversation got the capability list and nothing telling it how to
@@ -408,6 +455,30 @@ class LocalPromptAndToolParserTest {
 
         assertEquals(1, calls.size)
         assertEquals("hello", calls.first().arguments["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a tool_call one closing brace short is recovered`() {
+        // Device capture (Llama 3.2 1B, Chief of Bots): the nested call ended with }}
+        // where }}} was needed, so the strict parse failed and the raw markup was shown.
+        val raw = "<tool_call>{\"name\":\"manage_bots\",\"arguments\":{\"action\":\"create\"," +
+            "\"title\":\"Scribe Bot\",\"name\":\"scribe\",\"arguments\":{\"title\":\"Notes\"}}</tool_call>"
+
+        val (content, calls) = extractTextToolCalls(raw, json)
+
+        assertEquals(1, calls.size)
+        assertEquals("manage_bots", calls.single().name)
+        assertEquals("create", calls.single().arguments["action"]?.jsonPrimitive?.content)
+        assertEquals("", content)
+    }
+
+    @Test
+    fun `a cut-off string value is not repaired`() {
+        val raw = "<tool_call>{\"name\":\"manage_bots\",\"arguments\":{\"action\":\"crea</tool_call>"
+
+        val (_, calls) = extractTextToolCalls(raw, json)
+
+        assertTrue(calls.isEmpty())
     }
 
     @Test
