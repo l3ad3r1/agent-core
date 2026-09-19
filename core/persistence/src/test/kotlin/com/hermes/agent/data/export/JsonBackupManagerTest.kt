@@ -2,13 +2,17 @@ package com.hermes.agent.data.export
 
 import com.hermes.agent.data.local.dao.BookmarkDao
 import com.hermes.agent.data.local.dao.CalendarEventDao
+import com.hermes.agent.data.local.dao.ConversationDao
 import com.hermes.agent.data.local.dao.KanbanTicketDao
 import com.hermes.agent.data.local.dao.MemoryDao
+import com.hermes.agent.data.local.dao.MessageDao
 import com.hermes.agent.data.local.dao.MoodEntryDao
 import com.hermes.agent.data.local.dao.NoteDao
 import com.hermes.agent.data.local.dao.ScriptPluginDao
 import com.hermes.agent.data.local.dao.SkillDao
 import com.hermes.agent.data.local.dao.TodoTaskDao
+import com.hermes.agent.data.local.entity.ConversationEntity
+import com.hermes.agent.data.local.entity.MessageEntity
 import com.hermes.agent.data.local.entity.NoteEntity
 import com.hermes.agent.data.local.entity.ScriptPluginEntity
 import com.hermes.agent.data.local.entity.SkillEntity
@@ -17,6 +21,8 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.hermes.agent.domain.backup.CredentialsBackup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,6 +39,8 @@ class JsonBackupManagerTest {
         val todos = mutableMapOf<String, TodoTaskEntity>()
         val skills = mutableMapOf<String, SkillEntity>()
         val plugins = mutableMapOf<String, ScriptPluginEntity>()
+        val conversations = mutableMapOf<String, ConversationEntity>()
+        val messages = mutableMapOf<String, MessageEntity>()
     }
 
     private fun manager(t: Tables): JsonBackupManager {
@@ -56,6 +64,27 @@ class JsonBackupManagerTest {
         coEvery { pluginDao.getById(any()) } answers { t.plugins[firstArg()] }
         coEvery { pluginDao.upsert(any()) } answers { t.plugins[firstArg<ScriptPluginEntity>().id] = firstArg() }
 
+        val conversationDao = mockk<ConversationDao>(relaxed = true)
+        coEvery { conversationDao.observeAll() } answers { flowOf(t.conversations.values.toList()) }
+        coEvery { conversationDao.getById(any()) } answers { t.conversations[firstArg()] }
+        coEvery { conversationDao.upsert(any()) } answers {
+            t.conversations[firstArg<ConversationEntity>().id] = firstArg(); 1L
+        }
+        val messageDao = mockk<MessageDao>(relaxed = true)
+        coEvery { messageDao.observeByConversation(any()) } answers {
+            val id = firstArg<String>()
+            flowOf(t.messages.values.filter { it.conversationId == id }.sortedBy { it.timestamp })
+        }
+        coEvery { messageDao.upsert(any()) } answers {
+            t.messages[firstArg<MessageEntity>().id] = firstArg(); 1L
+        }
+        coEvery { messageDao.deleteByConversation(any()) } answers {
+            val id = firstArg<String>()
+            val gone = t.messages.values.filter { it.conversationId == id }.map { it.id }
+            gone.forEach { t.messages.remove(it) }
+            gone.size
+        }
+
         val empty = { m: Any -> m }
         val bookmarkDao = mockk<BookmarkDao>(relaxed = true)
         coEvery { bookmarkDao.observeAll() } returns flowOf(emptyList())
@@ -72,6 +101,7 @@ class JsonBackupManagerTest {
             notes = noteDao, todos = todoDao, bookmarks = bookmarkDao, moods = moodDao,
             calendar = calendarDao, kanban = kanbanDao, skills = skillDao,
             memories = memoryDao, scriptPlugins = pluginDao,
+            conversations = conversationDao, messages = messageDao,
         )
     }
 
@@ -219,6 +249,95 @@ class JsonBackupManagerTest {
         category = "cat", tagsJson = "[]", isBuiltIn = builtIn,
         createdAt = 1L, updatedAt = 2L,
     )
+
+    private fun chat(id: String, vararg lines: String) = ConversationEntity(
+        id = id, title = "Chat $id", createdAt = 10L, updatedAt = 20L,
+        lastMessagePreview = lines.lastOrNull().orEmpty(), messageCount = lines.size,
+    ) to lines.mapIndexed { i, text ->
+        MessageEntity(
+            id = "$id-m$i", conversationId = id, role = if (i % 2 == 0) "user" else "assistant",
+            content = text, agentRole = null, timestamp = 100L + i, tokens = 3, isOnDevice = false,
+            attachmentUri = "content://media/external/images/1", attachmentMimeType = "image/png",
+        )
+    }
+
+    private fun Tables.addChat(id: String, vararg lines: String) {
+        val (c, ms) = chat(id, *lines)
+        conversations[id] = c
+        ms.forEach { messages[it.id] = it }
+    }
+
+    @Test
+    fun `chats come back with their messages in order`() = runTest {
+        val source = Tables().apply { addChat("c1", "hi", "hello", "bye") }
+        val text = manager(source).let { it.encode(it.export("hermes", 83)) }
+
+        val target = Tables()
+        val report = manager(target).let { it.import(it.decode(text), ImportMode.SKIP_EXISTING) }
+
+        assertEquals(1, report.added)
+        assertEquals(source.conversations["c1"]!!.copy(messageCount = 3), target.conversations["c1"])
+        assertEquals(listOf("hi", "hello", "bye"), target.messages.values.sortedBy { it.timestamp }.map { it.content })
+        assertTrue(target.messages.values.all { it.conversationId == "c1" })
+    }
+
+    @Test
+    fun `an attachment is not carried, since its uri means nothing on another device`() = runTest {
+        val source = Tables().apply { addChat("c1", "look at this") }
+        val text = manager(source).let { it.encode(it.export("hermes", 83)) }
+        assertFalse(text.contains("content://media"))
+
+        val target = Tables()
+        manager(target).let { it.import(it.decode(text), ImportMode.SKIP_EXISTING) }
+        assertNull(target.messages["c1-m0"]!!.attachmentUri)
+    }
+
+    @Test
+    fun `skip existing leaves a local chat and its messages alone`() = runTest {
+        val source = Tables().apply { addChat("c1", "from the file") }
+        val text = manager(source).let { it.encode(it.export("hermes", 83)) }
+
+        val target = Tables().apply { addChat("c1", "local one", "local two") }
+        val report = manager(target).let { it.import(it.decode(text), ImportMode.SKIP_EXISTING) }
+
+        assertEquals(1, report.skipped)
+        assertEquals(listOf("local one", "local two"), target.messages.values.sortedBy { it.timestamp }.map { it.content })
+    }
+
+    @Test
+    fun `overwrite replaces a chat rather than interleaving two histories`() = runTest {
+        val source = Tables().apply { addChat("c1", "from the file") }
+        val text = manager(source).let { it.encode(it.export("hermes", 83)) }
+
+        val target = Tables().apply { addChat("c1", "local one", "local two") }
+        val report = manager(target).let { it.import(it.decode(text), ImportMode.OVERWRITE_EXISTING) }
+
+        assertEquals(1, report.replaced)
+        assertEquals(listOf("from the file"), target.messages.values.map { it.content })
+        assertEquals(1, target.conversations["c1"]!!.messageCount)
+    }
+
+    @Test
+    fun `chats are only exported when ticked`() = runTest {
+        val source = Tables().apply { addChat("c1", "hi") }
+        assertTrue(manager(source).export("hermes", 83, setOf(BackupSection.NOTES)).conversations.isEmpty())
+        assertEquals(1, manager(source).export("hermes", 83, setOf(BackupSection.CHATS)).conversations.size)
+    }
+
+    @Test
+    fun `host extras survive the round trip, encrypted with the rest`() = runTest {
+        val m = manager(Tables())
+        val extras = mapOf("bots" to buildJsonObject { put("chiefName", "Boss") })
+        val text = m.encode(m.export("hermes", 83).copy(extras = extras), password = "hunter2")
+        assertFalse("extras are part of the sealed payload", text.contains("Boss"))
+        assertEquals(extras, m.decode(text, password = "hunter2").extras)
+    }
+
+    @Test
+    fun `a file with no extras opens as an empty map`() = runTest {
+        val m = manager(Tables())
+        assertTrue(m.decode(m.encode(m.export("jeeves", 60))).extras.isEmpty())
+    }
 
     @Test
     fun `an unticked section is absent rather than exported empty`() = runTest {

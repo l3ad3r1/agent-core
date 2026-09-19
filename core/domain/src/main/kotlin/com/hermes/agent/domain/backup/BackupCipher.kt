@@ -106,10 +106,12 @@ data class CredentialsBackup(
     val apiServerKey: String = "",
     val sshPassword: String = "",
     val homeAssistantToken: String = "",
+    /** The key for the PC gateway the Bots hub and thin-client mode talk to. */
+    val remoteGatewayApiKey: String = "",
     /** Provider id → API key, so a rename or reorder cannot misassign them. */
     val providerKeys: Map<String, String> = emptyMap(),
 ) {
     val isEmpty: Boolean
-        get() = listOf(cloudApiKey, auxApiKey, apiServerKey, sshPassword, homeAssistantToken)
+        get() = listOf(cloudApiKey, auxApiKey, apiServerKey, sshPassword, homeAssistantToken, remoteGatewayApiKey)
             .all { it.isBlank() } && providerKeys.isEmpty()
 }

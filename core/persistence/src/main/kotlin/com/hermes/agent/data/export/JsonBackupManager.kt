@@ -2,8 +2,10 @@ package com.hermes.agent.data.export
 
 import com.hermes.agent.data.local.dao.BookmarkDao
 import com.hermes.agent.data.local.dao.CalendarEventDao
+import com.hermes.agent.data.local.dao.ConversationDao
 import com.hermes.agent.data.local.dao.KanbanTicketDao
 import com.hermes.agent.data.local.dao.MemoryDao
+import com.hermes.agent.data.local.dao.MessageDao
 import com.hermes.agent.data.local.dao.MoodEntryDao
 import com.hermes.agent.data.local.dao.NoteDao
 import com.hermes.agent.data.local.dao.ScriptPluginDao
@@ -11,8 +13,10 @@ import com.hermes.agent.data.local.dao.SkillDao
 import com.hermes.agent.data.local.dao.TodoTaskDao
 import com.hermes.agent.data.local.entity.BookmarkEntity
 import com.hermes.agent.data.local.entity.CalendarEventEntity
+import com.hermes.agent.data.local.entity.ConversationEntity
 import com.hermes.agent.data.local.entity.KanbanTicketEntity
 import com.hermes.agent.data.local.entity.MemoryEntity
+import com.hermes.agent.data.local.entity.MessageEntity
 import com.hermes.agent.data.local.entity.MoodEntryEntity
 import com.hermes.agent.data.local.entity.NoteEntity
 import com.hermes.agent.data.local.entity.ScriptPluginEntity
@@ -48,6 +52,8 @@ class JsonBackupManager @Inject constructor(
     private val skills: SkillDao,
     private val memories: MemoryDao,
     private val scriptPlugins: ScriptPluginDao,
+    private val conversations: ConversationDao,
+    private val messages: MessageDao,
 ) {
 
     /**
@@ -82,6 +88,11 @@ class JsonBackupManager @Inject constructor(
             },
             memories = pick(BackupSection.MEMORIES) { memories.observeAll().first().map { it.toBackup() } },
             scriptPlugins = pick(BackupSection.MODULES) { scriptPlugins.getAll().map { it.toBackup() } },
+            conversations = pick(BackupSection.CHATS) {
+                conversations.observeAll().first().map { c ->
+                    c.toBackup(messages.observeByConversation(c.id).first().map { it.toBackup() })
+                }
+            },
         )
     }
 
@@ -136,6 +147,15 @@ class JsonBackupManager @Inject constructor(
         report += restore(backup.memories, mode, { memories.getById(it.id) != null }) { memories.upsert(it.toEntity()) }
         report += restore(backup.scriptPlugins, mode, { scriptPlugins.getById(it.id) != null }) {
             scriptPlugins.upsert(it.toEntity())
+        }
+        // A chat is restored whole or not at all: merging two histories message by message would
+        // interleave conversations that diverged, so an existing chat is left as it is unless the
+        // file is told to win.
+        report += restore(backup.conversations, mode, { conversations.getById(it.id) != null }) { c ->
+            // Parent row first: messages have a foreign key to it.
+            conversations.upsert(c.toEntity())
+            if (mode == ImportMode.OVERWRITE_EXISTING) messages.deleteByConversation(c.id)
+            c.messages.forEach { messages.upsert(it.toEntity(c.id)) }
         }
         return report
     }
@@ -236,6 +256,26 @@ private fun ScriptPluginEntity.toBackup() = ScriptPluginBackup(
 )
 
 // ── backup → entity ────────────────────────────────────────────────────────
+
+private fun ConversationEntity.toBackup(messages: List<MessageBackup>) = ConversationBackup(
+    id = id, title = title, createdAt = createdAt, updatedAt = updatedAt,
+    lastMessagePreview = lastMessagePreview, messages = messages,
+)
+
+private fun MessageEntity.toBackup() = MessageBackup(
+    id = id, role = role, content = content, agentRole = agentRole, timestamp = timestamp,
+    tokens = tokens, isOnDevice = isOnDevice, evidenceState = evidenceState,
+)
+
+private fun ConversationBackup.toEntity() = ConversationEntity(
+    id = id, title = title, createdAt = createdAt, updatedAt = updatedAt,
+    lastMessagePreview = lastMessagePreview, messageCount = messages.size,
+)
+
+private fun MessageBackup.toEntity(conversationId: String) = MessageEntity(
+    id = id, conversationId = conversationId, role = role, content = content, agentRole = agentRole,
+    timestamp = timestamp, tokens = tokens, isOnDevice = isOnDevice, evidenceState = evidenceState,
+)
 
 private fun NoteBackup.toEntity() = NoteEntity(
     id = id, title = title, content = content, tagsJson = tagsJson(tags),

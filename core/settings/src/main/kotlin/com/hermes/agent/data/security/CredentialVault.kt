@@ -25,6 +25,7 @@ class CredentialVault @Inject constructor(
             apiServerKey = s.apiServerKey,
             sshPassword = s.sshPassword,
             homeAssistantToken = s.homeAssistantToken,
+            remoteGatewayApiKey = s.remoteGatewayApiKey,
             providerKeys = s.cloudProviderProfiles
                 .filter { it.apiKey.isNotBlank() }
                 .associate { it.id to it.apiKey },
@@ -42,6 +43,17 @@ class CredentialVault @Inject constructor(
         }
         if (credentials.homeAssistantToken.isNotBlank()) {
             settings.setHomeAssistantToken(credentials.homeAssistantToken); restored++
+        }
+        // Collected on export, so they have to be put back too: a key that is written to the
+        // file but never applied is a backup that silently loses it.
+        if (credentials.apiServerKey.isNotBlank()) {
+            settings.setApiServerKey(credentials.apiServerKey); restored++
+        }
+        if (credentials.sshPassword.isNotBlank()) {
+            settings.setSshPassword(credentials.sshPassword); restored++
+        }
+        if (credentials.remoteGatewayApiKey.isNotBlank()) {
+            settings.setRemoteGatewayApiKey(credentials.remoteGatewayApiKey); restored++
         }
         if (credentials.providerKeys.isNotEmpty()) {
             val profiles = settings.current().cloudProviderProfiles

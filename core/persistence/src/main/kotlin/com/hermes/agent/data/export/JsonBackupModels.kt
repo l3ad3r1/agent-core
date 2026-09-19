@@ -3,6 +3,7 @@ package com.hermes.agent.data.export
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 
 /**
  * A portable, human-readable snapshot of the user's own content.
@@ -52,6 +53,15 @@ data class JsonBackup(
     val skills: List<SkillBackup> = emptyList(),
     val memories: List<MemoryBackup> = emptyList(),
     val scriptPlugins: List<ScriptPluginBackup> = emptyList(),
+    /** Chats with their messages, one entry per conversation. */
+    val conversations: List<ConversationBackup> = emptyList(),
+    /**
+     * Sections only the host app knows how to read and write (Hermes keeps its Bots setup in
+     * preferences, which this library cannot see), keyed by a name the host chooses. Opaque
+     * here: the library round-trips it and never interprets it, so a file written by an app with
+     * extras still opens in one without them.
+     */
+    val extras: Map<String, JsonElement> = emptyMap(),
     /**
      * Cloud credentials, present only when explicitly selected.
      *
@@ -66,7 +76,7 @@ data class JsonBackup(
     val totalItems: Int
         get() = notes.size + todos.size + bookmarks.size + moods.size +
             calendarEvents.size + kanbanTickets.size + skills.size +
-            memories.size + scriptPlugins.size
+            memories.size + scriptPlugins.size + conversations.size
 
     companion object {
         const val SCHEMA_VERSION = 1
@@ -102,6 +112,7 @@ enum class BackupSection(val label: String) {
     SKILLS("Skills"),
     MEMORIES("Memories"),
     MODULES("Installed modules"),
+    CHATS("Chat history"),
     CREDENTIALS("Cloud API keys");
 
     companion object {
@@ -131,6 +142,33 @@ data class ImportReport(
         skipped + other.skipped,
     )
 }
+
+/**
+ * A chat and its messages. Attachments are not carried: a message's attachment is a content
+ * URI that only means something on the device that made it, and the file behind it is not in
+ * the backup, so it would restore as a dead link.
+ */
+@Serializable
+data class ConversationBackup(
+    val id: String,
+    val title: String,
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L,
+    val lastMessagePreview: String = "",
+    val messages: List<MessageBackup> = emptyList(),
+)
+
+@Serializable
+data class MessageBackup(
+    val id: String,
+    val role: String,
+    val content: String,
+    val agentRole: String? = null,
+    val timestamp: Long = 0L,
+    val tokens: Int = 0,
+    val isOnDevice: Boolean = true,
+    val evidenceState: String? = null,
+)
 
 @Serializable
 data class NoteBackup(
