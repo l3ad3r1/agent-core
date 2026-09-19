@@ -100,4 +100,17 @@ interface SettingsRepository {
     suspend fun setRemoteGatewayEnabled(enabled: Boolean) = Unit
     suspend fun setRemoteGatewayUrl(url: String) = Unit
     suspend fun setRemoteGatewayApiKey(key: String) = Unit
+
+    /**
+     * Every stored preference, keys and all, with secrets in the clear, for a whole-app backup.
+     * Unlike the typed getters this does not know the setting names, so a setting added later is
+     * carried without anyone remembering to list it.
+     */
+    suspend fun exportRawPreferences(): Map<String, com.hermes.agent.domain.backup.RawPref> = emptyMap()
+
+    /**
+     * Replaces every stored preference with [entries], sealing secrets again for this install.
+     * Returns the names of entries this build could not read, which are left out.
+     */
+    suspend fun importRawPreferences(entries: Map<String, com.hermes.agent.domain.backup.RawPref>): List<String> = emptyList()
 }

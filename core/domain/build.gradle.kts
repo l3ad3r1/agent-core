@@ -30,6 +30,7 @@ dependencies {
     api("javax.inject:javax.inject:1")
     api(libs.kotlinx.coroutines.android)
     api(libs.kotlinx.serialization.json)
+    api(libs.androidx.datastore.preferences)
     api(libs.timber)
 
     testImplementation(libs.junit)

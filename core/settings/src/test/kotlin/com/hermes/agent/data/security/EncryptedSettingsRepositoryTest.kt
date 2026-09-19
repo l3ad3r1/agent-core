@@ -1,5 +1,6 @@
 package com.hermes.agent.data.security
 
+import com.hermes.agent.domain.backup.RawPref
 import com.hermes.agent.domain.settings.CloudProviderProfile
 import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.settings.UserSettings
@@ -10,6 +11,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -55,6 +57,55 @@ class EncryptedSettingsRepositoryTest {
         latency = 0.5,
         toolReliability = 0.9,
     )
+
+    private fun sealed(plain: String) =
+        "enc:v1:" + java.util.Base64.getEncoder().encodeToString(fakeCipher(plain.toByteArray()))
+
+    private fun raw(vararg pairs: Pair<String, String>) =
+        pairs.associate { (k, v) -> k to RawPref("string", JsonPrimitive(v)) }
+
+    @Test
+    fun `a backup export opens a sealed credential`() = runTest {
+        coEvery { delegate.exportRawPreferences() } returns raw("cloud_api_key" to sealed("sk-real"))
+
+        val exported = repo.exportRawPreferences()
+
+        assertEquals(JsonPrimitive("sk-real"), exported.getValue("cloud_api_key").value)
+    }
+
+    @Test
+    fun `a credential inside a JSON blob is opened too`() = runTest {
+        val json = """[{"id":"a","apiKey":"${sealed("key-a")}"},{"id":"b","apiKey":"${sealed("key-b")}"}]"""
+        coEvery { delegate.exportRawPreferences() } returns raw("cloud_provider_profiles" to json)
+
+        val text = (repo.exportRawPreferences().getValue("cloud_provider_profiles").value as JsonPrimitive).content
+
+        assertTrue(text.contains("\"apiKey\":\"key-a\""))
+        assertTrue(text.contains("\"apiKey\":\"key-b\""))
+        assertFalse(text.contains("enc:v1:"))
+    }
+
+    @Test
+    fun `a credential that cannot be opened is left as it is, not blanked`() = runTest {
+        every { keystore.decrypt(any(), any()) } throws SecurityException("key not found")
+        val blob = sealed("gone")
+        coEvery { delegate.exportRawPreferences() } returns raw("cloud_api_key" to blob)
+
+        assertEquals(JsonPrimitive(blob), repo.exportRawPreferences().getValue("cloud_api_key").value)
+    }
+
+    @Test
+    fun `settings that are not credentials pass through untouched`() = runTest {
+        coEvery { delegate.exportRawPreferences() } returns mapOf(
+            "cloud_enabled" to RawPref("boolean", JsonPrimitive(true)),
+            "app_theme" to RawPref("string", JsonPrimitive("dark")),
+        )
+
+        val exported = repo.exportRawPreferences()
+
+        assertEquals(JsonPrimitive(true), exported.getValue("cloud_enabled").value)
+        assertEquals(JsonPrimitive("dark"), exported.getValue("app_theme").value)
+    }
 
     @Test
     fun `key round-trips through encrypt and decrypt`() = runTest {

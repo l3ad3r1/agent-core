@@ -42,6 +42,15 @@ class LearningState @Inject constructor(
         val USER_MODEL_REBUILT_AT = intPreferencesKey("user_model_rebuilt_at")
     }
 
+    /** Everything stored, for a whole-app backup. */
+    suspend fun exportRaw(): Map<String, com.hermes.agent.domain.backup.RawPref> =
+        com.hermes.agent.domain.backup.RawPrefs.export(context.learningDataStore.data.first())
+
+    /** Replaces everything stored with [entries]. */
+    suspend fun importRaw(entries: Map<String, com.hermes.agent.domain.backup.RawPref>) {
+        context.learningDataStore.edit { com.hermes.agent.domain.backup.RawPrefs.replaceAll(it, entries) }
+    }
+
     /** Increment the lifetime conversation count and return the new value. */
     suspend fun incrementConversationCount(): Int {
         var updated = 0

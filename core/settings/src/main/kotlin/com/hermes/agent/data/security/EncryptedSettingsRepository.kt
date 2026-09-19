@@ -44,6 +44,63 @@ class EncryptedSettingsRepository @Inject constructor(
          * and makes re-encryption a no-op.
          */
         const val ENCRYPTED_PREFIX = "enc:v1:"
+
+        val TOKEN = Regex("enc:v1:[A-Za-z0-9+/=]+")
+
+        /** Every alias a credential in settings can have been sealed under. */
+        val SECRET_ALIASES = listOf(
+            KeystoreManager.ALIAS_CLOUD_API_KEY,
+            KeystoreManager.ALIAS_AUX_API_KEY,
+            KeystoreManager.ALIAS_PROVIDER_API_KEYS,
+            KeystoreManager.ALIAS_GITHUB_PAT,
+            KeystoreManager.ALIAS_API_SERVER_KEY,
+            KeystoreManager.ALIAS_SSH_PASSWORD,
+            KeystoreManager.ALIAS_BACKUP_PASSPHRASE,
+            KeystoreManager.ALIAS_TELEGRAM_BOT_TOKEN,
+            KeystoreManager.ALIAS_HOME_ASSISTANT_TOKEN,
+            KeystoreManager.ALIAS_REMOTE_GATEWAY_API_KEY,
+        )
+    }
+
+    /**
+     * Every stored preference with its credentials in the clear.
+     *
+     * The layer below opens what the settings store itself sealed, but a value can also carry this
+     * class's own per-alias ciphertext, and the provider list holds one inside its JSON. Those are
+     * found by their marker wherever they sit, and opened with whichever alias fits, so a
+     * credential added later is not missed for lack of an entry here.
+     */
+    override suspend fun exportRawPreferences(): Map<String, com.hermes.agent.domain.backup.RawPref> =
+        delegate.exportRawPreferences().mapValues { (_, pref) ->
+            val text = (pref.value as? kotlinx.serialization.json.JsonPrimitive)?.content
+            if (pref.type == "string" && text != null) {
+                pref.copy(value = kotlinx.serialization.json.JsonPrimitive(unsealAll(text)))
+            } else {
+                pref
+            }
+        }
+
+    private fun unsealAll(text: String): String {
+        var current = text
+        // A token can sit inside a value that was itself sealed; a few passes reach the bottom.
+        repeat(3) {
+            if (!current.contains(ENCRYPTED_PREFIX)) return current
+            val opened = TOKEN.replace(current) { match -> openToken(match.value) ?: match.value }
+            if (opened == current) return current
+            current = opened
+        }
+        return current
+    }
+
+    private fun openToken(token: String): String? {
+        val blob = runCatching { java.util.Base64.getDecoder().decode(token.removePrefix(ENCRYPTED_PREFIX)) }
+            .getOrNull() ?: return null
+        for (alias in SECRET_ALIASES) {
+            val plain = runCatching { String(keystore.decrypt(alias, blob), Charsets.UTF_8) }.getOrNull()
+            if (plain != null) return plain
+        }
+        Timber.tag("Settings").w("a stored credential could not be opened for backup; it will need re-entering")
+        return null
     }
 
     private fun decryptSecret(encrypted: String, alias: String): String {
