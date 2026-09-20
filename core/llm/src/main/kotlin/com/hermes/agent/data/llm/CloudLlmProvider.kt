@@ -506,7 +506,14 @@ class CloudLlmProvider @Inject constructor(
                 finishReason = "stop",
             )
         val message = choice["message"]?.jsonObject
-        val content = message?.get("content")?.jsonPrimitive?.contentOrNull.orEmpty()
+        val rawContent = message?.get("content")?.jsonPrimitive?.contentOrNull.orEmpty()
+        // Reasoning arrives as a separate field (DeepSeek and NVIDIA send reasoning_content, OpenRouter
+        // sends reasoning) or inline in <think> tags. Either way it is taken out of the answer.
+        val reasoningField = listOf("reasoning_content", "reasoning").firstNotNullOfOrNull { key ->
+            (message?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        }.orEmpty()
+        val split = com.hermes.agent.domain.llm.ReasoningSplitter.split(rawContent, reasoningField)
+        val content = split.answer
         val finishReason = choice["finish_reason"]?.jsonPrimitive?.contentOrNull ?: "stop"
         val tokensUsed = element["usage"]?.jsonObject?.get("total_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull()
             ?: (content.length / 4)
@@ -539,6 +546,7 @@ class CloudLlmProvider @Inject constructor(
             tokensUsed = tokensUsed,
             model = model,
             finishReason = finishReason,
+            reasoning = split.reasoning,
         )
     }
 }

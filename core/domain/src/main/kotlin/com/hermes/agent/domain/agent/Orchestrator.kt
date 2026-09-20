@@ -29,7 +29,15 @@ sealed class OrchestratorEvent {
     data class ToolCallResult(val call: ToolCall, val output: String, val success: Boolean) : OrchestratorEvent()
     data class StepFinished(val stepId: String, val success: Boolean) : OrchestratorEvent()
     data class ReplyToken(val text: String) : OrchestratorEvent()
-    data class ReplyComplete(val finalText: String, val agentRole: com.hermes.agent.domain.model.AgentRole, val isOnDevice: Boolean) : OrchestratorEvent()
+    data class ReplyComplete(
+        val finalText: String,
+        val agentRole: com.hermes.agent.domain.model.AgentRole,
+        val isOnDevice: Boolean,
+        /** The model's working-out for this reply, separated from [finalText]; empty when it gave none. */
+        val reasoning: String = "",
+        /** How long the model spent producing it, for the "Thought for 6s" label. */
+        val reasoningMillis: Long = 0L,
+    ) : OrchestratorEvent()
     data class Failed(val message: String) : OrchestratorEvent()
     data class StateChanged(val run: AgentRun) : OrchestratorEvent()
 }

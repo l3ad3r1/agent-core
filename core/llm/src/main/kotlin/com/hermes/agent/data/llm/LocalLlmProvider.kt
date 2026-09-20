@@ -345,13 +345,15 @@ class LocalLlmProvider @Inject constructor(
         val response = complete(augmentedMessages)
         // The advertised names gate the loose-format recovery: a small model
         // that writes its call as a heading and a bare object still lands.
-        val (content, toolCalls) = extractTextToolCalls(response.content, json, tools.map { it.name }.toSet())
+        val split = com.hermes.agent.domain.llm.ReasoningSplitter.split(response.content)
+        val (content, toolCalls) = extractTextToolCalls(split.answer, json, tools.map { it.name }.toSet())
         return LlmToolResponse(
             content = content,
             toolCalls = toolCalls,
             tokensUsed = response.tokensUsed,
             model = response.model,
             finishReason = if (toolCalls.isEmpty()) response.finishReason else "tool_calls",
+            reasoning = split.reasoning,
         )
     }
 
