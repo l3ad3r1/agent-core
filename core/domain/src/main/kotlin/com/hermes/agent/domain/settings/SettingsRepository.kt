@@ -1,4 +1,5 @@
 package com.hermes.agent.domain.settings
+import com.hermes.agent.domain.backup.RawPref
 import com.hermes.agent.domain.llm.*
 
 import kotlinx.coroutines.flow.Flow
@@ -106,11 +107,11 @@ interface SettingsRepository {
      * Unlike the typed getters this does not know the setting names, so a setting added later is
      * carried without anyone remembering to list it.
      */
-    suspend fun exportRawPreferences(): Map<String, com.hermes.agent.domain.backup.RawPref> = emptyMap()
+    suspend fun exportRawPreferences(): Map<String, RawPref> = emptyMap()
 
     /**
      * Replaces every stored preference with [entries], sealing secrets again for this install.
      * Returns the names of entries this build could not read, which are left out.
      */
-    suspend fun importRawPreferences(entries: Map<String, com.hermes.agent.domain.backup.RawPref>): List<String> = emptyList()
+    suspend fun importRawPreferences(entries: Map<String, RawPref>): List<String> = emptyList()
 }

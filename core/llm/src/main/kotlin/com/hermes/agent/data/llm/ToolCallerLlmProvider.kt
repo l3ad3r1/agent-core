@@ -199,7 +199,7 @@ internal fun buildToolCallerPrompt(
     // A tool result is a live turn as well — see the same selection in
     // [buildLocalPrompt]. Taking only the newest user message drops the tool
     // result from the prompt entirely and the loop repeats the call forever.
-    val liveIndex = nonSystem.indexOfLast { it.role == "user" || it.role == "tool" }
+    val liveIndex = nonSystem.indexOfLast(::isLiveTurn)
     val liveTurn = nonSystem.getOrNull(liveIndex)?.content?.trim().orEmpty()
 
     // A short tail of history, because device control leans on it constantly:

@@ -1,10 +1,12 @@
 package com.hermes.agent.data.security
 
+import com.hermes.agent.domain.backup.RawPref
 import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.settings.UserSettings
 import com.hermes.agent.di.PlainSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.JsonPrimitive
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -70,27 +72,20 @@ class EncryptedSettingsRepository @Inject constructor(
      * found by their marker wherever they sit, and opened with whichever alias fits, so a
      * credential added later is not missed for lack of an entry here.
      */
-    override suspend fun exportRawPreferences(): Map<String, com.hermes.agent.domain.backup.RawPref> =
+    override suspend fun exportRawPreferences(): Map<String, RawPref> =
         delegate.exportRawPreferences().mapValues { (_, pref) ->
-            val text = (pref.value as? kotlinx.serialization.json.JsonPrimitive)?.content
+            val text = (pref.value as? JsonPrimitive)?.content
             if (pref.type == "string" && text != null) {
-                pref.copy(value = kotlinx.serialization.json.JsonPrimitive(unsealAll(text)))
+                pref.copy(value = JsonPrimitive(unsealAll(text)))
             } else {
                 pref
             }
         }
 
-    private fun unsealAll(text: String): String {
-        var current = text
-        // A token can sit inside a value that was itself sealed; a few passes reach the bottom.
-        repeat(3) {
-            if (!current.contains(ENCRYPTED_PREFIX)) return current
-            val opened = TOKEN.replace(current) { match -> openToken(match.value) ?: match.value }
-            if (opened == current) return current
-            current = opened
-        }
-        return current
-    }
+    // ponytail: one pass — the delegate already opened the SecretCipher layer, and encryptSecret
+    // never seals a value that is already marked, so per-alias tokens do not nest.
+    private fun unsealAll(text: String): String =
+        TOKEN.replace(text) { match -> openToken(match.value) ?: match.value }
 
     private fun openToken(token: String): String? {
         val blob = runCatching { java.util.Base64.getDecoder().decode(token.removePrefix(ENCRYPTED_PREFIX)) }

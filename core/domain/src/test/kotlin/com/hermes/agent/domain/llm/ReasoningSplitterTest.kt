@@ -2,7 +2,6 @@ package com.hermes.agent.domain.llm
 
 import org.junit.Test
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 
 class ReasoningSplitterTest {
@@ -11,7 +10,7 @@ class ReasoningSplitterTest {
     fun `plain text has no reasoning and is left alone`() {
         val s = ReasoningSplitter.split("Just an answer.")
         assertEquals("Just an answer.", s.answer)
-        assertFalse(s.hasReasoning)
+        assertEquals("", s.reasoning)
     }
 
     @Test
@@ -54,6 +53,6 @@ class ReasoningSplitterTest {
     fun `an empty think block leaves no reasoning`() {
         val s = ReasoningSplitter.split("<think>\n</think>Hello")
         assertEquals("Hello", s.answer)
-        assertFalse(s.hasReasoning)
+        assertEquals("", s.reasoning)
     }
 }

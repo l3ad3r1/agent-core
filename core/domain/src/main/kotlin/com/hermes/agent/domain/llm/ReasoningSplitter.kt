@@ -15,9 +15,7 @@ package com.hermes.agent.domain.llm
  */
 object ReasoningSplitter {
 
-    data class Split(val answer: String, val reasoning: String) {
-        val hasReasoning: Boolean get() = reasoning.isNotBlank()
-    }
+    data class Split(val answer: String, val reasoning: String)
 
     private val closed = Regex("<(think|thinking)>(.*?)</\\1>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
     private val open = Regex("<(think|thinking)>", RegexOption.IGNORE_CASE)

@@ -29,6 +29,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -478,7 +479,7 @@ class CloudLlmProvider @Inject constructor(
                     }
                 })
             }
-            content.isNotEmpty() || (toolCalls == null && toolCallId == null) -> kotlinx.serialization.json.JsonPrimitive(content)
+            content.isNotEmpty() || (toolCalls == null && toolCallId == null) -> JsonPrimitive(content)
             else -> null
         }
         return ChatMessage(
@@ -510,9 +511,9 @@ class CloudLlmProvider @Inject constructor(
         // Reasoning arrives as a separate field (DeepSeek and NVIDIA send reasoning_content, OpenRouter
         // sends reasoning) or inline in <think> tags. Either way it is taken out of the answer.
         val reasoningField = listOf("reasoning_content", "reasoning").firstNotNullOfOrNull { key ->
-            (message?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+            (message?.get(key) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
         }.orEmpty()
-        val split = com.hermes.agent.domain.llm.ReasoningSplitter.split(rawContent, reasoningField)
+        val split = ReasoningSplitter.split(rawContent, reasoningField)
         val content = split.answer
         val finishReason = choice["finish_reason"]?.jsonPrimitive?.contentOrNull ?: "stop"
         val tokensUsed = element["usage"]?.jsonObject?.get("total_tokens")?.jsonPrimitive?.contentOrNull?.toIntOrNull()

@@ -1,5 +1,7 @@
 package com.hermes.agent.data.memory
 
+import com.hermes.agent.domain.backup.RawPref
+import com.hermes.agent.domain.backup.RawPrefs
 import android.content.Context
 import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
@@ -43,12 +45,12 @@ class LearningState @Inject constructor(
     }
 
     /** Everything stored, for a whole-app backup. */
-    suspend fun exportRaw(): Map<String, com.hermes.agent.domain.backup.RawPref> =
-        com.hermes.agent.domain.backup.RawPrefs.export(context.learningDataStore.data.first())
+    suspend fun exportRaw(): Map<String, RawPref> =
+        RawPrefs.export(context.learningDataStore.data.first())
 
     /** Replaces everything stored with [entries]. */
-    suspend fun importRaw(entries: Map<String, com.hermes.agent.domain.backup.RawPref>) {
-        context.learningDataStore.edit { com.hermes.agent.domain.backup.RawPrefs.replaceAll(it, entries) }
+    suspend fun importRaw(entries: Map<String, RawPref>) {
+        context.learningDataStore.edit { RawPrefs.replaceAll(it, entries) }
     }
 
     /** Increment the lifetime conversation count and return the new value. */

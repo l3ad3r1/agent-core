@@ -1,4 +1,6 @@
 package com.hermes.agent.data.settings
+import com.hermes.agent.domain.backup.RawPref
+import com.hermes.agent.domain.backup.RawPrefs
 import com.hermes.agent.domain.llm.*
 import com.hermes.agent.domain.model.StandingInstructions
 import com.hermes.agent.domain.settings.SettingsRepository
@@ -129,18 +131,18 @@ class SettingsRepositoryImpl(
             Keys.REMOTE_GATEWAY_API_KEY,
         )
 
-    override suspend fun exportRawPreferences(): Map<String, com.hermes.agent.domain.backup.RawPref> =
-        com.hermes.agent.domain.backup.RawPrefs.export(context.hermesDataStore.data.first()) { _, value ->
+    override suspend fun exportRawPreferences(): Map<String, RawPref> =
+        RawPrefs.export(context.hermesDataStore.data.first()) { _, value ->
             if (secretCipher.isEncrypted(value)) secretCipher.decrypt(value) else value
         }
 
     override suspend fun importRawPreferences(
-        entries: Map<String, com.hermes.agent.domain.backup.RawPref>,
+        entries: Map<String, RawPref>,
     ): List<String> {
         val secretNames = secretKeys.map { it.name }.toSet()
         var skipped: List<String> = emptyList()
         context.hermesDataStore.edit { prefs ->
-            skipped = com.hermes.agent.domain.backup.RawPrefs.replaceAll(prefs, entries) { name, value ->
+            skipped = RawPrefs.replaceAll(prefs, entries) { name, value ->
                 // Credentials go back to rest encrypted for this install, not as plain text.
                 if (name in secretNames) secretCipher.encrypt(value) else value
             }

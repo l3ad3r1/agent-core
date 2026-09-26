@@ -3,7 +3,6 @@ package com.hermes.agent.domain.backup
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.EOFException
-import java.io.FilterOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
@@ -94,14 +93,14 @@ object BackupStreamCipher {
         private val key: SecretKeySpec,
         private val prefix: ByteArray,
         private val header: ByteArray,
-    ) : FilterOutputStream(sink) {
+    ) : OutputStream() {
         private val buffer = ByteArrayOutputStream(CHUNK)
         private var counter = 0
         private var closed = false
 
         override fun write(b: Int) {
             buffer.write(b)
-            if (buffer.size() >= CHUNK) flushFull()
+            if (buffer.size() >= CHUNK) emit(last = false)
         }
 
         override fun write(b: ByteArray, off: Int, len: Int) {
@@ -112,12 +111,8 @@ object BackupStreamCipher {
                 buffer.write(b, pos, n)
                 pos += n
                 left -= n
-                if (buffer.size() >= CHUNK) flushFull()
+                if (buffer.size() >= CHUNK) emit(last = false)
             }
-        }
-
-        private fun flushFull() {
-            emit(last = false)
         }
 
         private fun emit(last: Boolean) {

@@ -16,6 +16,9 @@ internal data class LocalPrompt(
 /** How many tool descriptors the on-device model is shown at once. */
 private const val MAX_LOCAL_TOOLS = 8
 
+/** The newest user message or tool result is the turn being answered; see [buildLocalPrompt]. */
+internal fun isLiveTurn(m: LlmMessage): Boolean = m.role == "user" || m.role == "tool"
+
 /**
  * Splits the conversation into a system block and the single live user turn.
  *
@@ -124,8 +127,7 @@ internal fun buildLocalPrompt(
     // round N+1's prompt came out byte-identical to round N's. The model, with no
     // way to know the tool had already run, re-issued the same call until the loop
     // hit its round limit.
-    val isLiveTurn: (LlmMessage) -> Boolean = { it.role == "user" || it.role == "tool" }
-    val liveTurnIndex = messages.indexOfLast(isLiveTurn)
+    val liveTurnIndex = messages.indexOfLast(::isLiveTurn)
     val liveMessage = messages.getOrNull(liveTurnIndex)
     val liveTurn = when {
         liveMessage == null -> ""
@@ -141,7 +143,7 @@ internal fun buildLocalPrompt(
     val historyEntries = if (liveTurnIndex >= 0) {
         // `rendered` excludes system messages, so map the index across.
         val nonSystem = messages.filterNot { it.role == "system" }
-        val liveInRendered = nonSystem.indexOfLast(isLiveTurn)
+        val liveInRendered = nonSystem.indexOfLast(::isLiveTurn)
         // Strictly before the live turn: the trailing `+ 1` this had repeated the
         // live message inside the history block as well.
         selected.filterIndexed { i, _ -> i < selected.size - (nonSystem.size - liveInRendered) }
@@ -345,7 +347,7 @@ class LocalLlmProvider @Inject constructor(
         val response = complete(augmentedMessages)
         // The advertised names gate the loose-format recovery: a small model
         // that writes its call as a heading and a bare object still lands.
-        val split = com.hermes.agent.domain.llm.ReasoningSplitter.split(response.content)
+        val split = ReasoningSplitter.split(response.content)
         val (content, toolCalls) = extractTextToolCalls(split.answer, json, tools.map { it.name }.toSet())
         return LlmToolResponse(
             content = content,
