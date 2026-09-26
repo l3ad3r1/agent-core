@@ -50,6 +50,8 @@ data class LlmToolResponse(
     val tokensUsed: Int,
     val model: String,
     val finishReason: String,
+    /** The model's working-out for this reply, separated from [content]; empty when it gave none. */
+    val reasoning: String = "",
 )
 
 /**
