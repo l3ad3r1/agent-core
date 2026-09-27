@@ -56,12 +56,18 @@ data class ScriptToolSpec(
     /** Mirrors [ToolDescriptor.requiresConfirmation] for side-effecting tools. */
     val requiresConfirmation: Boolean = false,
 ) {
-    fun toDescriptor(): ToolDescriptor = ToolDescriptor(
+    /**
+     * The module cannot opt out of confirmation for what its grants make risky:
+     * writing the user's data, or reading it with a way to send it off-device.
+     */
+    fun toDescriptor(granted: Set<String> = emptySet()): ToolDescriptor = ToolDescriptor(
         name = name,
         description = description,
         parameters = parameters.map { it.toToolParameter() },
         category = category,
-        requiresConfirmation = requiresConfirmation,
+        requiresConfirmation = requiresConfirmation ||
+            ScriptPluginPermissions.DATA_WRITE in granted ||
+            (ScriptPluginPermissions.DATA_READ in granted && ScriptPluginPermissions.NETWORK in granted),
     )
 }
 

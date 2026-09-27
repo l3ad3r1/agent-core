@@ -184,7 +184,8 @@ class ScriptPluginRepository @Inject constructor(
             val live = engine.registeredToolNames(manifest.id).toSet()
             manifest.tools.filter { it.name in live }.forEach { spec ->
                 runCatching {
-                    val tool = ScriptPluginTool(spec.toDescriptor(), manifest.id, engine)
+                    val granted = entity.grantedPermissions.split(",").map { it.trim() }.toSet()
+                    val tool = ScriptPluginTool(spec.toDescriptor(granted), manifest.id, engine)
                     check(toolRegistry.registerIfAbsent(tool)) {
                         "Tool name '${spec.name}' conflicts with an existing tool"
                     }

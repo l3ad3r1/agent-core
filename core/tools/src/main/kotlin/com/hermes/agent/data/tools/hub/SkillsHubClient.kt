@@ -106,7 +106,12 @@ class SkillsHubClient @Inject constructor(
         val repo = "$owner/$repoName"
         val path = parts[2].trimEnd('/')
 
-        val commitSha = fetchLatestCommitSha(repo, "main") ?: "unpinned-head"
+        // HEAD is the default branch, whatever it is called. An install is pinned to a
+        // commit or not made: "unpinned-head" was never a real ref, so it only 404ed.
+        val commitSha = fetchLatestCommitSha(repo, "HEAD") ?: run {
+            Timber.tag("SkillsHubClient").w("Could not resolve the latest commit of %s (rate limit or no access)", repo)
+            return@withContext null
+        }
         val rawUrl = "https://raw.githubusercontent.com/$repo/$commitSha/$path/SKILL.md"
 
         val req = Request.Builder()

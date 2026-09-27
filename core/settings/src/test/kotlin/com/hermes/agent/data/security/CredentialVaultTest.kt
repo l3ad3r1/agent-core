@@ -29,13 +29,14 @@ class CredentialVaultTest {
         val restored = vault.apply(
             CredentialsBackup(
                 cloudApiKey = "c", auxApiKey = "a", apiServerKey = "s", sshPassword = "p",
-                homeAssistantToken = "h", remoteGatewayApiKey = "g",
+                homeAssistantToken = "h", remoteGatewayApiKey = "g", telegramBotToken = "t",
             ),
         )
-        assertEquals(6, restored)
+        assertEquals(7, restored)
         coVerify { settings.setApiServerKey("s") }
         coVerify { settings.setSshPassword("p") }
         coVerify { settings.setRemoteGatewayApiKey("g") }
+        coVerify { settings.setTelegramBotToken("t") }
     }
 
     @Test
@@ -43,5 +44,19 @@ class CredentialVaultTest {
         assertEquals(0, vault.apply(CredentialsBackup()))
         coVerify(exactly = 0) { settings.setRemoteGatewayApiKey(any()) }
         coVerify(exactly = 0) { settings.setApiServerKey(any()) }
+    }
+
+    @Test
+    fun `the telegram bot token is collected`() = runTest {
+        coEvery { settings.current() } returns UserSettings(telegramBotToken = "123:abc")
+        assertEquals("123:abc", vault.collect().telegramBotToken)
+    }
+
+    @Test
+    fun `the redactor hides the gateway key and backup passphrase`() = runTest {
+        coEvery { settings.current() } returns
+            UserSettings(remoteGatewayApiKey = "gateway-secret-123", backupPassphrase = "correct horse battery")
+        val out = OutputRedactor(settings).redact("key gateway-secret-123 pass correct horse battery")
+        assertFalse(out, out.contains("gateway-secret-123") || out.contains("correct horse battery"))
     }
 }

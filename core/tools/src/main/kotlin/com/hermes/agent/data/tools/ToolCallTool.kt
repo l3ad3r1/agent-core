@@ -4,9 +4,11 @@ import com.hermes.agent.domain.tool.Tool
 import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolRegistry
 import com.hermes.agent.domain.tool.ToolResult
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 import javax.inject.Provider
@@ -45,15 +47,16 @@ class ToolCallTool @Inject constructor(
             ?: return ToolResult.error("Deferred tool '$toolName' is not registered or unavailable")
 
         val nestedArgsElem = arguments["arguments"]
+        // Models often send `arguments` as a JSON string. Parse it; running the
+        // tool with {} instead would ignore what the user just approved.
         val toolArgs: Map<String, JsonElement> = when (nestedArgsElem) {
             is JsonObject -> nestedArgsElem.toMap()
-            null -> emptyMap()
+            null, JsonNull -> emptyMap()
             else -> {
-                try {
-                    nestedArgsElem.jsonObject.toMap()
-                } catch (e: Exception) {
-                    emptyMap()
-                }
+                val text = (nestedArgsElem as? JsonPrimitive)?.takeIf { it.isString }?.content
+                val parsed = text?.let { runCatching { Json.parseToJsonElement(it) }.getOrNull() }
+                (parsed as? JsonObject)?.toMap()
+                    ?: return ToolResult.error("tool_call `arguments` must be a JSON object")
             }
         }
 

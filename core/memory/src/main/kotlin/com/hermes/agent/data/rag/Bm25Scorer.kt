@@ -27,6 +27,8 @@ class Bm25Scorer(
         val tokens = tokenize(text)
         val freq = tokens.groupingBy { it }.eachCount()
         synchronized(this) {
+            // Re-adding an id replaces it; a duplicate would outlive removeDocument.
+            removeLocked(id)
             docs.add(IndexedDoc(id, tokens, freq))
             for (term in freq.keys) {
                 docFreq[term] = (docFreq[term] ?: 0) + 1
@@ -37,13 +39,20 @@ class Bm25Scorer(
 
     fun removeDocument(id: String) {
         synchronized(this) {
-            val removed = docs.firstOrNull { it.id == id } ?: return
-            docs.remove(removed)
-            for (term in removed.tokenFreq.keys) {
+            removeLocked(id)
+            recomputeAvgLen()
+        }
+    }
+
+    private fun removeLocked(id: String) {
+        val removed = docs.filter { it.id == id }
+        if (removed.isEmpty()) return
+        docs.removeAll(removed)
+        for (doc in removed) {
+            for (term in doc.tokenFreq.keys) {
                 val newCount = (docFreq[term] ?: 0) - 1
                 if (newCount <= 0) docFreq.remove(term) else docFreq[term] = newCount
             }
-            recomputeAvgLen()
         }
     }
 

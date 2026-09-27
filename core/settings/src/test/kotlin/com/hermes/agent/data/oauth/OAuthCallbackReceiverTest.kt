@@ -7,6 +7,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -172,5 +173,14 @@ class OAuthCallbackReceiverTest {
         val event = receiver.events.first()
         assertTrue("expected success, got $event", event is OAuthCallbackEvent.Success)
         assertEquals("auth-code-xyz", (event as OAuthCallbackEvent.Success).code)
+    }
+
+    @Test
+    fun `a replayed event can be claimed only once`() {
+        val receiver = OAuthCallbackReceiver()
+        val event = OAuthCallbackEvent.Error(null, "denied")
+        // Every settings screen collects the replayed event; one exchange only.
+        assertTrue(receiver.claim(event))
+        assertFalse(receiver.claim(event))
     }
 }

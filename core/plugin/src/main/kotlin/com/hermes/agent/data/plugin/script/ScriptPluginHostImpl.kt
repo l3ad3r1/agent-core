@@ -81,6 +81,12 @@ class ScriptPluginHostImpl @Inject constructor(
         }
     }
 
+    // The shared client allows 10-minute reads; a module call holds its lock and a
+    // worker thread, and the script deadline cannot fire during blocking I/O.
+    private val moduleHttpClient: OkHttpClient by lazy {
+        okHttpClient.newBuilder().callTimeout(HTTP_CALL_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS).build()
+    }
+
     override fun httpGet(pluginId: String, url: String): String {
         require(url.startsWith("https://") || url.startsWith("http://")) {
             "url must start with http:// or https://"
@@ -89,7 +95,7 @@ class ScriptPluginHostImpl @Inject constructor(
             .url(url)
             .header("User-Agent", "Mozilla/5.0 (Linux; Android) HermesModule/1.0")
             .build()
-        okHttpClient.newCall(request).execute().use { response ->
+        moduleHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw java.io.IOException("HTTP ${response.code} from $url")
             }
@@ -160,7 +166,12 @@ class ScriptPluginHostImpl @Inject constructor(
     // ---- todos ---------------------------------------------------------
 
     private fun readTodos(query: String): String = runBlocking {
-        val items = if (query.isBlank()) todos.observeAll().first().take(MAX_LIST_RESULTS) else todos.search(query, MAX_LIST_RESULTS)
+        // Open todos first: done ones used to fill the cap and hide overdue work.
+        val items = if (query.isBlank()) {
+            todos.observeAll().first().sortedBy { it.done }.take(MAX_LIST_RESULTS)
+        } else {
+            todos.search(query, MAX_LIST_RESULTS)
+        }
         buildJsonArray {
             items.forEach { t ->
                 add(
@@ -271,6 +282,7 @@ class ScriptPluginHostImpl @Inject constructor(
         const val MAX_LIST_RESULTS = 25
         const val MAX_FIELD_CHARS = 300
         const val MAX_HTTP_RESPONSE_CHARS = 32_000
+        const val HTTP_CALL_TIMEOUT_SECONDS = 15L
     }
 }
 

@@ -117,6 +117,9 @@ class PublishedModulesTest {
             "café ✓",
             engine.run(manifest, "base64_convert", mapOf("text" to "Y2Fmw6kg4pyT", "operation" to "decode")),
         )
+        // Outside the BMP: one 4-byte UTF-8 character, not two 3-byte surrogate halves.
+        assertEquals("8J+YgA==", engine.run(manifest, "base64_convert", mapOf("text" to "😀", "operation" to "encode")))
+        assertEquals("😀", engine.run(manifest, "base64_convert", mapOf("text" to "8J+YgA==", "operation" to "decode")))
     }
 
     @Test
@@ -165,6 +168,10 @@ class PublishedModulesTest {
             // cross-checked against Node's crypto.createHash('sha256') for this exact UTF-8 string
             "3c15bbb0672ec7f843be05677dce1b0c2fb7e64a16618e498decbbdf3b6cd6e2",
             engine.run(manifest, "hash_text", mapOf("text" to "café ✓", "algorithm" to "sha256")),
+        )
+        assertEquals(
+            "f0443a342c5ef54783a111b51ba56c938e474c32324d90c3a60c9c8e3a37e2d9",
+            engine.run(manifest, "hash_text", mapOf("text" to "😀", "algorithm" to "sha256")),
         )
     }
 

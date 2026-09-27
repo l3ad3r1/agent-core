@@ -53,16 +53,29 @@ class MiniLmEmbeddingService @Inject constructor(
     /** True once the model + vocab are on disk; otherwise callers get the fallback. */
     fun isReady(): Boolean = modelFile().exists() && vocabFile().exists()
 
+    /**
+     * Which embedder this process uses, fixed at first use. Vectors from the model
+     * and from the hash fallback live in unrelated spaces, so the index is only
+     * comparable if every vector came from the same one. A model that arrives
+     * mid-process is picked up on the next start, when the index is rebuilt.
+     */
+    @Volatile private var modelBacked: Boolean? = null
+
+    private fun useModel(): Boolean =
+        modelBacked ?: synchronized(this) { modelBacked ?: isReady().also { modelBacked = it } }
+
     override suspend fun embed(text: String): FloatArray = withContext(Dispatchers.Default) {
-        if (!isReady()) return@withContext fallback.embed(text)
+        if (!useModel()) return@withContext fallback.embed(text)
         try {
             ensureLoaded()
             val enc = tokenizer!!.encode(text)
             mutex.withLock { runSession(enc) }
         } catch (t: Throwable) {
-            // Never let an embedding failure break memory/RAG — degrade to the mock.
-            Timber.tag("MiniLmEmbed").w(t, "ONNX embed failed; using fallback")
-            fallback.embed(text)
+            // Never let an embedding failure break memory/RAG. A hash vector would be
+            // noise in the model's space; a zero vector scores nothing and leaves
+            // retrieval to keywords.
+            Timber.tag("MiniLmEmbed").w(t, "ONNX embed failed; using a neutral vector")
+            FloatArray(dimension)
         }
     }
 

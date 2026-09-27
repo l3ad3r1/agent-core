@@ -4,8 +4,8 @@ import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,10 +24,12 @@ class LogManager @Inject constructor(
 ) {
     private val file = File(context.filesDir, "hermes.log")
     private val lock = Any()
-    private val timeFmt = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
+    // DateTimeFormatter is immutable and thread-safe; SimpleDateFormat was shared
+    // across every logging thread outside the lock.
+    private val timeFmt = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss.SSS", Locale.US)
 
     fun append(priority: Int, tag: String?, message: String) {
-        val line = "${timeFmt.format(Date())} ${level(priority)}/${tag ?: "-"}: $message\n"
+        val line = "${timeFmt.format(LocalDateTime.now())} ${level(priority)}/${tag ?: "-"}: $message\n"
         synchronized(lock) {
             try {
                 if (file.length() > MAX_BYTES) rotate()

@@ -26,6 +26,7 @@ class CredentialVault @Inject constructor(
             sshPassword = s.sshPassword,
             homeAssistantToken = s.homeAssistantToken,
             remoteGatewayApiKey = s.remoteGatewayApiKey,
+            telegramBotToken = s.telegramBotToken,
             providerKeys = s.cloudProviderProfiles
                 .filter { it.apiKey.isNotBlank() }
                 .associate { it.id to it.apiKey },
@@ -51,6 +52,9 @@ class CredentialVault @Inject constructor(
         }
         if (credentials.sshPassword.isNotBlank()) {
             settings.setSshPassword(credentials.sshPassword); restored++
+        }
+        if (credentials.telegramBotToken.isNotBlank()) {
+            settings.setTelegramBotToken(credentials.telegramBotToken); restored++
         }
         if (credentials.remoteGatewayApiKey.isNotBlank()) {
             settings.setRemoteGatewayApiKey(credentials.remoteGatewayApiKey); restored++

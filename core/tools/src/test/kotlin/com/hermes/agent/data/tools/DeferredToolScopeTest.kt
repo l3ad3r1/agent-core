@@ -91,6 +91,29 @@ class DeferredToolScopeTest {
     }
 
     @Test
+    fun `tool_call parses arguments sent as a JSON string`() = runTest {
+        var seen: Map<String, JsonElement>? = null
+        val echo = object : Tool {
+            override val descriptor = ToolDescriptor("kanban", "k", emptyList(), capabilities = setOf("kanban", "deferrable"))
+            override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {
+                seen = arguments
+                return ToolResult.ok("ok")
+            }
+        }
+        val scope = DeferredToolScope().apply { publish(setOf("kanban")) }
+        val call = ToolCallTool(FakeRegistry(listOf(echo)), scope)
+
+        call.execute(mapOf("tool_name" to JsonPrimitive("kanban"), "arguments" to JsonPrimitive("""{"repo":"a/b"}""")))
+        assertTrue("got $seen", seen?.get("repo") == JsonPrimitive("a/b"))
+
+        // Not an object: refuse rather than run the tool with nothing.
+        seen = null
+        val bad = call.execute(mapOf("tool_name" to JsonPrimitive("kanban"), "arguments" to JsonPrimitive("repo=a/b")))
+        assertFalse(bad.success)
+        assertTrue(seen == null)
+    }
+
+    @Test
     fun `an empty scope lets the bridge reach nothing`() = runTest {
         // Disclosure inactive: the bridge is not advertised, so any call naming it
         // is a hallucination and must fail closed rather than fall through.

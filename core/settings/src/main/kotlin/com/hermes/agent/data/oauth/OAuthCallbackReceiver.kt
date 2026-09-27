@@ -25,6 +25,14 @@ class OAuthCallbackReceiver @Inject constructor() {
 
     private var pendingSession: OAuthSession? = null
 
+    /** Events already handled. The flow replays to every new collector; the code in
+     *  it is single-use, so exactly one of them may act on each event. */
+    private val claimed = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<OAuthCallbackEvent, Boolean>())
+
+    /** True for the first caller only. */
+    @Synchronized
+    fun claim(event: OAuthCallbackEvent): Boolean = claimed.add(event)
+
     @Synchronized
     fun registerPendingSession(session: OAuthSession) {
         this.pendingSession = session

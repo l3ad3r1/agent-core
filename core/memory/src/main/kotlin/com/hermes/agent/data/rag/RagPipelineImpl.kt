@@ -17,6 +17,8 @@ import com.hermes.agent.util.IdGenerator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
@@ -59,6 +61,9 @@ class RagPipelineImpl @Inject constructor(
 
     @Volatile
     private var indexHydrated = false
+
+    /** Cold-start ingest and retrieve both hydrate; only one may run it. */
+    private val hydrationLock = Mutex()
 
     override suspend fun ingest(document: Document): Document = withContext(dispatchers.io) {
         ensureIndexHydrated()
@@ -164,11 +169,15 @@ class RagPipelineImpl @Inject constructor(
                 id to (combined to source)
             }
 
-            merged.sortedByDescending { it.second.first }.take(limit).mapNotNull { (id, pair) ->
+            // Resolve rows before cutting to [limit]: an id whose chunk is gone must not
+            // take a slot from a live one.
+            val results = mutableListOf<RetrievedChunk>()
+            for ((id, pair) in merged.sortedByDescending { it.second.first }) {
+                if (results.size >= limit) break
                 val (score, source) = pair
-                val chunkEntity = chunkDao.getById(id) ?: return@mapNotNull null
-                val docEntity = documentDao.getById(chunkEntity.documentId) ?: return@mapNotNull null
-                RetrievedChunk(
+                val chunkEntity = chunkDao.getById(id) ?: continue
+                val docEntity = documentDao.getById(chunkEntity.documentId) ?: continue
+                results += RetrievedChunk(
                     chunk = com.hermes.agent.domain.rag.Chunk(
                         id = chunkEntity.id,
                         documentId = chunkEntity.documentId,
@@ -182,6 +191,7 @@ class RagPipelineImpl @Inject constructor(
                     source = source,
                 )
             }
+            results
         }
 
     override suspend fun buildContext(query: String, maxChars: Int): String =
@@ -209,6 +219,11 @@ class RagPipelineImpl @Inject constructor(
      * the source of truth.
      */
     private suspend fun ensureIndexHydrated() {
+        if (indexHydrated) return
+        hydrationLock.withLock { hydrateLocked() }
+    }
+
+    private suspend fun hydrateLocked() {
         if (indexHydrated) return
         Timber.tag("RagPipeline").i("hydrating RAG index from Room…")
         val docs = documentDao.observeAll().first()

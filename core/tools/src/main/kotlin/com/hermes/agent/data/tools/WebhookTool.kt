@@ -76,6 +76,7 @@ class WebhookTool @Inject constructor(
         }
 
         var sent = 0
+        val failed = mutableListOf<String>()
         if (connectors.isNotEmpty()) {
             withContext(Dispatchers.IO) {
                 connectors.forEach { connector ->
@@ -110,7 +111,10 @@ class WebhookTool @Inject constructor(
                         }
                         connectorRepository.recordUsed(connector.id)
                         sent++
-                    }.onFailure { e -> Timber.e(e, "WebhookTool: failed to send via ${connector.name}") }
+                    }.onFailure { e ->
+                        Timber.e(e, "WebhookTool: failed to send via ${connector.name}")
+                        failed += "${connector.name} (${e.message ?: "error"})"
+                    }
                 }
             }
         }
@@ -120,7 +124,17 @@ class WebhookTool @Inject constructor(
             sent++
         }
 
+        if (failed.isNotEmpty()) {
+            // Report the rejection so the model does not tell the user it was delivered.
+            val summary = "Sent to $sent connector(s). Not delivered: ${failed.joinToString()}."
+            return if (sent == 0) ToolResult.error(summary) else ToolResult.ok(summary, System.currentTimeMillis() - start)
+        }
         return ToolResult.ok("Sent to $sent connector(s).", System.currentTimeMillis() - start)
+    }
+
+    /** A 4xx/5xx is a failed delivery. The URL is left out: it can hold a bot token. */
+    private fun requireDelivered(response: okhttp3.Response) {
+        if (!response.isSuccessful) throw java.io.IOException("HTTP ${response.code}")
     }
 
     private fun postLocalNotification(message: String) {
@@ -194,7 +208,7 @@ class WebhookTool @Inject constructor(
             request.addHeader(WebhookSigner.HEADER_TIMESTAMP, sig.timestamp)
             request.addHeader(WebhookSigner.HEADER_SIGNATURE, sig.header)
         }
-        okHttpClient.newCall(request.build()).execute().close()
+        okHttpClient.newCall(request.build()).execute().use(::requireDelivered)
     }
 
     private fun postTelegram(botToken: String, chatId: String, message: String) {
@@ -204,12 +218,12 @@ class WebhookTool @Inject constructor(
                 .url("https://api.telegram.org/bot$botToken/sendMessage")
                 .post(body)
                 .build()
-        ).execute().close()
+        ).execute().use(::requireDelivered)
     }
 
     private fun postDiscord(webhookUrl: String, message: String) {
         val body = """{"content":${JsonPrimitive(message)}}""".toRequestBody(json)
-        okHttpClient.newCall(Request.Builder().url(webhookUrl).post(body).build()).execute().close()
+        okHttpClient.newCall(Request.Builder().url(webhookUrl).post(body).build()).execute().use(::requireDelivered)
     }
 
     /** Signal via signal-cli REST API (https://github.com/bbernhard/signal-cli-rest-api). */
@@ -218,7 +232,7 @@ class WebhookTool @Inject constructor(
             .toRequestBody(json)
         okHttpClient.newCall(
             Request.Builder().url("${apiUrl.trimEnd('/')}/v2/send").post(body).build()
-        ).execute().close()
+        ).execute().use(::requireDelivered)
     }
 
     /** Native SMS via [SmsManager]. Requires the SEND_SMS runtime permission. */
@@ -250,7 +264,7 @@ class WebhookTool @Inject constructor(
                 .addHeader("Authorization", "Bearer $accessToken")
                 .post(body)
                 .build()
-        ).execute().close()
+        ).execute().use(::requireDelivered)
     }
 }
 
