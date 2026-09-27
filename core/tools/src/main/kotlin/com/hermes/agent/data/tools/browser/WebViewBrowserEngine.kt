@@ -178,7 +178,9 @@ class WebViewBrowserEngine(
         webView = null
         val origins = visitedOrigins.toList()
         visitedOrigins.clear()
-        wv.post {
+        // Not wv.post: a view that was never attached to a window only runs posted work
+        // once attached, so the WebView was never destroyed and nothing was forgotten.
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
             wv.stopLoading()
             wv.clearHistory()
             wv.destroy()
