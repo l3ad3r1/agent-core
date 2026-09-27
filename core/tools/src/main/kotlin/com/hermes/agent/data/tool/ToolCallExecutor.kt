@@ -26,6 +26,7 @@ import javax.inject.Singleton
 class ToolCallExecutor @Inject constructor(
     private val registry: ToolRegistry,
     private val redactor: OutputRedactor,
+    private val resultStore: ToolResultStore = ToolResultStore(),
 ) {
 
     /**
@@ -78,12 +79,20 @@ class ToolCallExecutor @Inject constructor(
             }
         // Redact secrets from anything the tool returns before it re-enters
         // the conversation (and from there the UI, history, or `notify`).
-        return runCatching {
+        val redacted = runCatching {
             result.copy(
                 output = redactor.redact(result.output),
                 errorMessage = result.errorMessage?.let { redactor.redact(it) },
             )
         }.getOrDefault(result)
+        // Too long to hand over whole: the model gets a preview and pages through the
+        // rest with read_tool_result, instead of the context overflowing or the rest being lost.
+        val limit = tool.descriptor.maxResultSizeChars
+        return if (limit > 0 && redacted.output.length > limit) {
+            redacted.copy(output = resultStore.overflow(call.name, redacted.output, limit))
+        } else {
+            redacted
+        }
     }
 
     /**

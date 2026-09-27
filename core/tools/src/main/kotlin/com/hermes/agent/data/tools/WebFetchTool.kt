@@ -1,5 +1,6 @@
 package com.hermes.agent.data.tools
 
+import com.hermes.agent.data.tool.ToolResultStore
 import com.hermes.agent.domain.tool.Tool
 import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolParameter
@@ -31,6 +32,7 @@ import dagger.multibindings.IntoSet
 class WebFetchTool @Inject constructor(
     okHttpClient: OkHttpClient,
     networkGuard: PublicNetworkGuard,
+    private val resultStore: ToolResultStore = ToolResultStore(),
 ) : Tool {
 
     /** The URL comes from the model, so it may only reach the public internet. */
@@ -51,12 +53,15 @@ class WebFetchTool @Inject constructor(
             ToolParameter(
                 name = "max_chars",
                 type = ToolParameterType.INTEGER,
-                description = "Maximum characters of readable text to return (default 8000, max 32000).",
+                description = "How many characters to return now (default 8000, max 32000). " +
+                    "A longer page is kept and can be read on with read_tool_result.",
                 required = false,
             ),
         ),
         category = "information",
         capabilities = setOf("web"),
+        // The tool pages long results itself at max_chars; the executor must not cut again.
+        maxResultSizeChars = 33_000,
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult = withContext(Dispatchers.IO) {
@@ -88,10 +93,13 @@ class WebFetchTool @Inject constructor(
                     response.request.url.toString(),
                 )
             }
-            val text = render(fetched.body, fetched.contentType, fetched.finalUrl, maxChars)
+            val text = render(fetched.body, fetched.contentType, fetched.finalUrl)
             if (text.isBlank()) return@withContext ToolResult.error("No readable content found at $url")
 
-            ToolResult.ok("URL: $url\n$text", System.currentTimeMillis() - start)
+            // A page past max_chars is kept whole; the model reads on with read_tool_result.
+            val full = "URL: $url\n$text"
+            val output = if (full.length <= maxChars) full else resultStore.overflow(descriptor.name, full, maxChars)
+            ToolResult.ok(output, System.currentTimeMillis() - start)
         } catch (e: Exception) {
             Timber.e(e, "WebFetchTool failed: $url")
             ToolResult.error("Failed to fetch $url: ${e.message}")
@@ -100,12 +108,11 @@ class WebFetchTool @Inject constructor(
 
     /**
      * JSON and plain text are returned as they are. HTML is reduced to its main
-     * content by [ReadablePage], with the page's links listed after it; the links
-     * get at most a fifth of the budget so the text always comes first.
+     * content by [ReadablePage], with the page's links listed after it.
      */
-    private fun render(raw: String, contentType: String, url: String, maxChars: Int): String {
+    private fun render(raw: String, contentType: String, url: String): String {
         val html = contentType.isEmpty() || "html" in contentType || "xml" in contentType
-        if (!html) return "\n" + cap(raw.trim(), maxChars)
+        if (!html) return "\n" + raw.trim().take(MAX_KEPT_CHARS)
 
         val page = ReadablePage.extract(raw, url)
         val links = buildString {
@@ -113,15 +120,17 @@ class WebFetchTool @Inject constructor(
                 append("\n\nLinks:")
                 page.links.forEachIndexed { i, link -> append("\n[${i + 1}] ${link.text} - ${link.url}") }
             }
-        }.take(maxChars / 5)
+        }
         val header = if (page.title.isNotEmpty()) "Title: ${page.title}\n\n" else "\n"
-        return header + cap(page.text, maxChars - links.length) + links
+        return header + page.text.take(MAX_KEPT_CHARS) + links
     }
 
     private class Fetched(val body: String, val contentType: String, val finalUrl: String)
 
-    private fun cap(text: String, maxChars: Int): String =
-        if (text.length <= maxChars) text else text.take(maxChars) + "\n…[truncated at $maxChars chars]"
+    private companion object {
+        /** Bound on what is kept of one page; protects memory, not the model's context. */
+        const val MAX_KEPT_CHARS = 400_000
+    }
 }
 
 @Module

@@ -31,7 +31,8 @@ private const val PRIVILEGED_TIMEOUT_SECONDS = 15L
 
 /**
  * Executes a shell command via ProcessBuilder (local), SSH (remote), or Shizuku (privileged).
- * stdout and stderr are merged, redacted via OutputRedactor, and capped at MAX_OUTPUT_CHARS.
+ * stdout and stderr are merged and redacted via OutputRedactor; past MAX_OUTPUT_CHARS the
+ * tool executor keeps the rest for read_tool_result.
  *
  * requiresConfirmation = true so the orchestrator always surfaces a dialog
  * before running any shell command.
@@ -47,7 +48,7 @@ class ShellTool @Inject constructor(
     override val descriptor = ToolDescriptor(
         name = "shell",
         description = "Execute a shell command and return the combined stdout+stderr output " +
-            "(capped at $MAX_OUTPUT_CHARS chars). " +
+            "(the first $MAX_OUTPUT_CHARS chars; longer output can be read on with read_tool_result). " +
             "target='local' (default) runs on this device as the app user — not root (${TIMEOUT_SECONDS}s timeout). " +
             "target='privileged' runs with elevated ADB permissions (UID 2000) via Shizuku (${PRIVILEGED_TIMEOUT_SECONDS}s timeout). " +
             "target='remote' runs over SSH on the host configured in Settings → Remote shell (${REMOTE_TIMEOUT_SECONDS}s " +
@@ -147,12 +148,8 @@ class ShellTool @Inject constructor(
                     .toString(Charsets.UTF_8)
                     .filter { it.code != 0 }
                     .trim()
+                // Past MAX_OUTPUT_CHARS the executor keeps the rest for read_tool_result.
                 val output = outputRedactor.redact(outputRaw)
-                    .let {
-                        if (it.length > MAX_OUTPUT_CHARS)
-                            it.take(MAX_OUTPUT_CHARS) + "\n...[truncated]"
-                        else it
-                    }
 
                 val resultText = buildString {
                     append("exit_code=$exitCode\n")
@@ -209,10 +206,7 @@ class ShellTool @Inject constructor(
 
         return privilegedBackend.execute(command, PRIVILEGED_TIMEOUT_SECONDS * 1000).fold(
             onSuccess = { r ->
-                val outputRedacted = outputRedactor.redact(r.output)
-                val output = if (outputRedacted.length > MAX_OUTPUT_CHARS) {
-                    outputRedacted.take(MAX_OUTPUT_CHARS) + "\n...[truncated]"
-                } else outputRedacted
+                val output = capCapture(outputRedactor.redact(r.output))
 
                 val resultText = buildString {
                     append("exit_code=${r.exitCode} (privileged uid=${status.uid})\n")
@@ -256,10 +250,7 @@ class ShellTool @Inject constructor(
 
         return remoteBackend.execute(config, command, REMOTE_TIMEOUT_SECONDS * 1000).fold(
             onSuccess = { r ->
-                val outputRedacted = outputRedactor.redact(r.output)
-                val output = if (outputRedacted.length > MAX_OUTPUT_CHARS) {
-                    outputRedacted.take(MAX_OUTPUT_CHARS) + "\n...[truncated]"
-                } else outputRedacted
+                val output = capCapture(outputRedactor.redact(r.output))
                 val resultText = buildString {
                     append("exit_code=${r.exitCode} (remote ${s.sshUser}@${s.sshHost})\n")
                     if (output.isNotEmpty()) append(output)
@@ -277,10 +268,19 @@ class ShellTool @Inject constructor(
 }
 
 /** Retain at most the amount the descriptor promises to return. */
+/**
+ * What is kept of a command's output at all. The model sees MAX_OUTPUT_CHARS of it
+ * and pages through the rest with read_tool_result; this bound only protects memory.
+ */
+private const val MAX_CAPTURE_CHARS = 512 * 1024
+
 private fun ByteArrayOutputStream.writeCapped(buffer: ByteArray, length: Int) {
-    val remaining = MAX_OUTPUT_CHARS - size()
+    val remaining = MAX_CAPTURE_CHARS - size()
     if (remaining > 0) write(buffer, 0, minOf(length, remaining))
 }
+
+private fun capCapture(output: String): String =
+    if (output.length > MAX_CAPTURE_CHARS) output.take(MAX_CAPTURE_CHARS) + "\n...[output beyond ${MAX_CAPTURE_CHARS / 1024} KB dropped]" else output
 
 @Module
 @InstallIn(SingletonComponent::class)
