@@ -24,7 +24,18 @@ data class CloudProviderProfile(
      * never sent on the wire.
      */
     val reasoningEffort: String = "",
+    /** Tool reliability measured by "Test model" for [measuredModel]; null until tested. */
+    val measuredToolReliability: Double? = null,
+    /** The model [measuredToolReliability] was measured on. */
+    val measuredModel: String = "",
 ) {
+    /**
+     * What routing should trust: the measured value while the tested model is still the
+     * one selected, else the preset's estimate. A different model was never tested.
+     */
+    val effectiveToolReliability: Double
+        get() = measuredToolReliability?.takeIf { measuredModel.isNotEmpty() && measuredModel == model } ?: toolReliability
+
     /** A custom OpenAI-compatible endpoint may need no key: Ollama, LM Studio and llama.cpp run open. */
     val keyOptional: Boolean get() = id.startsWith(CUSTOM_ID_PREFIX)
 

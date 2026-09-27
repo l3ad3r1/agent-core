@@ -166,7 +166,7 @@ class HybridLlmRouter @Inject constructor(
                                     quality = profile.quality.coerceIn(0.0, 1.0),
                                     cost = profile.cost.coerceIn(0.0, 1.0),
                                     latency = profile.latency.coerceIn(0.0, 1.0),
-                                    toolReliability = profile.toolReliability.coerceIn(0.0, 1.0),
+                                    toolReliability = profile.effectiveToolReliability.coerceIn(0.0, 1.0),
                                     supportsVision = profile.supportsVision,
                                 ),
                             )

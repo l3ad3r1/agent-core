@@ -100,6 +100,44 @@ class ModelCapabilityProbeTest {
     }
 
     @Test
+    fun `tool results become the reliability routing uses, and no answer changes nothing`() {
+        fun run(call: Boolean, result: Boolean, inconclusive: Boolean = false) = listOf(
+            ModelCapabilityProbe.CheckResult(Check.TOOL_CALL, call, "", inconclusive = inconclusive),
+            ModelCapabilityProbe.CheckResult(Check.TOOL_RESULT, result, ""),
+        )
+        assertEquals(0.85, ModelCapabilityProbe.toolReliability(run(true, true), current = 0.6)!!, 0.0)
+        assertEquals("a better preset estimate is kept", 0.95, ModelCapabilityProbe.toolReliability(run(true, true), 0.95)!!, 0.0)
+        assertEquals(0.2, ModelCapabilityProbe.toolReliability(run(false, true), 0.9)!!, 0.0)
+        assertEquals(0.5, ModelCapabilityProbe.toolReliability(run(true, false), 0.9)!!, 0.0)
+        assertEquals(null, ModelCapabilityProbe.toolReliability(run(false, false, inconclusive = true), 0.9))
+    }
+
+    @Test
+    fun `a measurement only counts for the model it was taken on`() {
+        val profile = com.hermes.agent.domain.settings.CloudProviderProfile(
+            id = "openrouter", name = "OpenRouter", baseUrl = "https://openrouter.ai/api/v1", model = "cheap-chat",
+            apiKey = "k", quality = 0.7, cost = 0.2, latency = 0.7, toolReliability = 0.9,
+            measuredToolReliability = 0.2, measuredModel = "cheap-chat",
+        )
+        assertEquals(0.2, profile.effectiveToolReliability, 0.0)
+        assertEquals("switching model drops the old measurement", 0.9, profile.copy(model = "big-tools").effectiveToolReliability, 0.0)
+        assertEquals(0.9, profile.copy(measuredToolReliability = null).effectiveToolReliability, 0.0)
+    }
+
+    @Test
+    fun `a check that got no answer is marked inconclusive`() = runTest {
+        val model = object : CapableModel() {
+            override suspend fun completeWithTools(messages: List<LlmMessage>, tools: List<ToolDescriptor>): LlmToolResponse =
+                throw java.io.IOException("HTTP 503")
+        }
+
+        val results = probe.run(model).associateBy { it.check }
+
+        assertTrue(results.getValue(Check.TOOL_CALL).inconclusive)
+        assertEquals(null, ModelCapabilityProbe.toolReliability(results.values.toList(), 0.9))
+    }
+
+    @Test
     fun `a call with the wrong arguments does not pass`() = runTest {
         val model = object : CapableModel() {
             override suspend fun completeWithTools(messages: List<LlmMessage>, tools: List<ToolDescriptor>): LlmToolResponse =

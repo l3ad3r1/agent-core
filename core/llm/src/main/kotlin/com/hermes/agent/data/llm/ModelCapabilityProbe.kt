@@ -35,7 +35,17 @@ class ModelCapabilityProbe @Inject constructor(
         MULTI_TURN("Follows the conversation"),
     }
 
-    data class CheckResult(val check: Check, val passed: Boolean, val detail: String)
+    /**
+     * [inconclusive]: the check never got an answer (timeout, network, HTTP error), so
+     * it says nothing about what the model can do.
+     */
+    data class CheckResult(
+        val check: Check,
+        val passed: Boolean,
+        val detail: String,
+        val inconclusive: Boolean = false,
+    )
+
 
     /** Runs every check against [profile]'s model, in order. */
     suspend fun run(profile: CloudProviderProfile): List<CheckResult> = run(providers.create(profile))
@@ -62,12 +72,12 @@ class ModelCapabilityProbe @Inject constructor(
     } catch (e: CancellationException) {
         // A timeout is a result; a cancelled screen is not.
         if (e is kotlinx.coroutines.TimeoutCancellationException) {
-            CheckResult(check, false, "No answer within ${CHECK_TIMEOUT_MS / 1000} s")
+            CheckResult(check, false, "No answer within ${CHECK_TIMEOUT_MS / 1000} s", inconclusive = true)
         } else {
             throw e
         }
     } catch (e: Exception) {
-        CheckResult(check, false, e.message?.take(200) ?: e.javaClass.simpleName)
+        CheckResult(check, false, e.message?.take(200) ?: e.javaClass.simpleName, inconclusive = true)
     }
 
     private suspend fun reply(provider: LlmProvider): CheckResult {
@@ -139,18 +149,38 @@ class ModelCapabilityProbe @Inject constructor(
         return CheckResult(check, passed, if (passed) "OK" else "Unexpected reply: $shown")
     }
 
-    private companion object {
-        const val CHECK_TIMEOUT_MS = 60_000L
-        const val PONG = "PONG"
-        const val CODE_WORD = "KESTREL"
-        const val TOOL_TEMPERATURE = "17"
-        const val STAND_IN_CALL_ID = "call_probe_1"
-        const val WEATHER_QUESTION = "What is the weather in Paris right now? Use the get_weather tool."
+    companion object {
+        /** What routing requires of a model before it gets tool-heavy turns. */
+        const val RELIABLE_TOOLS = 0.85
 
-        val system = LlmMessage("system", "You are being tested. Follow each instruction exactly and briefly.")
-        val pongPrompt = listOf(system, LlmMessage("user", "Reply with exactly the word PONG and nothing else."))
+        /**
+         * The tool reliability [results] show, for routing: passing both tool checks
+         * clears the bar for tool-heavy turns; failing to call a tool at all puts the
+         * model well below it. Null when the run tells nothing (a check did not run
+         * or got no answer).
+         */
+        fun toolReliability(results: List<CheckResult>, current: Double): Double? {
+            val call = results.firstOrNull { it.check == Check.TOOL_CALL } ?: return null
+            val result = results.firstOrNull { it.check == Check.TOOL_RESULT } ?: return null
+            if (call.inconclusive || result.inconclusive) return null
+            return when {
+                call.passed && result.passed -> maxOf(current, RELIABLE_TOOLS)
+                !call.passed -> 0.2
+                else -> 0.5
+            }
+        }
 
-        val weatherTool = ToolDescriptor(
+        private const val CHECK_TIMEOUT_MS = 60_000L
+        private const val PONG = "PONG"
+        private const val CODE_WORD = "KESTREL"
+        private const val TOOL_TEMPERATURE = "17"
+        private const val STAND_IN_CALL_ID = "call_probe_1"
+        private const val WEATHER_QUESTION = "What is the weather in Paris right now? Use the get_weather tool."
+
+        private val system = LlmMessage("system", "You are being tested. Follow each instruction exactly and briefly.")
+        private val pongPrompt = listOf(system, LlmMessage("user", "Reply with exactly the word PONG and nothing else."))
+
+        private val weatherTool = ToolDescriptor(
             name = "get_weather",
             description = "Get the current weather for a city.",
             parameters = listOf(
