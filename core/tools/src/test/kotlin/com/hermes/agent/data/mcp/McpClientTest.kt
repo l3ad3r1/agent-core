@@ -195,6 +195,48 @@ class McpClientTest {
     }
 
     @Test
+    fun `a session the server dropped is re-established and the call resent`() = runTest {
+        val json = "application/json"
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", json).setHeader("Mcp-Session-Id", "old")
+                .setBody(rpc(1, """{"protocolVersion":"2024-11-05"}""")),
+        )
+        server.enqueue(MockResponse().setResponseCode(202))
+        // The server restarted: it no longer knows "old".
+        server.enqueue(MockResponse().setResponseCode(404))
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", json).setHeader("Mcp-Session-Id", "new")
+                .setBody(rpc(3, """{"protocolVersion":"2024-11-05"}""")),
+        )
+        server.enqueue(MockResponse().setResponseCode(202))
+        server.enqueue(MockResponse().setHeader("Content-Type", json).setBody(rpc(2, """{"tools":[]}""")))
+        val client = McpClient(McpServerConfig("server-1", "demo", server.url("/mcp").toString()))
+
+        assertTrue(client.initialize().isSuccess)
+        val listed = client.listTools()
+        assertTrue(listed.exceptionOrNull()?.message, listed.isSuccess)
+
+        server.takeRequest() // initialize
+        server.takeRequest() // notifications/initialized
+        assertEquals("old", server.takeRequest().getHeader("Mcp-Session-Id"))
+        // The new handshake must not present the dead session.
+        val reinit = server.takeRequest()
+        assertTrue(reinit.body.readUtf8().contains("\"initialize\""))
+        assertEquals(null, reinit.getHeader("Mcp-Session-Id"))
+        assertEquals("new", server.takeRequest().getHeader("Mcp-Session-Id"))
+        assertEquals("new", server.takeRequest().getHeader("Mcp-Session-Id"))
+    }
+
+    @Test
+    fun `a 404 without a session is an ordinary failure, not a reconnect loop`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(404))
+        val client = McpClient(McpServerConfig("server-1", "demo", server.url("/mcp").toString()))
+
+        assertTrue(client.listTools().isFailure)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
     fun `an SSE reply is read past the notifications that precede the result`() = runTest {
         val body = "event: message\n" +
             "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{}}\n\n" +

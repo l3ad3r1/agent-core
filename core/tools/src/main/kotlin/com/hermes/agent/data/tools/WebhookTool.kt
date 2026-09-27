@@ -171,6 +171,13 @@ class WebhookTool @Inject constructor(
         val replyIntent = android.content.Intent().setClassName(context.packageName, "com.hermes.agent.MainActivity").apply {
             action = "com.hermes.agent.action.NOTIFICATION_REPLY"
             putExtra("EXTRA_NOTIFICATION_ID", notificationId)
+            // MainActivity is a standard-launch activity: without these a reply stacked a
+            // second copy of the app. An open instance gets the reply in onNewIntent.
+            addFlags(
+                android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
         }
         val replyPendingIntent = android.app.PendingIntent.getActivity(
             context,

@@ -53,7 +53,9 @@ class McpManager @Inject constructor(
             ?: return Result.failure(Exception("MCP Server not found: $serverId"))
 
         if (!server.enabled) {
-            unregisterServerTools(serverId)
+            // Already holding the lock: unregisterServerTools() would take it again and hang.
+            unregisterServerToolsInternal(serverId)
+            clients.remove(serverId)?.close()
             return Result.success(emptyList())
         }
 
@@ -145,10 +147,16 @@ class McpManager @Inject constructor(
         set.add(toolDef.qualifiedName)
     }
 
-    private suspend fun getOrConnectClient(serverId: String): McpClient? {
-        val existing = clients[serverId]
-        if (existing != null) return existing
+    /** Serializes lazy connects: two tool calls racing here would each connect, and the
+     *  second would close the first one's client while its call is still running. */
+    private val connectMutex = Mutex()
 
+    private suspend fun getOrConnectClient(serverId: String): McpClient? {
+        clients[serverId]?.let { return it }
+        return connectMutex.withLock { clients[serverId] ?: connect(serverId) }
+    }
+
+    private suspend fun connect(serverId: String): McpClient? {
         val server = mcpRepository.getServer(serverId) ?: return null
         if (!server.enabled) return null
 

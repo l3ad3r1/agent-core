@@ -100,6 +100,8 @@ class McpClient(
 
     suspend fun initialize(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            // A new handshake starts a new session; a stale id would be rejected.
+            sessionId = null
             if (config.transport == McpTransportType.SSE) {
                 close()
                 openSseStream()
@@ -157,7 +159,7 @@ class McpClient(
                 putJsonObject("params") {}
             }
 
-            val responseJson = sendJsonRpc(listPayload)
+            val responseJson = sendInSession(listPayload)
             val error = responseJson.jsonObject["error"]
             if (error != null) {
                 val errorMsg = error.jsonObject["message"]?.jsonPrimitive?.contentOrNull ?: "Unknown MCP error"
@@ -216,7 +218,7 @@ class McpClient(
                 }
             }
 
-            val responseJson = sendJsonRpc(callPayload)
+            val responseJson = sendInSession(callPayload)
             val error = responseJson.jsonObject["error"]
             if (error != null) {
                 val errorMsg = error.jsonObject["message"]?.jsonPrimitive?.contentOrNull ?: "Unknown MCP error"
@@ -302,12 +304,14 @@ class McpClient(
                 if (sseCall === call && !call.isCanceled()) Timber.w(e, "MCP event stream failed")
             } finally {
                 response.close()
+                endpoint.completeExceptionally(Exception("MCP event stream closed"))
+                // Only while still current: a replaced stream's close() already failed its
+                // requests, and those pending now belong to the stream that replaced it.
                 if (sseCall === call) {
                     sseCall = null
                     ssePostEndpoint = null
+                    failPending(Exception("MCP event stream closed"))
                 }
-                endpoint.completeExceptionally(Exception("MCP event stream closed"))
-                failPending(Exception("MCP event stream closed"))
             }
         }, "mcp-sse-${config.id}").apply { isDaemon = true }.start()
 
@@ -373,8 +377,9 @@ class McpClient(
             null
         }
 
+        val request = postRequest(payload, accept = true)
         val response = try {
-            httpClient.newCall(postRequest(payload, accept = true)).execute()
+            httpClient.newCall(request).execute()
         } catch (e: Exception) {
             if (id != null) pending.remove(id)
             throw e
@@ -385,6 +390,10 @@ class McpClient(
 
         if (!response.isSuccessful) {
             if (id != null) pending.remove(id)
+            // Streamable HTTP: 404 on a request carrying a session id means the server
+            // dropped the session (it restarted, or expired it).
+            val sentSession = request.header(SESSION_HEADER) != null
+            if (response.code == 404 && sentSession) throw SessionExpiredException()
             throw Exception("HTTP ${response.code}: $responseBody")
         }
 
@@ -403,6 +412,21 @@ class McpClient(
         } finally {
             pending.remove(id)
         }
+    }
+
+    private class SessionExpiredException : Exception("MCP session expired")
+
+    /**
+     * Sends [payload]; if the server no longer knows our session, handshakes again
+     * once and resends. Without this a restarted server failed every call until the
+     * app itself restarted, since the manager keeps reusing this client.
+     */
+    private suspend fun sendInSession(payload: JsonObject): JsonElement = try {
+        sendJsonRpc(payload)
+    } catch (e: SessionExpiredException) {
+        Timber.i("MCP session for %s expired; reconnecting", config.name)
+        initialize().getOrThrow()
+        sendJsonRpc(payload)
     }
 
     /**
