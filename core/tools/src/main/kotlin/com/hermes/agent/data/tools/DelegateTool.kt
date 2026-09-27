@@ -107,6 +107,11 @@ class DelegateTool @Inject constructor(
         maxResultSizeChars = 12_000,
     )
 
+    // Queued tasks run later as background turns with the full toolset, so a
+    // background delegation is approved by the user; a blocking one is watched.
+    override fun requiresConfirmation(arguments: Map<String, JsonElement>): Boolean =
+        (arguments["background"] as? JsonPrimitive)?.contentOrNull?.toBoolean() == true
+
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {
         val start = System.currentTimeMillis()
 

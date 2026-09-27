@@ -329,8 +329,14 @@ private fun MemoryBackup.toEntity() = MemoryEntity(
     createdAt = createdAt, lastAccessedAt = lastAccessedAt, accessCount = accessCount,
 )
 
+/**
+ * A restored module comes back switched off, with nothing granted. A backup file
+ * is not a trusted source: installing verifies the registry digest, validates the
+ * manifest and asks the user for each permission, and restore must not skip that.
+ * Reinstalling it from Modules re-runs those checks.
+ */
 private fun ScriptPluginBackup.toEntity() = ScriptPluginEntity(
     id = id, name = name, version = version, author = author, description = description,
-    manifestJson = manifestJson, grantedPermissions = grantedPermissions,
-    enabled = enabled, sourceUrl = sourceUrl, installedAt = installedAt,
+    manifestJson = manifestJson, grantedPermissions = "",
+    enabled = false, sourceUrl = sourceUrl, installedAt = installedAt,
 )

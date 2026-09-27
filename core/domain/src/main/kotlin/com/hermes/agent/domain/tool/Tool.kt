@@ -141,4 +141,12 @@ interface Tool {
      *   required parameters cause the tool to return a [ToolResult.error].
      */
     suspend fun execute(arguments: Map<String, JsonElement>): ToolResult
+
+    /**
+     * Whether this particular call needs a human. Defaults to the descriptor;
+     * a tool overrides it when only some calls are risky, such as one that
+     * queues work to run later without anyone watching.
+     */
+    fun requiresConfirmation(arguments: Map<String, JsonElement>): Boolean =
+        descriptor.requiresConfirmation
 }

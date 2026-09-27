@@ -165,4 +165,19 @@ class DelegateChildCapabilitiesTest {
         coVerify(exactly = 0) { router.route(any(), any()) }
         coVerify(exactly = 0) { executor.execute(any(), any()) }
     }
+
+    @Test
+    fun `only a background delegation needs the user's approval`() {
+        val delegate = DelegateTool(
+            router = mockk(),
+            toolRegistry = dagger.Lazy { mockk<ToolRegistry>() },
+            toolCallExecutor = dagger.Lazy { mockk<ToolCallExecutor>() },
+            agentTaskRepository = dagger.Lazy { mockk<AgentTaskRepository>() },
+            productIdentity = ProductIdentity("Hermes", "hermes_notify"),
+        )
+
+        // A queued task runs later as an unattended turn, so it must be approved.
+        assertTrue(delegate.requiresConfirmation(mapOf("prompt" to JsonPrimitive("x"), "background" to JsonPrimitive(true))))
+        assertFalse(delegate.requiresConfirmation(mapOf("prompt" to JsonPrimitive("x"))))
+    }
 }

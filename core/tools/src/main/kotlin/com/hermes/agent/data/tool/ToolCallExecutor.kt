@@ -50,7 +50,7 @@ class ToolCallExecutor @Inject constructor(
         val tool = registry.byName(call.name)
             ?: return ToolResult.error("unknown tool: ${call.name}")
 
-        if (tool.descriptor.requiresConfirmation) {
+        if (tool.requiresConfirmation(call.arguments)) {
             val approved = confirmationGate?.confirm(call, requiresConfirmation = true) ?: true
             if (!approved) {
                 return ToolResult.error("user declined to run tool '${call.name}'")

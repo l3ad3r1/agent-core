@@ -62,6 +62,7 @@ class McpManager @Inject constructor(
             val initRes = client.initialize()
             if (initRes.isFailure) {
                 val err = initRes.exceptionOrNull()?.message ?: "Handshake failed"
+                client.close()
                 mcpRepository.updateServerError(serverId, err)
                 return Result.failure(Exception(err))
             }
@@ -69,12 +70,14 @@ class McpManager @Inject constructor(
             val listRes = client.listTools()
             if (listRes.isFailure) {
                 val err = listRes.exceptionOrNull()?.message ?: "Failed to list tools"
+                client.close()
                 mcpRepository.updateServerError(serverId, err)
                 return Result.failure(Exception(err))
             }
 
             val tools = listRes.getOrNull().orEmpty()
-            clients[serverId] = client
+            // An SSE client holds a stream open; the one it replaces must let go of it.
+            clients.put(serverId, client)?.takeIf { it !== client }?.close()
 
             // Save to Room cache
             mcpRepository.saveCachedTools(serverId, tools)
@@ -108,16 +111,20 @@ class McpManager @Inject constructor(
 
     suspend fun testConnection(server: McpServerConfig): Result<List<McpToolDefinition>> {
         val client = McpClient(server)
-        val initRes = client.initialize()
-        if (initRes.isFailure) {
-            return Result.failure(initRes.exceptionOrNull() ?: Exception("Handshake failed"))
+        try {
+            val initRes = client.initialize()
+            if (initRes.isFailure) {
+                return Result.failure(initRes.exceptionOrNull() ?: Exception("Handshake failed"))
+            }
+            return client.listTools()
+        } finally {
+            client.close()
         }
-        return client.listTools()
     }
 
     suspend fun unregisterServerTools(serverId: String) = mutex.withLock {
         unregisterServerToolsInternal(serverId)
-        clients.remove(serverId)
+        clients.remove(serverId)?.close()
     }
 
     private fun unregisterServerToolsInternal(serverId: String) {
@@ -148,9 +155,11 @@ class McpManager @Inject constructor(
         val client = McpClient(server)
         val initRes = client.initialize()
         return if (initRes.isSuccess) {
-            clients[serverId] = client
+            // An SSE client holds a stream open; the one it replaces must let go of it.
+            clients.put(serverId, client)?.takeIf { it !== client }?.close()
             client
         } else {
+            client.close()
             null
         }
     }

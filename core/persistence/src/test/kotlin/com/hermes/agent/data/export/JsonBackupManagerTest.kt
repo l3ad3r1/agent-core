@@ -189,7 +189,7 @@ class JsonBackupManagerTest {
     }
 
     @Test
-    fun `a module keeps the permissions that were approved for its manifest`() = runTest {
+    fun `a restored module is off and granted nothing until reinstalled`() = runTest {
         val source = Tables().apply {
             plugins["weather"] = ScriptPluginEntity(
                 id = "weather", name = "Weather", version = "1.0.0",
@@ -202,7 +202,8 @@ class JsonBackupManagerTest {
         val target = Tables()
         manager(target).let { it.import(it.decode(text), ImportMode.SKIP_EXISTING) }
         val restored = target.plugins.getValue("weather")
-        assertEquals("network", restored.grantedPermissions)
+        assertEquals("", restored.grantedPermissions)
+        assertEquals(false, restored.enabled)
         assertEquals("""{"id":"weather"}""", restored.manifestJson)
     }
 

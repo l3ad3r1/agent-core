@@ -173,4 +173,63 @@ class McpClientTest {
         assertFalse(err.contains("secret-token-99999"))
         assertTrue(err.contains("[REDACTED]"))
     }
+
+    private fun rpc(id: Int, result: String) = """{"jsonrpc":"2.0","id":$id,"result":$result}"""
+
+    @Test
+    fun `the session id from initialize is sent on every later request`() = runTest {
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", "application/json").setHeader("Mcp-Session-Id", "sess-42")
+                .setBody(rpc(1, """{"protocolVersion":"2024-11-05"}""")),
+        )
+        server.enqueue(MockResponse().setResponseCode(202))
+        server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(rpc(2, """{"tools":[]}""")))
+        val client = McpClient(McpServerConfig("server-1", "demo", server.url("/mcp").toString()))
+
+        assertTrue(client.initialize().isSuccess)
+        assertTrue(client.listTools().isSuccess)
+
+        assertEquals(null, server.takeRequest().getHeader("Mcp-Session-Id"))
+        assertEquals("sess-42", server.takeRequest().getHeader("Mcp-Session-Id"))
+        assertEquals("sess-42", server.takeRequest().getHeader("Mcp-Session-Id"))
+    }
+
+    @Test
+    fun `an SSE reply is read past the notifications that precede the result`() = runTest {
+        val body = "event: message\n" +
+            "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{}}\n\n" +
+            "event: message\n" +
+            "data: " + rpc(1, """{"content":[{"type":"text","text":"done"}]}""") + "\n\n"
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(body))
+        val client = McpClient(McpServerConfig("server-1", "demo", server.url("/mcp").toString()))
+
+        assertEquals("done", client.callTool("echo", emptyMap()).getOrThrow())
+    }
+
+    @Test
+    fun `SSE transport reads replies from the event stream, not the 202 POST`() = runTest {
+        // The stream stays open a few seconds (padding comments, throttled) the way a
+        // real server holds it, and carries the replies to initialize and tools/list.
+        val stream = "event: endpoint\ndata: /messages?session=1\n\n" +
+            "event: message\ndata: " + rpc(1, """{"protocolVersion":"2024-11-05"}""") + "\n\n" +
+            "event: message\ndata: " + rpc(2, """{"tools":[{"name":"echo","inputSchema":{"type":"object"}}]}""") + "\n\n" +
+            ":\n".repeat(1500)
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse =
+                if (request.method == "GET") {
+                    MockResponse().setHeader("Content-Type", "text/event-stream").setBody(stream)
+                        .throttleBody(256, 100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                } else {
+                    MockResponse().setResponseCode(202)
+                }
+        }
+        val client = McpClient(
+            McpServerConfig("server-1", "demo", server.url("/sse").toString(), transport = McpTransportType.SSE),
+        )
+
+        val init = client.initialize()
+        assertTrue(init.exceptionOrNull()?.message, init.isSuccess)
+        assertEquals("echo", client.listTools().getOrThrow().single().remoteName)
+        client.close()
+    }
 }

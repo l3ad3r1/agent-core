@@ -91,6 +91,11 @@ class SchedulerTool @Inject constructor(
         requiresConfirmation = false,
     )
 
+    // Creating or re-enabling a job adds a prompt that runs unattended on a
+    // schedule, so the user approves it; listing and deleting do not need that.
+    override fun requiresConfirmation(arguments: Map<String, JsonElement>): Boolean =
+        (arguments["action"] as? JsonPrimitive)?.contentOrNull in setOf("create", "toggle")
+
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {
         val start = System.currentTimeMillis()
         val action = (arguments["action"] as? JsonPrimitive)?.contentOrNull
