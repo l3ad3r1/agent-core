@@ -54,6 +54,8 @@ class ScriptPluginEngine @Inject constructor() {
         val id: String,
         val source: String,
         val permissions: Set<String>,
+        /** [ScriptPluginManifest.hosts]; empty means any public host. */
+        val hosts: List<String> = emptyList(),
     )
 
     private class RegisteredTool(val pluginId: String, val name: String, val fn: Function)
@@ -93,7 +95,7 @@ class ScriptPluginEngine @Inject constructor() {
                         RunGuard.begin(cx)
                         val scope = cx.initSafeStandardObjects(null, true)
                         val loaded = LoadedPlugin(scope)
-                        installApi(cx, scope, spec.id, spec.permissions, loaded)
+                        installApi(cx, scope, spec.id, spec.permissions, spec.hosts, loaded)
                         cx.evaluateString(scope, spec.source, spec.id, 1, null)
                         plugins[spec.id] = loaded
                     } finally {
@@ -159,6 +161,7 @@ class ScriptPluginEngine @Inject constructor() {
         scope: Scriptable,
         pluginId: String,
         permissions: Set<String>,
+        hosts: List<String>,
         loaded: LoadedPlugin,
     ) {
         val hermes = cx.newObject(scope)
@@ -198,7 +201,7 @@ class ScriptPluginEngine @Inject constructor() {
                 override fun call(cx: Context, scope: Scriptable, thisObj: Scriptable?, args: Array<out Any>?): Any {
                     requirePermission(permissions, ScriptPluginPermissions.NETWORK)
                     val url = args?.getOrNull(0)?.let { Context.toString(it) } ?: return ""
-                    return host?.httpGet(pluginId, url) ?: ""
+                    return host?.httpGet(pluginId, url, hosts) ?: ""
                 }
             },
         )

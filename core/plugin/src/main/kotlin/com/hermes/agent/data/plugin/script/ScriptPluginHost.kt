@@ -35,9 +35,10 @@ interface ScriptPluginHost {
 
     /**
      * Performs an HTTPS GET through the host's client.
-     * Gated on [ScriptPluginPermissions.NETWORK].
+     * Gated on [ScriptPluginPermissions.NETWORK]. [allowedHosts] is what the
+     * module's manifest declared; empty means any public host.
      */
-    fun httpGet(pluginId: String, url: String): String
+    fun httpGet(pluginId: String, url: String, allowedHosts: List<String> = emptyList()): String
 }
 
 /**

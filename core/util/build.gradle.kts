@@ -31,6 +31,8 @@ dependencies {
 
     // FileLogTree / LogManager: on-device log capture, shared by both apps.
     api(libs.timber)
+    // PublicNetworkGuard wraps an OkHttpClient for the tools and modules that use it.
+    api(libs.okhttp)
     implementation(libs.androidx.core.ktx)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

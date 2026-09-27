@@ -36,6 +36,7 @@ class PublishedModulesTest {
                     id = manifest.id,
                     source = manifest.main,
                     permissions = manifest.permissions.toSet(),
+                    hosts = manifest.hosts,
                 ),
             ),
         )
@@ -67,6 +68,48 @@ class PublishedModulesTest {
             val registered = engine.registeredToolNames(manifest.id).toSet()
             val declared = manifest.tools.map { it.name }.toSet()
             assertEquals("module $id declares tools it does not register", declared, registered)
+        }
+    }
+
+    /**
+     * Network modules must declare every host they call: the app refuses the rest.
+     * The canned bodies are just enough for each script to reach its later calls.
+     */
+    @Test
+    fun `network modules only call the hosts they declare`() = runTest {
+        val cases = mapOf(
+            "weather" to ("weather" to mapOf("city" to "Paris")),
+            "currency-convert" to ("convert_currency" to mapOf("amount" to "10", "from" to "USD", "to" to "EUR")),
+            "word-lookup" to ("define_word" to mapOf("word" to "apple")),
+        )
+        cases.forEach { (id, call) ->
+            val manifest = manifest(id)
+            assertTrue("$id must declare its hosts", manifest.hosts.isNotEmpty())
+            val called = mutableListOf<String>()
+            val engine = ScriptPluginEngine()
+            engine.host = object : ScriptPluginHost {
+                override fun log(pluginId: String, message: String) = Unit
+                override fun readData(pluginId: String, collection: String, query: String) = "[]"
+                override fun writeData(pluginId: String, collection: String, payload: String) = ""
+                override fun httpGet(pluginId: String, url: String, allowedHosts: List<String>): String {
+                    called += url
+                    assertEquals(manifest.hosts, allowedHosts)
+                    return if ("geocoding" in url) {
+                        """{"results":[{"name":"Paris","country":"France","latitude":48.85,"longitude":2.35}]}"""
+                    } else {
+                        "{}"
+                    }
+                }
+            }
+            engine.load(manifest)
+            engine.execute(manifest.id, call.first, call.second.mapValues { JsonPrimitive(it.value) })
+
+            assertTrue("$id made no request", called.isNotEmpty())
+            called.forEach { url ->
+                val host = java.net.URI(url).host
+                assertTrue("$id called undeclared host $host", ModuleHosts.matches(host, manifest.hosts))
+                assertTrue("$id entries must be valid", manifest.hosts.all(ModuleHosts::isValidEntry))
+            }
         }
     }
 

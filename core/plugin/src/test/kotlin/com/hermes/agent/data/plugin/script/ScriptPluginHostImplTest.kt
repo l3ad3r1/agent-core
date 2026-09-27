@@ -13,6 +13,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import com.hermes.agent.util.net.PublicNetworkGuard
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -103,7 +104,7 @@ class ScriptPluginHostImplTest {
         notes: FakeNotesRepository = FakeNotesRepository(),
         todos: FakeTodoRepository = FakeTodoRepository(),
         bookmarks: FakeBookmarkRepository = FakeBookmarkRepository(),
-    ) = Triple(notes, todos, bookmarks) to ScriptPluginHostImpl(notes, todos, bookmarks, OkHttpClient())
+    ) = Triple(notes, todos, bookmarks) to ScriptPluginHostImpl(notes, todos, bookmarks, OkHttpClient(), PublicNetworkGuard())
 
     @Test
     fun `writeData create then readData notes round-trips`() {

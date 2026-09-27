@@ -32,6 +32,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
+import com.hermes.agent.util.net.PublicNetworkGuard
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -46,12 +47,15 @@ class VisionAnalyzeTool @Inject constructor(
     @ApplicationContext private val context: Context,
     private val router: HybridLlmRouter,
     okHttpClient: OkHttpClient,
+    networkGuard: PublicNetworkGuard,
 ) : Tool {
 
     private val httpClient: OkHttpClient = okHttpClient.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    private val downloadClient: OkHttpClient = networkGuard.restrict(httpClient)
 
     override val descriptor = ToolDescriptor(
         name = "vision_analyze",
@@ -154,7 +158,8 @@ class VisionAnalyzeTool @Inject constructor(
             }
             trimmed.startsWith("http://") || trimmed.startsWith("https://") -> {
                 val request = Request.Builder().url(trimmed).build()
-                val response = httpClient.newCall(request).execute()
+                // An image link from the model: public internet only.
+                val response = downloadClient.newCall(request).execute()
                 if (!response.isSuccessful) {
                     throw IllegalStateException("HTTP ${response.code} downloading image from $trimmed")
                 }

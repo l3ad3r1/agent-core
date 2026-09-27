@@ -22,6 +22,7 @@ import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import timber.log.Timber
+import com.hermes.agent.util.net.PublicNetworkGuard
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,6 +50,7 @@ class ScriptPluginHostImpl @Inject constructor(
     private val todos: TodoRepository,
     private val bookmarks: BookmarkRepository,
     private val okHttpClient: OkHttpClient,
+    private val networkGuard: PublicNetworkGuard,
 ) : ScriptPluginHost {
 
     override fun log(pluginId: String, message: String) {
@@ -83,17 +85,33 @@ class ScriptPluginHostImpl @Inject constructor(
 
     // The shared client allows 10-minute reads; a module call holds its lock and a
     // worker thread, and the script deadline cannot fire during blocking I/O.
+    // A module's URL is module- or model-chosen, so the public internet only, and on
+    // every hop (a redirect is checked like the first request) only the hosts the
+    // module declared, which the request carries as a tag.
     private val moduleHttpClient: OkHttpClient by lazy {
-        okHttpClient.newBuilder().callTimeout(HTTP_CALL_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS).build()
+        networkGuard.restrict(
+            okHttpClient.newBuilder()
+                .callTimeout(HTTP_CALL_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                .addNetworkInterceptor { chain ->
+                    val allowed = chain.request().tag(ModuleHosts.Allowed::class.java)
+                    val host = chain.request().url.host
+                    if (allowed != null && !ModuleHosts.matches(host, allowed.hosts)) {
+                        throw java.io.IOException(ModuleHosts.refusal(host, allowed.hosts))
+                    }
+                    chain.proceed(chain.request())
+                }
+                .build(),
+        )
     }
 
-    override fun httpGet(pluginId: String, url: String): String {
+    override fun httpGet(pluginId: String, url: String, allowedHosts: List<String>): String {
         require(url.startsWith("https://") || url.startsWith("http://")) {
             "url must start with http:// or https://"
         }
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", "Mozilla/5.0 (Linux; Android) HermesModule/1.0")
+            .tag(ModuleHosts.Allowed::class.java, ModuleHosts.Allowed(allowedHosts))
             .build()
         moduleHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {

@@ -74,7 +74,7 @@ class ScriptPluginRepositoryTest {
         override fun log(pluginId: String, message: String) = Unit
         override fun readData(pluginId: String, collection: String, query: String) = ""
         override fun writeData(pluginId: String, collection: String, payload: String) = ""
-        override fun httpGet(pluginId: String, url: String) = ""
+        override fun httpGet(pluginId: String, url: String, allowedHosts: List<String>) = ""
     }
 
     private fun sampleManifest(id: String = "test-plugin", toolName: String = "test_tool") = ScriptPluginManifest(

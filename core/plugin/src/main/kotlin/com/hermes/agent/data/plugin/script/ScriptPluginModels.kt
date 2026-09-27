@@ -32,6 +32,12 @@ data class ScriptPluginManifest(
     /** Host `versionCode` required; 0 means "any". */
     val minAppVersion: Int = 0,
     val permissions: List<String> = emptyList(),
+    /**
+     * The hosts a module with [ScriptPluginPermissions.NETWORK] may call, shown at
+     * install and enforced on every request and redirect: `api.example.com`, or
+     * `*.example.com` for its subdomains. Empty means any public host.
+     */
+    val hosts: List<String> = emptyList(),
     val tools: List<ScriptToolSpec> = emptyList(),
     /** The plugin's JavaScript source. */
     val main: String = "",
@@ -138,10 +144,42 @@ object ScriptPluginPermissions {
     val ALL = setOf(DATA_READ, DATA_WRITE, NETWORK)
 
     /** Human-readable text for the install confirmation. */
-    fun describe(permission: String): String = when (permission) {
+    fun describe(permission: String, hosts: List<String> = emptyList()): String = when (permission) {
         DATA_READ -> "Read your notes, tasks, and bookmarks"
         DATA_WRITE -> "Create and change your notes, tasks, and bookmarks"
-        NETWORK -> "Make network requests"
+        NETWORK -> if (hosts.isEmpty()) {
+            "Connect to any website"
+        } else {
+            "Connect to ${hosts.joinToString(", ")}"
+        }
         else -> permission
     }
+}
+
+/** Matching for [ScriptPluginManifest.hosts]. */
+object ModuleHosts {
+    /** A request's allowlist, carried as an OkHttp tag so redirects are checked too. */
+    data class Allowed(val hosts: List<String>)
+
+    private val LABEL = Regex("[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
+
+    /** A bare lowercase hostname, optionally `*.`-prefixed: no scheme, port, path or IP. */
+    fun isValidEntry(entry: String): Boolean {
+        val name = entry.removePrefix("*.")
+        val labels = name.split('.')
+        return name.length <= 253 && labels.size >= 2 && labels.all { LABEL.matches(it) } &&
+            !labels.last().all { it.isDigit() }
+    }
+
+    /** True when [host] is allowed by [entries]; an empty list allows any host. */
+    fun matches(host: String, entries: List<String>): Boolean {
+        if (entries.isEmpty()) return true
+        val h = host.lowercase().trimEnd('.')
+        return entries.any { entry ->
+            if (entry.startsWith("*.")) h.endsWith(entry.substring(1)) else h == entry
+        }
+    }
+
+    fun refusal(host: String, entries: List<String>): String =
+        "This module may only connect to ${entries.joinToString(", ")}; $host is not one of them."
 }

@@ -12,6 +12,7 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
+import com.hermes.agent.util.net.PublicNetworkGuard
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -56,6 +57,8 @@ class VisionAnalyzeToolTest {
             context = context,
             router = router,
             okHttpClient = OkHttpClient(),
+            // The mock server listens on loopback, which the real guard refuses.
+            networkGuard = PublicNetworkGuard { true },
         )
     }
 
@@ -155,6 +158,18 @@ class VisionAnalyzeToolTest {
 
         assertTrue(result.success)
         assertTrue("Remote image analyzed successfully" in result.output)
+    }
+
+    @Test
+    fun `an image link on the local network is refused before any request`() = runTest {
+        val guarded = VisionAnalyzeTool(context, router, OkHttpClient(), PublicNetworkGuard())
+        server.enqueue(MockResponse().setBody("secret"))
+
+        val result = guarded.execute(mapOf("image_path" to JsonPrimitive(server.url("/admin.png").toString())))
+
+        assertFalse(result.success)
+        assertTrue(result.errorMessage, result.errorMessage?.contains("private or local network") == true)
+        assertEquals(0, server.requestCount)
     }
 
     @Test

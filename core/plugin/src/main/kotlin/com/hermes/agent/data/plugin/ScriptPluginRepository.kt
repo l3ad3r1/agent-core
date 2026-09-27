@@ -2,10 +2,12 @@ package com.hermes.agent.data.plugin
 
 import com.hermes.agent.data.local.dao.ScriptPluginDao
 import com.hermes.agent.data.local.entity.ScriptPluginEntity
+import com.hermes.agent.data.plugin.script.ModuleHosts
 import com.hermes.agent.data.plugin.script.ScriptModuleDigest
 import com.hermes.agent.data.plugin.script.ScriptPluginEngine
 import com.hermes.agent.data.plugin.script.ScriptPluginHost
 import com.hermes.agent.data.plugin.script.ScriptPluginManifest
+import com.hermes.agent.data.plugin.script.ScriptPluginPermissions
 import com.hermes.agent.data.plugin.script.ScriptPluginRegistry
 import com.hermes.agent.data.plugin.script.ScriptPluginRegistryEntry
 import com.hermes.agent.data.plugin.script.ScriptPluginTool
@@ -166,6 +168,8 @@ class ScriptPluginRepository @Inject constructor(
                         .map { it.trim() }
                         .filter { it.isNotEmpty() }
                         .toSet(),
+                    // From the manifest stored at install, which is the list the user saw.
+                    hosts = manifest.hosts,
                 )
             }.onFailure {
                 Timber.tag(TAG).w(it, "Could not prepare module %s", entity.id)
@@ -208,6 +212,14 @@ class ScriptPluginRepository @Inject constructor(
         require(manifest.tools.isNotEmpty()) { "Module declares no tools" }
         manifest.tools.forEach { tool ->
             require(tool.name.isNotBlank()) { "Every tool needs a name" }
+        }
+        manifest.hosts.forEach { entry ->
+            require(ModuleHosts.isValidEntry(entry)) {
+                "Module host '$entry' must be a lowercase hostname such as api.example.com or *.example.com"
+            }
+        }
+        require(manifest.hosts.isEmpty() || ScriptPluginPermissions.NETWORK in manifest.permissions) {
+            "Module lists hosts but does not ask for network access"
         }
     }
 

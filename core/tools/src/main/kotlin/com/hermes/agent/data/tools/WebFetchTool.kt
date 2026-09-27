@@ -5,6 +5,7 @@ import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.domain.tool.ToolParameter
 import com.hermes.agent.domain.tool.ToolParameterType
 import com.hermes.agent.domain.tool.ToolResult
+import com.hermes.agent.util.net.PublicNetworkGuard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
@@ -28,8 +29,12 @@ import dagger.multibindings.IntoSet
  */
 @Singleton
 class WebFetchTool @Inject constructor(
-    private val okHttpClient: OkHttpClient,
+    okHttpClient: OkHttpClient,
+    networkGuard: PublicNetworkGuard,
 ) : Tool {
+
+    /** The URL comes from the model, so it may only reach the public internet. */
+    private val okHttpClient: OkHttpClient = networkGuard.restrict(okHttpClient)
 
     override val descriptor = ToolDescriptor(
         name = "web_fetch",

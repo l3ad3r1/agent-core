@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import com.hermes.agent.util.net.PublicNetworkGuard
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -116,7 +117,7 @@ class TranscribeAudioToolTest {
 
     @Test
     fun `descriptor has correct name and capability`() {
-        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(UserSettings()), Json)
+        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(UserSettings()), Json, PublicNetworkGuard())
         assertEquals("transcribe_audio", tool.descriptor.name)
         assertTrue("voice" in tool.descriptor.capabilities)
         assertTrue(tool.descriptor.parameters.any { it.name == "audio_path" && it.required })
@@ -124,7 +125,7 @@ class TranscribeAudioToolTest {
 
     @Test
     fun `missing audio_path parameter returns error`() = runTest {
-        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json)
+        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json, PublicNetworkGuard())
         val result = tool.execute(emptyMap())
         assertFalse(result.success)
         assertTrue(result.errorMessage.orEmpty().contains("missing required parameter"))
@@ -132,7 +133,7 @@ class TranscribeAudioToolTest {
 
     @Test
     fun `cloud not configured returns helpful error`() = runTest {
-        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(UserSettings(cloudEnabled = false)), Json)
+        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(UserSettings(cloudEnabled = false)), Json, PublicNetworkGuard())
         val result = tool.execute(mapOf("audio_path" to JsonPrimitive(tempFile.absolutePath)))
         assertFalse(result.success)
         assertTrue(result.errorMessage.orEmpty().contains("Cloud access isn't configured"))
@@ -141,7 +142,7 @@ class TranscribeAudioToolTest {
     @Test
     fun `successful transcription returns text`() = runTest {
         server.enqueue(MockResponse().setBody("""{"text":"hello from the test"}"""))
-        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json)
+        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json, PublicNetworkGuard())
 
         val result = tool.execute(mapOf("audio_path" to JsonPrimitive(tempFile.absolutePath)))
 
@@ -156,7 +157,7 @@ class TranscribeAudioToolTest {
 
     @Test
     fun `nonexistent local file returns error`() = runTest {
-        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json)
+        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json, PublicNetworkGuard())
         val result = tool.execute(mapOf("audio_path" to JsonPrimitive("/no/such/file.wav")))
         assertFalse(result.success)
         assertTrue(result.errorMessage.orEmpty().contains("File not found"))
@@ -165,7 +166,7 @@ class TranscribeAudioToolTest {
     @Test
     fun `401 response surfaces authentication error`() = runTest {
         server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"bad key"}"""))
-        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json)
+        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json, PublicNetworkGuard())
 
         val result = tool.execute(mapOf("audio_path" to JsonPrimitive(tempFile.absolutePath)))
 
@@ -176,7 +177,7 @@ class TranscribeAudioToolTest {
     @Test
     fun `404 response hints at trying a different model`() = runTest {
         server.enqueue(MockResponse().setResponseCode(404))
-        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json)
+        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json, PublicNetworkGuard())
 
         val result = tool.execute(
             mapOf(
@@ -192,7 +193,7 @@ class TranscribeAudioToolTest {
     @Test
     fun `custom model and language are sent to the provider`() = runTest {
         server.enqueue(MockResponse().setBody("""{"text":"bonjour"}"""))
-        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json)
+        val tool = TranscribeAudioTool(context, okHttpClient, FakeSettingsRepository(configuredSettings()), Json, PublicNetworkGuard())
 
         val result = tool.execute(
             mapOf(

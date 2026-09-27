@@ -28,6 +28,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.InputStream
+import com.hermes.agent.util.net.PublicNetworkGuard
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -47,7 +48,11 @@ class TranscribeAudioTool @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val settings: SettingsRepository,
     private val json: Json,
+    networkGuard: PublicNetworkGuard,
 ) : Tool {
+
+    /** For an audio link the model supplied: public internet only. */
+    private val downloadClient: OkHttpClient = networkGuard.restrict(okHttpClient)
 
     override val descriptor = ToolDescriptor(
         name = "transcribe_audio",
@@ -170,7 +175,7 @@ class TranscribeAudioTool @Inject constructor(
         return when {
             trimmed.startsWith("http://") || trimmed.startsWith("https://") -> {
                 val request = Request.Builder().url(trimmed).build()
-                val response = okHttpClient.newCall(request).execute()
+                val response = downloadClient.newCall(request).execute()
                 if (!response.isSuccessful) {
                     throw IllegalStateException("HTTP ${response.code} downloading audio from $trimmed")
                 }
