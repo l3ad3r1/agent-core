@@ -180,7 +180,7 @@ class CloudLlmProvider @Inject constructor(
     override suspend fun isAvailable(): Boolean {
         val s = settings.current()
         lastObservedModel = s.selectedModel().cleaned()
-        return s.cloudEnabled && (fixedProfile?.enabled != false) && resolveApiKey(s).isNotBlank()
+        return s.cloudEnabled && (fixedProfile?.enabled != false) && (resolveApiKey(s).isNotBlank() || keyOptional())
     }
 
     /**
@@ -190,6 +190,12 @@ class CloudLlmProvider @Inject constructor(
      */
     private fun String.cleaned(): String = filter { it.code in 0x21..0x7E }.trim()
 
+    /** A custom endpoint may need no key; see [CloudProviderProfile.keyOptional]. */
+    private fun keyOptional(): Boolean = fixedProfile?.keyOptional == true
+
+    /** The Authorization value, or null to send none: an empty "Bearer " is refused by some servers. */
+    private fun bearer(key: String): String? = key.cleaned().takeIf { it.isNotEmpty() }?.let { "Bearer $it" }
+
     /** Absolute chat-completions URL built from the user's configured base URL. */
     private fun chatUrl(baseUrl: String): String =
         baseUrl.cleaned().trimEnd('/') + "/chat/completions"
@@ -198,7 +204,7 @@ class CloudLlmProvider @Inject constructor(
         val s = settings.current()
         lastObservedModel = s.selectedModel().cleaned()
         val apiKey = resolveApiKey(s)
-        require(apiKey.isNotBlank()) {
+        require(apiKey.isNotBlank() || keyOptional()) {
             "Cloud LLM is enabled but no API key is set."
         }
         val request = ChatCompletionRequest(
@@ -207,7 +213,7 @@ class CloudLlmProvider @Inject constructor(
             stream = false,
             reasoningEffort = s.effectiveReasoningEffort(),
         )
-        val auth = "Bearer ${apiKey.cleaned()}"
+        val auth = bearer(apiKey)
         val resp = try {
             val response = retryTransientNetwork {
                 api.completion(chatUrl(s.activeBaseUrl()), auth, request)
@@ -233,7 +239,7 @@ class CloudLlmProvider @Inject constructor(
     ): LlmToolResponse {
         val s = settings.current()
         val apiKey = resolveApiKey(s)
-        require(apiKey.isNotBlank()) {
+        require(apiKey.isNotBlank() || keyOptional()) {
             "Cloud LLM is enabled but no API key is set."
         }
 
@@ -252,7 +258,7 @@ class CloudLlmProvider @Inject constructor(
             append('}')
         }
 
-        val auth = "Bearer ${apiKey.cleaned()}"
+        val auth = bearer(apiKey)
         val rawJson: String = try {
             val result = retryTransientNetwork {
                 api.completionRaw(
@@ -279,7 +285,7 @@ class CloudLlmProvider @Inject constructor(
 
     override fun stream(messages: List<LlmMessage>): Flow<LlmStreamChunk> = flow {
         val s = settings.current()
-        if (s.activeApiKey().isBlank()) {
+        if (s.activeApiKey().isBlank() && !keyOptional()) {
             emit(LlmStreamChunk.Error("cloud API key not set"))
             return@flow
         }
@@ -290,7 +296,7 @@ class CloudLlmProvider @Inject constructor(
             stream = true,
             reasoningEffort = s.effectiveReasoningEffort(),
         )
-        val auth = "Bearer ${s.activeApiKey().cleaned()}"
+        val auth = bearer(s.activeApiKey())
 
         try {
             val body = api.streamCompletion(chatUrl(s.activeBaseUrl()), auth, request)
@@ -305,7 +311,7 @@ class CloudLlmProvider @Inject constructor(
 
     fun streamWithModelOverride(messages: List<LlmMessage>, modelOverride: String): Flow<LlmStreamChunk> = flow {
         val s = settings.current()
-        if (s.activeApiKey().isBlank()) {
+        if (s.activeApiKey().isBlank() && !keyOptional()) {
             emit(LlmStreamChunk.Error("cloud API key not set"))
             return@flow
         }
@@ -316,7 +322,7 @@ class CloudLlmProvider @Inject constructor(
             stream = true,
             reasoningEffort = s.effectiveReasoningEffort(),
         )
-        val auth = "Bearer ${s.activeApiKey().cleaned()}"
+        val auth = bearer(s.activeApiKey())
 
         try {
             val body = api.streamCompletion(chatUrl(s.activeBaseUrl()), auth, request)
@@ -350,7 +356,7 @@ class CloudLlmProvider @Inject constructor(
         tools: List<ToolDescriptor>,
     ): Flow<LlmStreamChunk> = flow {
         val s = settings.current()
-        if (s.activeApiKey().isBlank()) {
+        if (s.activeApiKey().isBlank() && !keyOptional()) {
             emit(LlmStreamChunk.Error("cloud API key not set"))
             return@flow
         }
@@ -368,7 +374,7 @@ class CloudLlmProvider @Inject constructor(
             }
             append('}')
         }
-        val auth = "Bearer ${s.activeApiKey().cleaned()}"
+        val auth = bearer(s.activeApiKey())
 
         try {
             val body = api.streamCompletionRaw(

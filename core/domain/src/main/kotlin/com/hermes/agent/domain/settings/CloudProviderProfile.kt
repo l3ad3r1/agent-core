@@ -24,4 +24,14 @@ data class CloudProviderProfile(
      * never sent on the wire.
      */
     val reasoningEffort: String = "",
-)
+) {
+    /** A custom OpenAI-compatible endpoint may need no key: Ollama, LM Studio and llama.cpp run open. */
+    val keyOptional: Boolean get() = id.startsWith(CUSTOM_ID_PREFIX)
+
+    /** Has what a request needs: a key, or a custom endpoint that takes none. */
+    val hasCredentials: Boolean get() = apiKey.isNotBlank() || keyOptional
+
+    companion object {
+        const val CUSTOM_ID_PREFIX = "custom_"
+    }
+}

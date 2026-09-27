@@ -402,6 +402,56 @@ class CloudLlmProviderTest {
         }
     }
 
+    // ── Keyless custom endpoints (K45) ────────────────────────────────────────
+
+    private fun profile(id: String, key: String) = CloudProviderProfile(
+        id = id, name = "Local", baseUrl = "http://192.168.1.20:11434/v1", model = "llama3",
+        apiKey = key, quality = 0.5, cost = 0.0, latency = 0.5, toolReliability = 0.5,
+    )
+
+    private fun providerFor(p: CloudProviderProfile) =
+        CloudLlmProvider(api, settings, dispatchers, json, p, ProductIdentity("Hermes", "hermes_notify"))
+
+    @Test
+    fun `a custom endpoint with no key is usable and sends no Authorization header`() = runTest {
+        coEvery { settings.current() } returns defaultSettings
+        coEvery { api.completion(any(), any(), any()) } returns chatResponse("ok")
+        val local = providerFor(profile("custom_ollama", ""))
+
+        assertTrue(local.isAvailable())
+        assertEquals("ok", local.complete(listOf(LlmMessage("user", "hi"))).content)
+        coVerify { api.completion("http://192.168.1.20:11434/v1/chat/completions", null, any()) }
+    }
+
+    @Test
+    fun `a keyless custom endpoint streams instead of erroring`() = runTest {
+        coEvery { settings.current() } returns defaultSettings
+        coEvery { api.streamCompletion(any(), any(), any()) } returns sseBody("hi")
+
+        providerFor(profile("custom_ollama", "")).stream(listOf(LlmMessage("user", "hi"))).test {
+            assertEquals("hi", (awaitItem() as LlmStreamChunk.Delta).text)
+            assertTrue(awaitItem() is LlmStreamChunk.Done)
+            awaitComplete()
+        }
+        coVerify { api.streamCompletion(any(), null, any()) }
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `a built-in provider still needs its key`() = runTest {
+        coEvery { settings.current() } returns defaultSettings
+        val openai = providerFor(profile("openai", ""))
+
+        assertFalse(openai.isAvailable())
+        openai.complete(listOf(LlmMessage("user", "hi")))
+    }
+
+    @Test
+    fun `hasCredentials follows the same rule`() {
+        assertTrue(profile("custom_lmstudio", "").hasCredentials)
+        assertTrue(profile("openai", "sk-1").hasCredentials)
+        assertFalse(profile("openai", " ").hasCredentials)
+    }
+
     // ── HTTP error codes ──────────────────────────────────────────────────────
 
     @Test(expected = Exception::class)

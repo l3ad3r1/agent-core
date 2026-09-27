@@ -44,7 +44,7 @@ interface OpenAiApi {
     @POST
     suspend fun completion(
         @Url url: String,
-        @Header("Authorization") authorization: String,
+        @Header("Authorization") authorization: String?,
         @Body request: ChatCompletionRequest,
     ): ChatCompletionResponse
 
@@ -57,7 +57,7 @@ interface OpenAiApi {
     @POST
     suspend fun completionRaw(
         @Url url: String,
-        @Header("Authorization") authorization: String,
+        @Header("Authorization") authorization: String?,
         @Body body: RequestBody,
     ): ResponseBody
 
@@ -71,7 +71,7 @@ interface OpenAiApi {
     @POST
     suspend fun streamCompletion(
         @Url url: String,
-        @Header("Authorization") authorization: String,
+        @Header("Authorization") authorization: String?,
         @Body request: ChatCompletionRequest,
     ): ResponseBody
 
@@ -83,7 +83,7 @@ interface OpenAiApi {
     @POST
     suspend fun streamCompletionRaw(
         @Url url: String,
-        @Header("Authorization") authorization: String,
+        @Header("Authorization") authorization: String?,
         @Body body: RequestBody,
     ): ResponseBody
 }

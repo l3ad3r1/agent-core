@@ -109,7 +109,7 @@ class HybridLlmRouter @Inject constructor(
 
         val cloudCandidates = buildList {
             val primaryRepresentedInRegistry = s.cloudProviderProfiles.any {
-                it.enabled && it.apiKey.isNotBlank() &&
+                it.enabled && it.hasCredentials &&
                     it.baseUrl.trimEnd('/') == s.cloudBaseUrl.trimEnd('/') &&
                     it.model == s.cloudModel
             }
@@ -151,7 +151,7 @@ class HybridLlmRouter @Inject constructor(
             if (s.cloudEnabled) {
                 s.cloudProviderProfiles
                     .asSequence()
-                    .filter { it.enabled && it.apiKey.isNotBlank() }
+                    .filter { it.enabled && it.hasCredentials }
                     .forEach { profile ->
                         val provider = profileProviderFactory.create(profile)
                         if (available(provider)) {
