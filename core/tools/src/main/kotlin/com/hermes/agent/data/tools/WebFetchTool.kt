@@ -76,49 +76,52 @@ class WebFetchTool @Inject constructor(
                 .header("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8")
                 .build()
 
-            val raw = okHttpClient.newCall(request).execute().use { response ->
+            val fetched = okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     throw java.io.IOException("HTTP ${response.code} fetching $url")
                 }
-                response.body?.string() ?: throw java.io.IOException("Empty response body from $url")
+                val body = response.body ?: throw java.io.IOException("Empty response body from $url")
+                Fetched(
+                    body.string(),
+                    body.contentType()?.let { "${it.type}/${it.subtype}" }.orEmpty(),
+                    // After redirects: relative links resolve against where the page really is.
+                    response.request.url.toString(),
+                )
             }
-
-            val text = extractText(raw, maxChars)
+            val text = render(fetched.body, fetched.contentType, fetched.finalUrl, maxChars)
             if (text.isBlank()) return@withContext ToolResult.error("No readable content found at $url")
 
-            ToolResult.ok("URL: $url\n\n$text", System.currentTimeMillis() - start)
+            ToolResult.ok("URL: $url\n$text", System.currentTimeMillis() - start)
         } catch (e: Exception) {
             Timber.e(e, "WebFetchTool failed: $url")
             ToolResult.error("Failed to fetch $url: ${e.message}")
         }
     }
 
-    private fun extractText(html: String, maxChars: Int): String {
-        // Remove script/style/noscript blocks entirely
-        val stripped = html
-            .replace(Regex("<(script|style|noscript|head)[^>]*>[\\s\\S]*?</(script|style|noscript|head)>", RegexOption.IGNORE_CASE), " ")
-            // Replace block-level tags with newlines to preserve structure
-            .replace(Regex("</(p|div|li|h[1-6]|tr|br|blockquote)[^>]*>", RegexOption.IGNORE_CASE), "\n")
-            .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-            // Strip all remaining tags
-            .replace(Regex("<[^>]+>"), "")
-            // Decode common HTML entities
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .replace("&#39;", "'")
-            .replace("&nbsp;", " ")
-            .replace(Regex("&#?\\w+;"), " ")
-            // Collapse whitespace
-            .lines()
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .joinToString("\n")
+    /**
+     * JSON and plain text are returned as they are. HTML is reduced to its main
+     * content by [ReadablePage], with the page's links listed after it; the links
+     * get at most a fifth of the budget so the text always comes first.
+     */
+    private fun render(raw: String, contentType: String, url: String, maxChars: Int): String {
+        val html = contentType.isEmpty() || "html" in contentType || "xml" in contentType
+        if (!html) return "\n" + cap(raw.trim(), maxChars)
 
-        return if (stripped.length <= maxChars) stripped
-        else stripped.take(maxChars) + "\n…[truncated at $maxChars chars]"
+        val page = ReadablePage.extract(raw, url)
+        val links = buildString {
+            if (page.links.isNotEmpty()) {
+                append("\n\nLinks:")
+                page.links.forEachIndexed { i, link -> append("\n[${i + 1}] ${link.text} - ${link.url}") }
+            }
+        }.take(maxChars / 5)
+        val header = if (page.title.isNotEmpty()) "Title: ${page.title}\n\n" else "\n"
+        return header + cap(page.text, maxChars - links.length) + links
     }
+
+    private class Fetched(val body: String, val contentType: String, val finalUrl: String)
+
+    private fun cap(text: String, maxChars: Int): String =
+        if (text.length <= maxChars) text else text.take(maxChars) + "\n…[truncated at $maxChars chars]"
 }
 
 @Module

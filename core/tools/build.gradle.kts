@@ -36,6 +36,8 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     api(libs.okhttp)
+    // web_fetch: main-content extraction from HTML.
+    implementation(libs.jsoup)
     // Unused inside this module's own source — kept as `api` (not `implementation`)
     // deliberately, so both apps' data/server/HermesApiServer.kt-equivalent get
     // NanoHTTPD transitively from depending on :core:tools. Narrowing this to
