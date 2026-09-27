@@ -116,7 +116,8 @@ class SshTerminalBackend @Inject constructor() : RemoteTerminalBackend {
         private val expected = normalize(expectedFingerprint)
 
         override fun check(host: String, key: ByteArray): Int {
-            if (host != expectedHost) return HostKeyRepository.NOT_INCLUDED
+            val bareHost = if (host.startsWith("[")) host.substring(1, host.indexOf("]")) else host
+            if (bareHost != expectedHost) return HostKeyRepository.NOT_INCLUDED
             val actual = normalize(HostKey(host, key).getFingerPrint(jsch))
             return if (actual == expected) HostKeyRepository.OK else HostKeyRepository.CHANGED
         }

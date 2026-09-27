@@ -184,6 +184,11 @@ class CameraCaptureTool @Inject constructor(
                     }, handler)
                 }
 
+                if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    if (cont.isActive) cont.resume(false)
+                    return@suspendCancellableCoroutine
+                }
+
                 try {
                     cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                         override fun onOpened(device: CameraDevice) {

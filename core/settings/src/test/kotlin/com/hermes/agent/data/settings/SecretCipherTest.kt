@@ -62,6 +62,27 @@ class SecretCipherTest {
         assertEquals("", cipher.decrypt(""))
     }
 
+    /** Opens only payloads this layer sealed, the way a keystore key would. */
+    private fun openOwn(payload: String): String? = payload.removePrefix("own:").takeIf { payload.startsWith("own:") }
+
+    @Test
+    fun `a v1 value from the outer layer passes through for that layer to open`() {
+        // Written by EncryptedSettingsRepository before this layer existed.
+        val outer = "enc:v1:QUJDREVGRw=="
+        assertEquals(outer, decryptVersioned(outer, ::openOwn))
+    }
+
+    @Test
+    fun `this layer's own v1 and v2 values still open`() {
+        assertEquals("enc:v1:outer", decryptVersioned("enc:v1:own:enc:v1:outer", ::openOwn))
+        assertEquals("secret", decryptVersioned("enc:v2:own:secret", ::openOwn))
+    }
+
+    @Test
+    fun `an unreadable v2 value reads as unset`() {
+        assertEquals("", decryptVersioned("enc:v2:garbage", ::openOwn))
+    }
+
     @Test
     fun `the plaintext cipher is a faithful identity for tests`() {
         val cipher = PlaintextSecretCipher()

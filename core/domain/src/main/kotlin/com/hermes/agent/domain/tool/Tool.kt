@@ -37,6 +37,8 @@ typealias ParameterType = ToolParameterType
  *   single-action call with HTTP 400 before the tool ever runs. Such tools
  *   validate their own arguments per action at execution time instead.
  * @property enumValues Optional closed set of allowed values.
+ * @property itemType Element type when [type] is ARRAY. Strict providers reject an
+ *   array schema without `items`, and a wrong one makes the model send the wrong shape.
  */
 @Serializable
 data class ToolParameter(
@@ -45,6 +47,7 @@ data class ToolParameter(
     val description: String,
     val required: Boolean = false,
     val enumValues: List<String>? = null,
+    val itemType: ToolParameterType = ToolParameterType.STRING,
 )
 
 /**

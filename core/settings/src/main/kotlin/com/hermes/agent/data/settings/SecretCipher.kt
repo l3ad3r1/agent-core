@@ -39,8 +39,30 @@ interface SecretCipher {
          * change can migrate rather than guess. Anything without this prefix is
          * a value written before encryption existed and is read as plaintext.
          */
-        const val PREFIX = "enc:v1:"
+        const val PREFIX = "enc:v2:"
+
+        /**
+         * What this layer wrote before v2. It is the same marker
+         * EncryptedSettingsRepository puts on its own ciphertext, so a v1 value
+         * is either this layer's or that one's; see [decryptVersioned].
+         */
+        const val LEGACY_PREFIX = "enc:v1:"
     }
+}
+
+/**
+ * Routes [stored] by its marker. [open] decrypts a base64 payload with this
+ * layer's key and returns null when it cannot.
+ *
+ * A v1 value this layer cannot open was written by EncryptedSettingsRepository
+ * before this layer existed, so it passes through unchanged for that layer to
+ * read. Turning it into "" is what wiped every credential on upgrade.
+ */
+internal fun decryptVersioned(stored: String, open: (String) -> String?): String = when {
+    stored.startsWith(SecretCipher.PREFIX) -> open(stored.removePrefix(SecretCipher.PREFIX)) ?: ""
+    stored.startsWith(SecretCipher.LEGACY_PREFIX) ->
+        open(stored.removePrefix(SecretCipher.LEGACY_PREFIX)) ?: stored
+    else -> stored
 }
 
 /**
@@ -78,13 +100,11 @@ class KeystoreSecretCipher(
         }
     }
 
-    override fun decrypt(stored: String): String {
-        if (!isEncrypted(stored)) return stored
+    override fun decrypt(stored: String): String = decryptVersioned(stored, ::open)
+
+    private fun open(payload: String): String? {
         return try {
-            val raw = android.util.Base64.decode(
-                stored.removePrefix(SecretCipher.PREFIX),
-                android.util.Base64.NO_WRAP,
-            )
+            val raw = android.util.Base64.decode(payload, android.util.Base64.NO_WRAP)
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(
                 Cipher.DECRYPT_MODE,
@@ -93,8 +113,8 @@ class KeystoreSecretCipher(
             )
             String(cipher.doFinal(raw, IV_BYTES, raw.size - IV_BYTES), Charsets.UTF_8)
         } catch (t: Throwable) {
-            Timber.tag(TAG).e(t, "Could not decrypt a settings secret; treating it as unset")
-            ""
+            Timber.tag(TAG).w(t, "Could not decrypt a settings secret")
+            null
         }
     }
 

@@ -586,6 +586,11 @@ internal fun ToolDescriptor.toOpenAiJsonObject(): JsonObject = buildJsonObject {
                         p.enumValues?.let { values ->
                             putJsonArray("enum") { values.forEach { add(it) } }
                         }
+                        if (p.type.jsonSchemaType == "array") {
+                            putJsonObject("items") {
+                                put("type", p.itemType.jsonSchemaType)
+                            }
+                        }
                     }
                 }
             }

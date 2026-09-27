@@ -64,6 +64,7 @@ class SkillHubTool @Inject constructor(
         // Grants already match this tool by name; naming the capability keeps that
         // working while "deferrable" moves it behind the tool_search bridge.
         capabilities = setOf("skills_hub", "deferrable"),
+        requiresConfirmation = true,
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {
@@ -145,6 +146,11 @@ class SkillHubTool @Inject constructor(
             return ToolResult.error("Skill '$identifier' failed linter validation:\n- $errs")
         }
 
+        val guardVerdict = com.hermes.agent.domain.skill.SkillGuard.vet(bundle.skillMarkdown)
+        if (!guardVerdict.ok) {
+            return ToolResult.error("Skill '$identifier' was rejected by security guard: ${guardVerdict.flags.joinToString()}")
+        }
+
         val meta = bundle.lintResult.parsedMetadata
         val now = System.currentTimeMillis()
 
@@ -162,7 +168,7 @@ class SkillHubTool @Inject constructor(
             requiresTools = meta?.requiresTools ?: emptyList(),
             fallbackForTools = meta?.fallbackForTools ?: emptyList(),
             lifecycleState = SkillLifecycle.ACTIVE,
-            pinned = true,
+            pinned = false,
             sourceUrl = bundle.meta.downloadUrl,
             pinnedCommit = bundle.commitSha,
             installedAt = now,

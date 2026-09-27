@@ -149,12 +149,18 @@ class WebhookTool @Inject constructor(
             .setLabel("Reply to ${productIdentity.displayName}...")
             .build()
 
-        val replyIntent = android.content.Intent().setClassName(context.packageName, "com.hermes.agent.receiver.NotificationReplyReceiver").apply {
-            action = "com.hermes.agent.action.REPLY"
+        // One id per message, so each notification keeps its own reply target.
+        val notificationId = message.hashCode()
+        // An activity PendingIntent, not a broadcast: Android 12+ blocks a receiver
+        // from starting the activity (notification trampoline). The text arrives as
+        // RemoteInput results under KEY_REPLY.
+        val replyIntent = android.content.Intent().setClassName(context.packageName, "com.hermes.agent.MainActivity").apply {
+            action = "com.hermes.agent.action.NOTIFICATION_REPLY"
+            putExtra("EXTRA_NOTIFICATION_ID", notificationId)
         }
-        val replyPendingIntent = android.app.PendingIntent.getBroadcast(
+        val replyPendingIntent = android.app.PendingIntent.getActivity(
             context,
-            0,
+            notificationId,
             replyIntent,
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
         )
@@ -174,7 +180,7 @@ class WebhookTool @Inject constructor(
             .setAutoCancel(true)
             .build()
 
-        nm.notify(message.hashCode(), notification)
+        nm.notify(notificationId, notification)
     }
 
     private fun postWebhook(url: String, message: String, secret: String?) {

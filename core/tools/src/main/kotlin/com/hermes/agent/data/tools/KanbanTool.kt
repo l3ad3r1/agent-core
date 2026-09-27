@@ -83,6 +83,7 @@ class KanbanTool @Inject constructor(
             ToolParameter(
                 name = "tickets",
                 type = ToolParameterType.ARRAY,
+                itemType = ToolParameterType.OBJECT,
                 description = "For 'create_batch': Array of ticket objects, each with 'title' (required), " +
                     "'body' (optional), 'priority' (optional: LOW, MEDIUM, HIGH, CRITICAL), 'tags' (optional array).",
                 required = false,

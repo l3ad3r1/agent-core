@@ -107,8 +107,16 @@ class ShellTool @Inject constructor(
                         if (available > 0) {
                             val n = inputStream.read(buf, 0, minOf(available, buf.size))
                             if (n > 0) rawBytes.writeCapped(buf, n)
+                        } else if (process.waitFor(50, TimeUnit.MILLISECONDS)) {
+                            // Process finished. Drain the remaining buffered output.
+                            var remaining = inputStream.available()
+                            while (remaining > 0) {
+                                val n = inputStream.read(buf, 0, minOf(remaining, buf.size))
+                                if (n > 0) rawBytes.writeCapped(buf, n)
+                                remaining = inputStream.available()
+                            }
+                            break
                         }
-                        if (process.waitFor(50, TimeUnit.MILLISECONDS)) break
                     }
                     // Kill before trying to drain. readBytes() waits for EOF,
                     // which made a 10 second timeout wait for the child anyway.

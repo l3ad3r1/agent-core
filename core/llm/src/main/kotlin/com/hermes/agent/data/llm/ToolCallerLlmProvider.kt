@@ -200,13 +200,16 @@ internal fun buildToolCallerPrompt(
     // [buildLocalPrompt]. Taking only the newest user message drops the tool
     // result from the prompt entirely and the loop repeats the call forever.
     val liveIndex = nonSystem.indexOfLast(::isLiveTurn)
-    val liveTurn = nonSystem.getOrNull(liveIndex)?.content?.trim().orEmpty()
+    // History and the live turn are untrusted (a tool result can be a web page);
+    // only the declarations below may carry real control tokens.
+    val liveTurn = neutralizeControlTokens(nonSystem.getOrNull(liveIndex)?.content?.trim().orEmpty())
 
     // A short tail of history, because device control leans on it constantly:
     // "turn it off", "do that again", "the other one" mean nothing alone.
     val history = nonSystem.take(maxOf(liveIndex, 0))
         .joinToString("\n") { "${it.role}: ${it.content.trim()}" }
         .takeLast(maxHistoryChars)
+        .let(::neutralizeControlTokens)
 
     // The template emits this content into the developer turn immediately
     // before where its own declaration loop would run, so the blocks land

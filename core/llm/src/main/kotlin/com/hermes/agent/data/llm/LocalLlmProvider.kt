@@ -186,11 +186,12 @@ internal fun buildLocalPrompt(
         append("Do not prefix your reply with a name or role label.")
     }.trim()
 
+    // Nothing on this path needs a real control token; the template adds its own.
     return LocalPrompt(
-        system = system,
+        system = neutralizeControlTokens(system),
         // Falls back to the whole transcript when there is no user turn at all
         // (internal calls), so those callers keep working.
-        conversation = liveTurn.ifBlank { selected.joinToString("\n\n").trim() },
+        conversation = neutralizeControlTokens(liveTurn.ifBlank { selected.joinToString("\n\n").trim() }),
     )
 }
 

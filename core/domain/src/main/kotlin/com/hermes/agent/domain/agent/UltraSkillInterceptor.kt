@@ -17,51 +17,6 @@ class UltraSkillInterceptor @Inject constructor(
     suspend fun intercept(conversationId: String, content: String): Boolean {
         val trimmed = content.trim()
         
-        // 1. Plan command (/plan or ulw-plan)
-        if (trimmed.startsWith("ulw-plan", ignoreCase = true) || trimmed.startsWith("/plan", ignoreCase = true)) {
-            val userMsg = Message(
-                id = IdGenerator.newId(),
-                conversationId = conversationId,
-                role = MessageRole.USER,
-                content = trimmed,
-                timestamp = System.currentTimeMillis(),
-            )
-            conversationRepository.addMessage(conversationId, userMsg)
-            
-            val agentMsg = Message(
-                id = IdGenerator.newId(),
-                conversationId = conversationId,
-                role = MessageRole.ASSISTANT,
-                content = "I have drafted a plan based on your request. Please review and approve it before execution.",
-                timestamp = System.currentTimeMillis(),
-                evidenceState = EvidenceState.PREPARED,
-            )
-            conversationRepository.addMessage(conversationId, agentMsg)
-            return true
-        }
-        
-        // 2. Research command (/research or ulw-research)
-        if (trimmed.startsWith("ulw-research", ignoreCase = true) || trimmed.startsWith("/research", ignoreCase = true)) {
-            val userMsg = Message(
-                id = IdGenerator.newId(),
-                conversationId = conversationId,
-                role = MessageRole.USER,
-                content = trimmed,
-                timestamp = System.currentTimeMillis(),
-            )
-            conversationRepository.addMessage(conversationId, userMsg)
-            
-            val agentMsg = Message(
-                id = IdGenerator.newId(),
-                conversationId = conversationId,
-                role = MessageRole.ASSISTANT,
-                content = "Digging through the codebase and verifying sources...",
-                timestamp = System.currentTimeMillis(),
-                evidenceState = EvidenceState.RUNNING,
-            )
-            conversationRepository.addMessage(conversationId, agentMsg)
-            return true
-        }
 
         // 3. Starmap Memory command (/memory <fact>)
         if (trimmed.startsWith("/memory", ignoreCase = true)) {
@@ -93,28 +48,7 @@ class UltraSkillInterceptor @Inject constructor(
             return true
         }
 
-        // 4. Clear context command (/clear)
-        if (trimmed.equals("/clear", ignoreCase = true)) {
-            val userMsg = Message(
-                id = IdGenerator.newId(),
-                conversationId = conversationId,
-                role = MessageRole.USER,
-                content = trimmed,
-                timestamp = System.currentTimeMillis(),
-            )
-            conversationRepository.addMessage(conversationId, userMsg)
 
-            val agentMsg = Message(
-                id = IdGenerator.newId(),
-                conversationId = conversationId,
-                role = MessageRole.ASSISTANT,
-                content = "🧹 Chat context cleared. Ready for your next instruction.",
-                timestamp = System.currentTimeMillis(),
-            )
-            conversationRepository.addMessage(conversationId, agentMsg)
-            return true
-        }
-        
         return false
     }
 }

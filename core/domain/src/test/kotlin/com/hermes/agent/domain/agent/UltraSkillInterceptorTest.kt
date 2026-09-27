@@ -1,6 +1,5 @@
 package com.hermes.agent.domain.agent
 
-import com.hermes.agent.domain.model.EvidenceState
 import com.hermes.agent.domain.model.Memory
 import com.hermes.agent.domain.model.Message
 import com.hermes.agent.domain.model.MessageRole
@@ -28,51 +27,6 @@ class UltraSkillInterceptorTest {
     }
 
     @Test
-    fun `intercepts ulw-plan and adds PREPARED message`() = runBlocking {
-        val result = interceptor.intercept("conv1", "ulw-plan do something")
-        assertTrue(result)
-        
-        val messages = fakeRepo.messages
-        assertEquals(2, messages.size)
-        
-        assertEquals(MessageRole.USER, messages[0].role)
-        assertEquals("ulw-plan do something", messages[0].content)
-        
-        assertEquals(MessageRole.ASSISTANT, messages[1].role)
-        assertEquals(EvidenceState.PREPARED, messages[1].evidenceState)
-    }
-
-    @Test
-    fun `intercepts slash plan and adds PREPARED message`() = runBlocking {
-        val result = interceptor.intercept("conv1", "/plan build a new UI")
-        assertTrue(result)
-        
-        val messages = fakeRepo.messages
-        assertEquals(2, messages.size)
-        
-        assertEquals(MessageRole.USER, messages[0].role)
-        assertEquals("/plan build a new UI", messages[0].content)
-        
-        assertEquals(MessageRole.ASSISTANT, messages[1].role)
-        assertEquals(EvidenceState.PREPARED, messages[1].evidenceState)
-    }
-
-    @Test
-    fun `intercepts ulw-research and adds RUNNING message`() = runBlocking {
-        val result = interceptor.intercept("conv1", "ulw-research topic")
-        assertTrue(result)
-        
-        val messages = fakeRepo.messages
-        assertEquals(2, messages.size)
-        
-        assertEquals(MessageRole.USER, messages[0].role)
-        assertEquals("ulw-research topic", messages[0].content)
-        
-        assertEquals(MessageRole.ASSISTANT, messages[1].role)
-        assertEquals(EvidenceState.RUNNING, messages[1].evidenceState)
-    }
-
-    @Test
     fun `intercepts slash memory and persists to repository`() = runBlocking {
         val result = interceptor.intercept("conv1", "/memory user loves dark theme")
         assertTrue(result)
@@ -84,13 +38,12 @@ class UltraSkillInterceptorTest {
     }
 
     @Test
-    fun `intercepts slash clear and adds reset notice`() = runBlocking {
-        val result = interceptor.intercept("conv1", "/clear")
-        assertTrue(result)
-        
-        val messages = fakeRepo.messages
-        assertEquals(2, messages.size)
-        assertTrue(messages[1].content.contains("Chat context cleared"))
+    fun `plan, research and clear go to the model instead of a canned reply`() = runBlocking {
+        // These used to answer "I have drafted a plan" without running anything.
+        for (input in listOf("/plan build a UI", "ulw-plan x", "/research topic", "ulw-research y", "/clear")) {
+            assertFalse(input, interceptor.intercept("conv1", input))
+        }
+        assertEquals(0, fakeRepo.messages.size)
     }
 
     @Test

@@ -133,7 +133,7 @@ class SettingsRepositoryImpl(
 
     override suspend fun exportRawPreferences(): Map<String, RawPref> =
         RawPrefs.export(context.hermesDataStore.data.first()) { _, value ->
-            if (secretCipher.isEncrypted(value)) secretCipher.decrypt(value) else value
+            secretCipher.decrypt(value)
         }
 
     override suspend fun importRawPreferences(
@@ -177,7 +177,8 @@ class SettingsRepositoryImpl(
             }
             if (stale.isEmpty()) return
             context.hermesDataStore.edit { prefs ->
-                stale.forEach { key -> prefs[key]?.let { prefs[key] = secretCipher.encrypt(it) } }
+                // Open first: a v1 value may be this layer's own older ciphertext.
+                stale.forEach { key -> prefs[key]?.let { prefs[key] = secretCipher.encrypt(secretCipher.decrypt(it)) } }
             }
             Timber.tag("Settings").i("Encrypted %d credential(s) previously stored in clear text", stale.size)
         } catch (t: Throwable) {

@@ -378,6 +378,7 @@ class McpClient(
                 }
 
                 val enumList = propObj["enum"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                val itemTypeStr = (propObj["items"] as? JsonObject)?.get("type")?.jsonPrimitive?.contentOrNull
 
                 parameters.add(
                     ToolParameter(
@@ -386,6 +387,14 @@ class McpClient(
                         description = descStr,
                         required = isRequired,
                         enumValues = enumList,
+                        itemType = when (itemTypeStr?.lowercase()) {
+                            "integer" -> ToolParameterType.INTEGER
+                            "number" -> ToolParameterType.NUMBER
+                            "boolean" -> ToolParameterType.BOOLEAN
+                            "object" -> ToolParameterType.OBJECT
+                            "array" -> ToolParameterType.ARRAY
+                            else -> ToolParameterType.STRING
+                        },
                     )
                 )
             }

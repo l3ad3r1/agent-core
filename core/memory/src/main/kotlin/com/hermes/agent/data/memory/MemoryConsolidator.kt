@@ -4,6 +4,7 @@ import com.hermes.agent.domain.model.Memory
 import com.hermes.agent.domain.model.Message
 import com.hermes.agent.domain.model.MessageRole
 import com.hermes.agent.domain.repository.MemoryRepository
+import kotlinx.coroutines.flow.first
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,8 +38,12 @@ class MemoryConsolidator @Inject constructor(
      */
     suspend fun consolidate(conversationId: String, messages: List<Message>): Int {
         val candidates = extractCandidates(messages)
+        // Best-effort dedup: a failed read must not stop new facts being saved.
+        val existing = runCatching { memoryRepository.observeMemories().first().map { it.content }.toSet() }
+            .getOrDefault(emptySet())
         var persisted = 0
         for (candidate in candidates) {
+            if (existing.contains(candidate)) continue
             runCatching {
                 memoryRepository.addMemory(candidate)
                 persisted++

@@ -112,6 +112,25 @@ class MemoryConsolidatorTest {
     }
 
     @Test
+    fun `consolidate skips facts that are already stored`() = runTest {
+        val message = Message(
+            id = "m1",
+            conversationId = "c1",
+            role = MessageRole.USER,
+            content = "Remember that I'm vegetarian.",
+            agentRole = null,
+            timestamp = 0,
+        )
+        val repo = mockk<MemoryRepository>(relaxed = true)
+        val consolidator = MemoryConsolidator(repo)
+        val fact = consolidator.extractCandidates(listOf(message)).single()
+        coEvery { repo.observeMemories() } returns
+            flowOf(listOf(Memory(id = "old", content = fact, createdAt = 0, lastAccessedAt = 0)))
+
+        assertEquals(0, consolidator.consolidate("c1", listOf(message)))
+    }
+
+    @Test
     fun `extracts commitments with the nudge prefix`() {
         val consolidator = MemoryConsolidator(mockRepo())
         val messages = listOf(
