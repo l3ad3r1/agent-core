@@ -47,7 +47,8 @@ class FunctionGemmaFormatTest {
         assertEquals(
             "<start_function_declaration>declaration:set_torch" +
                 "{description:<escape>Turn the torch on or off.<escape>," +
-                "parameters:{properties:{on:{description:<escape>Torch state<escape>}}," +
+                // Each property closes with its type: `,type:<escape>{{ value['type'] | upper }}<escape>}`.
+                "parameters:{properties:{on:{description:<escape>Torch state<escape>,type:<escape>BOOLEAN<escape>}}," +
                 "required:[<escape>on<escape>]," +
                 "type:<escape>OBJECT<escape>}}" +
                 "<end_function_declaration>",
@@ -58,9 +59,27 @@ class FunctionGemmaFormatTest {
     @Test
     fun `enum values are declared so the model picks from the closed set`() {
         val rendered = renderFunctionDeclarations(listOf(todo))
-        assertTrue(rendered.contains("enum:[<escape>create<escape>,<escape>list<escape>]"))
+        assertTrue(rendered.contains("enum:[<escape>create<escape>,<escape>list<escape>],type:<escape>STRING<escape>}"))
         // Nothing is required on an action-style tool, so no required array.
         assertTrue(!rendered.contains("required:["))
+    }
+
+    @Test
+    fun `properties are declared in name order, as the template's dictsort does`() {
+        val tool = ToolDescriptor(
+            name = "device_control",
+            description = "Control the device.",
+            parameters = listOf(
+                ToolParameter("setting", ToolParameterType.STRING, "What to change", required = true),
+                ToolParameter("enabled", ToolParameterType.BOOLEAN, "On or off"),
+            ),
+        )
+
+        val rendered = renderFunctionDeclarations(listOf(tool))
+
+        assertTrue(rendered, rendered.indexOf("enabled:{") < rendered.indexOf("setting:{"))
+        // required keeps the declared order, like params['required'] in the template.
+        assertTrue(rendered, rendered.contains("required:[<escape>setting<escape>]"))
     }
 
     @Test

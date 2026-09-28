@@ -65,6 +65,10 @@ internal class RoutedProviderChain(
     ): T {
         var lastFailure: Throwable? = null
         var index = activeIndex.get()
+        // Where the next request starts. A provider that failed is skipped next time, but one
+        // that abstained is not: the tool caller declines turn by turn, and after one decline the
+        // chain had stopped offering it anything for the rest of the conversation.
+        var resumeFrom = index
         var retriedSame = false
         while (index < providers.size) {
             val provider = providers[index]
@@ -82,7 +86,7 @@ internal class RoutedProviderChain(
             }
             try {
                 val result = withTimeout(attemptTimeout) { call(provider) }
-                activeIndex.set(index)
+                activeIndex.set(minOf(resumeFrom, index))
                 return result
             } catch (cancelled: CancellationException) {
                 if (cancelled !is TimeoutCancellationException) throw cancelled
@@ -109,15 +113,20 @@ internal class RoutedProviderChain(
                 Timber.tag("LlmRouter").w(failure, "%s failed on %s; trying %s",
                     operation, provider.name, providers[index + 1].name)
             }
+            if (resumeFrom == index && lastFailure?.isAbstain() != true) resumeFrom = index + 1
             retriedSame = false
             index++
         }
         throw checkNotNull(lastFailure)
     }
 
+    private fun Throwable.isAbstain(): Boolean =
+        generateSequence(this) { it.cause }.any { it is ToolCallerAbstained }
+
     private fun streamExecute(
         source: (LlmProvider) -> Flow<LlmStreamChunk>,
     ): Flow<LlmStreamChunk> = flow {
+        var resumeFrom = activeIndex.get() // see execute: an abstain does not move this on
         for (index in activeIndex.get() until providers.size) {
             val provider = providers[index]
             var emittedOutput = false
@@ -127,7 +136,7 @@ internal class RoutedProviderChain(
                     when (chunk) {
                         is LlmStreamChunk.Delta, is LlmStreamChunk.ToolCallDelta -> {
                             emittedOutput = true
-                            activeIndex.set(index)
+                            activeIndex.set(minOf(resumeFrom, index))
                             emit(chunk)
                         }
                         is LlmStreamChunk.Error -> {
@@ -150,6 +159,7 @@ internal class RoutedProviderChain(
 
             val failure = retryFailure
             if (failure == null) return@flow
+            if (resumeFrom == index && !failure.isAbstain()) resumeFrom = index + 1
             if (index == providers.lastIndex) {
                 emit(LlmStreamChunk.Error(failure.message ?: "All routed providers failed.", failure))
                 return@flow

@@ -8,6 +8,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.takeWhile
 import timber.log.Timber
 
 /**
@@ -35,12 +36,12 @@ private const val HANDOFF_THRESHOLD = 0.60
  * in front of every tool turn — the same shape of problem as the 1B model's
  * 8-tool cap, just cheaper per token.
  *
- * 40 is a starting point, five times what the chat model gets, chosen to be
- * measurable rather than to be right. Whether it can rise is what step 1's
- * timing log is for; a stable system prompt across turns should also be cacheable
- * natively, which would make the cap moot.
+ * Measured on a TCL tablet, 40 was far too many for a 270M model: shown five or six
+ * tools it asked clarifying questions, invented names (`light_off`) or picked a
+ * neighbour. The tools are ranked against the request first, so three is the
+ * matching tool and its closest alternatives.
  */
-private const val MAX_TOOL_CALLER_TOOLS = 40
+private const val MAX_TOOL_CALLER_TOOLS = 3
 
 /**
  * How much of the system block the declarations may take.
@@ -103,16 +104,30 @@ class ToolCallerLlmProvider @Inject constructor(
         tools: List<ToolDescriptor>,
     ): LlmToolResponse {
         if (tools.isEmpty()) throw ToolCallerAbstained("no tools were offered")
+        // Once its call has run, the round is about the result, and this model has no reply to
+        // give. Asked again it repeated the call: "pause the music" toggled playback three times
+        // before the repeat guard stopped the turn. A chat model writes the reply instead.
+        if (messages.lastOrNull()?.role == "tool") throw ToolCallerAbstained("a tool already ran this turn")
 
-        val listed = toolsWithinBudget(tools.take(MAX_TOOL_CALLER_TOOLS), MAX_TOOL_CALLER_DECLARATION_CHARS)
+        val turn = messages.lastOrNull { it.role == "user" }?.content.orEmpty()
+        val scored = scoreToolsForTurn(tools, turn)
+        // Nothing in the request names any tool: the small model would only guess, and on
+        // the tablet it guessed wrong or asked a question. Hand the turn on without running it.
+        val lead = scored.first().first.takeIf { toolRelevance(it, turn) > 0.0 }
+            ?: throw ToolCallerAbstained("the request names none of the offered tools")
+        val listed = toolsWithinBudget(toolsToShow(scored, MAX_TOOL_CALLER_TOOLS), MAX_TOOL_CALLER_DECLARATION_CHARS)
         if (listed.isEmpty()) throw ToolCallerAbstained("no tool declaration fits the tool caller's context")
         val prompt = buildToolCallerPrompt(messages, listed)
         if (prompt.conversation.isBlank()) throw ToolCallerAbstained("no user turn to act on")
 
         val startedAt = System.currentTimeMillis()
         val raw = StringBuilder()
+        // Stop at the first finished call. The model does not end its turn there on its own: it
+        // went on emitting unrelated calls for 5K characters and 50 seconds, and the extra calls
+        // (all scored, lowest wins) sank the one it had got right.
         localLlmManager
             .generateResponse(LocalModelRole.TOOL_CALLER, prompt.system, prompt.conversation)
+            .takeWhile { !raw.contains(CALL_CLOSE) }
             .collect { raw.append(it) }
         val elapsedMs = System.currentTimeMillis() - startedAt
 
@@ -144,6 +159,15 @@ class ToolCallerLlmProvider @Inject constructor(
 
         if (calls.isEmpty() || confidence.score < HANDOFF_THRESHOLD) {
             abstain(confidence, listed.size, elapsedMs)
+        }
+        // A well-formed call to the wrong tool scores 1.0: asked to set the media volume the
+        // model called media_control play_pause. Only the tool the request points to is trusted.
+        calls.firstOrNull { it.name != lead.name }?.let { stray ->
+            abstain(
+                ToolCallConfidence(0.0, "called '${stray.name}' but the request points to '${lead.name}'"),
+                listed.size,
+                elapsedMs,
+            )
         }
 
         // Step 1 is a measurement exercise: these two lines are what says whether
@@ -233,14 +257,88 @@ internal fun buildToolCallerPrompt(
         .takeLast(maxHistoryChars)
         .let(::neutralizeControlTokens)
 
-    // The template emits this content into the developer turn immediately
-    // before where its own declaration loop would run, so the blocks land
-    // exactly where the model expects them.
-    val system = buildString {
-        append("You call functions on the user's phone.")
-        if (history.isNotBlank()) append("\n\nRecent turns:\n").append(history)
-        append(renderFunctionDeclarations(tools))
+    // Exactly what the model's template renders for a turn with tools and no system
+    // message: its trained preamble, then the declarations, nothing between them. A
+    // sentence of our own plus a block of history in between is a developer turn the
+    // model never saw in training, and it answered with invented names like
+    // `flashlight,false`. The history goes with the user's words instead.
+    // History only when the request points back at it ("turn it off", "do that again"). Given
+    // unrelated history the model filled a flashlight call with a file name from three turns ago.
+    val system = TOOL_CALLER_PREAMBLE + renderFunctionDeclarations(tools)
+    val conversation = if (history.isBlank() || !REFERS_BACK.containsMatchIn(liveTurn)) {
+        liveTurn
+    } else {
+        "$history\nuser: $liveTurn"
     }
 
-    return LocalPrompt(system = system, conversation = liveTurn)
+    return LocalPrompt(system = system, conversation = conversation)
 }
+
+/** The developer-turn preamble FunctionGemma's chat template uses when tools are offered. */
+internal const val TOOL_CALLER_PREAMBLE = "You are a model that can do function calling with the following functions"
+
+/**
+ * [tools] with the ones that share words with [turn] first, otherwise in their given order.
+ *
+ * Only the leading few declarations fit the tool caller's context, and those used to be the first
+ * few in catalogue order whatever was asked, so "turn off the flashlight" could be shown six tools
+ * none of which controls it. Word overlap is crude, but it is cheap and it keeps the tool the user
+ * named inside the budget.
+ */
+internal fun rankToolsForTurn(tools: List<ToolDescriptor>, turn: String): List<ToolDescriptor> =
+    scoreToolsForTurn(tools, turn).map { it.first }
+
+/** [tools] with their relevance to [turn], best first; ties keep the given order. */
+internal fun scoreToolsForTurn(tools: List<ToolDescriptor>, turn: String): List<Pair<ToolDescriptor, Double>> {
+    val words = requestWords(turn)
+    if (words.isEmpty()) return tools.map { it to 0.0 }
+    val texts = tools.map(::rankingText)
+    // A word most tools mention ("set", "turn") says little; one only a few mention
+    // ("flashlight") says which tool is meant. Each match counts 1 / tools matching it.
+    val weight = words.associateWith { word -> texts.count { it.contains(word) }.let { if (it == 0) 0.0 else 1.0 / it } }
+    return tools.indices
+        .map { i -> tools[i] to words.sumOf { if (texts[i].contains(it)) weight.getValue(it) else 0.0 } }
+        .withIndex()
+        .sortedWith(compareByDescending<IndexedValue<Pair<ToolDescriptor, Double>>> { it.value.second }.thenBy { it.index })
+        .map { it.value }
+}
+
+/**
+ * The tools to declare: the leader alone when it clearly outscores the rest, otherwise the
+ * leader and the tools close to it. Shown a single tool the model can only call it or decline,
+ * which is what an attempt-first caller wants; shown neighbours it drifted to them.
+ */
+internal fun toolsToShow(scored: List<Pair<ToolDescriptor, Double>>, max: Int): List<ToolDescriptor> {
+    val lead = scored.firstOrNull() ?: return emptyList()
+    return scored.take(max)
+        .filterIndexed { i, (_, score) -> i == 0 || score >= lead.second * CLOSE_SCORE_RATIO }
+        .map { it.first }
+}
+
+/** A tool within this fraction of the leader's score is a plausible alternative, and is shown too. */
+private const val CLOSE_SCORE_RATIO = 0.75
+
+/** How many of the request's meaningful words [tool] mentions. */
+internal fun toolRelevance(tool: ToolDescriptor, turn: String): Double {
+    val text = rankingText(tool)
+    return requestWords(turn).count { text.contains(it) }.toDouble()
+}
+
+private fun requestWords(turn: String): Set<String> =
+    turn.lowercase().split(Regex("[^a-z0-9]+")).filter { it.length >= 3 && it !in RANKING_STOPWORDS }.toSet()
+
+/** Name, description and parameters, with snake_case split so `media_volume` reads "media volume". */
+private fun rankingText(tool: ToolDescriptor): String =
+    (tool.name + " " + tool.description + " " +
+        tool.parameters.joinToString(" ") { it.name + " " + it.description + " " + it.enumValues.orEmpty().joinToString(" ") })
+        .replace('_', ' ')
+        .lowercase()
+
+/** Words that name no tool, dropped before ranking. */
+private val RANKING_STOPWORDS = setOf(
+    "the", "and", "for", "you", "your", "my", "please", "can", "could", "would", "will", "with", "this",
+    "that", "what", "when", "then", "now", "quick", "ultrabrain", "turn", "make", "get", "set", "put",
+)
+
+/** A request that only makes sense with what came before it. */
+private val REFERS_BACK = Regex("""\b(it|that|this|them|those|again|same|other|one)\b""", RegexOption.IGNORE_CASE)

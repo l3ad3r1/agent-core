@@ -52,6 +52,33 @@ class RoutedProviderChainTest {
     }
 
     @Test
+    fun `a tool caller that abstained is offered the next turn again`() = runTest {
+        val caller = provider("On-device tool caller", "functiongemma")
+        val cloud = provider("Cloud", "gemini")
+        val answer = LlmToolResponse("done", emptyList(), 1, "gemini", "stop")
+        coEvery { caller.completeWithTools(any(), any()) } throws ToolCallerAbstained("not confident")
+        coEvery { cloud.completeWithTools(any(), any()) } returns answer
+        val chain = RoutedProviderChain(listOf(caller, cloud))
+
+        repeat(2) { chain.completeWithTools(listOf(LlmMessage("user", "torch on")), emptyList()) }
+
+        coVerify(exactly = 2) { caller.completeWithTools(any(), any()) }
+    }
+
+    @Test
+    fun `a provider that failed is still skipped on the next turn`() = runTest {
+        val broken = provider("Broken", "x")
+        val cloud = provider("Cloud", "gemini")
+        coEvery { broken.complete(any()) } throws httpError(429)
+        coEvery { cloud.complete(any()) } returns LlmResponse("ok", 1, "gemini")
+        val chain = RoutedProviderChain(listOf(broken, cloud))
+
+        repeat(2) { chain.complete(listOf(LlmMessage("user", "hi"))) }
+
+        coVerify(exactly = 1) { broken.complete(any()) }
+    }
+
+    @Test
     fun `rate-limited provider falls through to the next routed provider`() = runTest {
         val first = provider("Groq", "kimi")
         val second = provider("OpenRouter", "nemotron")

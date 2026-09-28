@@ -3,6 +3,7 @@ import com.hermes.agent.domain.llm.*
 import com.hermes.agent.domain.settings.*
 
 import com.hermes.agent.domain.tool.ToolDescriptor
+import com.hermes.agent.domain.tool.ToolParameterType
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -35,7 +36,7 @@ import kotlinx.serialization.json.JsonPrimitive
  */
 
 private const val CALL_OPEN = "<start_function_call>"
-private const val CALL_CLOSE = "<end_function_call>"
+internal const val CALL_CLOSE = "<end_function_call>"
 private const val DECL_OPEN = "<start_function_declaration>"
 private const val DECL_CLOSE = "<end_function_declaration>"
 private const val ESCAPE = "<escape>"
@@ -59,15 +60,18 @@ internal fun renderFunctionDeclarations(tools: List<ToolDescriptor>): String =
             append("{description:").append(escaped(tool.description.substringBefore('\n')))
             if (tool.parameters.isNotEmpty()) {
                 append(",parameters:{properties:{")
-                tool.parameters.forEachIndexed { index, parameter ->
+                // The template walks properties with dictsort and closes each with its type;
+                // without the type the model had to guess what a value should look like.
+                tool.parameters.sortedBy { it.name }.forEachIndexed { index, parameter ->
                     if (index > 0) append(',')
                     append(parameter.name).append(":{description:")
                     append(escaped(parameter.description.substringBefore('\n')))
-                    parameter.enumValues?.let { values ->
+                    parameter.enumValues?.takeIf { parameter.type == ToolParameterType.STRING }?.let { values ->
                         append(",enum:[")
                         append(values.joinToString(",") { escaped(it) })
                         append(']')
                     }
+                    append(",type:").append(escaped(parameter.type.name))
                     append('}')
                 }
                 append('}')
@@ -129,7 +133,9 @@ internal fun parseFunctionGemmaCalls(text: String): Pair<String, List<ToolCall>>
 /** Returns the call in [region] and how many of its characters it used. */
 private fun parseOneCall(region: String): Pair<ToolCall?, Int> {
     var index = 0
-    while (index < region.length && region[index].isWhitespace()) index++
+    // Seen on device: `<start_function_call>-call:device_settings{...}`. Stray punctuation
+    // before the keyword made the whole call read as an unknown tool named "-call:...".
+    while (index < region.length && (region[index].isWhitespace() || region[index] in "-:*>")) index++
     if (region.startsWith("call:", index)) index += "call:".length
     while (index < region.length && (region[index] == ' ' || region[index] == '\t')) index++
 
