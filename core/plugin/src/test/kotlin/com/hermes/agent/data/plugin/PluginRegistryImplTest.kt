@@ -123,6 +123,38 @@ class PluginRegistryImplTest {
     }
 
     @Test
+    fun `a plugin switched on stays on after a restart`() = runTest {
+        // On the tablet the Weather plugin was back to off after every app restart,
+        // so its tool vanished from the agent.
+        val saved = mutableSetOf<String>()
+        val store = object : ActivePluginStore {
+            override fun load(): Set<String> = saved.toSet()
+            override fun save(ids: Set<String>) { saved.clear(); saved += ids }
+        }
+        fun freshRegistry(): Pair<PluginRegistryImpl, FakeToolRegistry> {
+            val tools = FakeToolRegistry()
+            val registry = PluginRegistryImpl(
+                InProcessPluginSandbox(tools), GrpcPluginSandbox(tools, emptySet()), dummyContext, PluginResourceMonitor(), store,
+            )
+            registry.registerFirstParty(makePlugin("test.on"))
+            registry.registerFirstParty(makePlugin("test.off"))
+            return registry to tools
+        }
+
+        val (before, _) = freshRegistry()
+        before.activate("test.on")
+        before.activate("test.off")
+        before.suspend_("test.off")
+
+        val (after, tools) = freshRegistry()
+        after.restoreActive()
+
+        assertEquals(PluginState.ACTIVE, after.observePlugins().value.first { it.manifest.id == "test.on" }.state)
+        assertNotNull(tools.byName("tool_test.on"))
+        assertEquals(PluginState.INSTALLED, after.observePlugins().value.first { it.manifest.id == "test.off" }.state)
+    }
+
+    @Test
     fun `registerFirstParty adds plugin in INSTALLED state`() = runTest {
         val (registry, _) = makeRegistry()
         val plugin = makePlugin("test.one")

@@ -24,8 +24,9 @@ import javax.inject.Singleton
  * delegates load/unload operations to the appropriate [PluginSandbox]
  * (in-process for first-party, gRPC for third-party).
  *
- * Phase 4 will persist install state to Room so plugins survive process
- * restart; Phase 3 keeps everything in memory for simplicity.
+ * Which plugins are switched on is kept in [activeStore], and [restoreActive]
+ * switches them back on at startup. Before that, every plugin came back off
+ * after a restart, so its tools silently disappeared from the agent.
  */
 @Singleton
 class PluginRegistryImpl @Inject constructor(
@@ -33,6 +34,7 @@ class PluginRegistryImpl @Inject constructor(
     private val grpcSandbox: GrpcPluginSandbox,
     private val pluginContext: PluginContext,
     private val resourceMonitor: PluginResourceMonitor,
+    private val activeStore: ActivePluginStore? = null,
 ) : PluginRegistry {
 
     private val mutex = Mutex()
@@ -99,6 +101,7 @@ class PluginRegistryImpl @Inject constructor(
             if (result is PluginLifecycleResult.Success) {
                 updateState(id, PluginState.ACTIVE)
                 resourceMonitor.startMonitoring(id)
+                remember(id, active = true)
             } else {
                 updateState(id, PluginState.ERROR, lastError = (result as PluginLifecycleResult.Failure).message)
             }
@@ -110,6 +113,7 @@ class PluginRegistryImpl @Inject constructor(
             loadedPlugins[id] = registered
             updateState(id, PluginState.ACTIVE, loadedAt = System.currentTimeMillis())
             resourceMonitor.startMonitoring(id)
+            remember(id, active = true)
         } else {
             val msg = (result as PluginLifecycleResult.Failure).message
             updateState(id, PluginState.ERROR, lastError = msg)
@@ -123,6 +127,7 @@ class PluginRegistryImpl @Inject constructor(
         if (result is PluginLifecycleResult.Success) {
             updateState(id, PluginState.SUSPENDED)
             resourceMonitor.stopMonitoring(id)
+            remember(id, active = false)
         }
         result
     }
@@ -135,10 +140,30 @@ class PluginRegistryImpl @Inject constructor(
         }
         registeredPlugins.remove(id)
         _plugins.value = _plugins.value.filterNot { it.manifest.id == id }
+        remember(id, active = false)
         Timber.tag("PluginRegistry").i("uninstalled %s", id)
     }
 
+    /** Switches back on every registered plugin that was on before; call once at startup. */
+    suspend fun restoreActive() {
+        val wanted = activeStore?.load().orEmpty()
+        for (id in wanted) {
+            if (id in registeredPlugins) {
+                val result = activate(id)
+                if (result is PluginLifecycleResult.Failure) {
+                    Timber.tag("PluginRegistry").w("could not restore %s: %s", id, result.message)
+                }
+            }
+        }
+    }
+
     // --- helpers ---
+
+    private fun remember(id: String, active: Boolean) {
+        val store = activeStore ?: return
+        val ids = store.load()
+        store.save(if (active) ids + id else ids - id)
+    }
 
     /** Called by [com.hermes.agent.di.PluginsModule] at app startup. */
     fun registerFirstParty(plugin: Plugin) {
@@ -169,4 +194,10 @@ class PluginRegistryImpl @Inject constructor(
         }
         return PluginLifecycleResult.Success
     }
+}
+
+/** Where the set of switched-on plugin ids is kept between runs. */
+interface ActivePluginStore {
+    fun load(): Set<String>
+    fun save(ids: Set<String>)
 }
