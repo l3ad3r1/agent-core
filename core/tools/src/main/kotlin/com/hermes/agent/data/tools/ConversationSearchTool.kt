@@ -1,6 +1,5 @@
 package com.hermes.agent.data.tools
 
-import com.hermes.agent.data.llm.CloudLlmProvider
 import com.hermes.agent.domain.llm.LlmMessage
 import com.hermes.agent.data.local.dao.MessageDao
 import com.hermes.agent.domain.tool.Tool
@@ -37,7 +36,7 @@ import dagger.multibindings.IntoSet
 @Singleton
 class ConversationSearchTool @Inject constructor(
     private val messageDao: MessageDao,
-    private val llmProvider: CloudLlmProvider,
+    private val llmProvider: com.hermes.agent.domain.llm.LlmProvider,
 ) : Tool {
 
     private val dateFmt = SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault())
