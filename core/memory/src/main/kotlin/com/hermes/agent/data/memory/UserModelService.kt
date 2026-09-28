@@ -83,7 +83,10 @@ class UserModelService @Inject constructor(
 
     /** Rebuilds and persists the user model. Returns true only if a new model was saved. */
     private suspend fun rebuild(): Boolean = withContext(dispatchers.io) {
-        if (!llmProvider.isAvailable()) return@withContext false
+        if (!llmProvider.isAvailable()) {
+            Timber.tag("UserModel").i("rebuild skipped: no model available")
+            return@withContext false
+        }
 
         val facts = runCatching {
             memoryRepository.searchMemories("", limit = 200)
@@ -91,7 +94,10 @@ class UserModelService @Inject constructor(
                 .map { it.content }
         }.getOrDefault(emptyList())
 
-        if (facts.size < 3) return@withContext false
+        if (facts.size < 3) {
+            Timber.tag("UserModel").i("rebuild skipped: only %d facts found", facts.size)
+            return@withContext false
+        }
 
         val factList = facts.take(50).joinToString("\n") { "- $it" }
         val response = runCatching {
@@ -105,7 +111,10 @@ class UserModelService @Inject constructor(
             .getOrNull() ?: return@withContext false
 
         val newModel = response.content.trim()
-        if (newModel.isBlank() || newModel.length < 20) return@withContext false
+        if (newModel.isBlank() || newModel.length < 20) {
+            Timber.tag("UserModel").w("rebuild discarded: reply too short (%d chars)", newModel.length)
+            return@withContext false
+        }
 
         // Delete old model entry.
         runCatching {
