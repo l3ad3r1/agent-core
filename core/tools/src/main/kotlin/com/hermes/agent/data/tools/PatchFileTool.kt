@@ -65,7 +65,12 @@ class PatchFileTool(
             ToolParameter(
                 name = "patch",
                 type = ToolParameterType.STRING,
-                description = "The unified diff, V4A patch, or SEARCH/REPLACE block to apply.",
+                // The markers are spelled out: given only "SEARCH/REPLACE" the model guessed
+                // four-character markers, which match nothing, and retried three times.
+                description = "The change to apply, in one of these forms: " +
+                    "(1) a SEARCH/REPLACE block, markers exactly as shown, seven characters each: " +
+                    "\"<<<<<<< SEARCH\\n<old lines>\\n=======\\n<new lines>\\n>>>>>>> REPLACE\"; " +
+                    "(2) a unified diff with @@ hunk headers; (3) a V4A patch starting \"*** Begin Patch\".",
                 required = true,
             ),
         ),
