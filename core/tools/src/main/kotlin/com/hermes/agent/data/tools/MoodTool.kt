@@ -13,7 +13,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.longOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 import dagger.Binds
@@ -40,7 +39,7 @@ class MoodTool @Inject constructor(
             ToolParameter("intensity", ToolParameterType.INTEGER, "Intensity 1-10. Default: 5."),
             ToolParameter("note", ToolParameterType.STRING, "Optional note about the mood."),
             ToolParameter("tags", ToolParameterType.ARRAY, "Optional tags describing influences or context."),
-            ToolParameter("date_ms", ToolParameterType.INTEGER, "Date as epoch ms (for log). Defaults to today."),
+            ToolParameter("date_ms", ToolParameterType.STRING, "Date for log. ${ToolTime.INPUT_HINT} Defaults to today."),
             ToolParameter("days", ToolParameterType.INTEGER, "Lookback days for insights. Default: 30."),
             ToolParameter("limit", ToolParameterType.INTEGER, "Max entries for list. Default: 20."),
         ),
@@ -75,10 +74,18 @@ class MoodTool @Inject constructor(
             return ToolResult.error("Intensity must be between 1 and 10.", System.currentTimeMillis() - start)
         }
         val note = arguments["note"]?.str()?.trim().orEmpty()
-        val dateMs = arguments["date_ms"]?.longOrNull() ?: todayStartMs()
+        // Past dates are normal here (logging yesterday's mood), so there is no past guard.
+        val dateMs = when (val p = ToolTime.parse(arguments["date_ms"])) {
+            null -> todayStartMs()
+            is ToolTime.Parsed.Invalid -> return ToolResult.error(ToolTime.invalidMessage("date_ms", p.raw), System.currentTimeMillis() - start)
+            is ToolTime.Parsed.Ok -> p.epochMs
+        }
         val tags = (arguments["tags"] as? JsonArray)?.mapNotNull { it.str()?.trim()?.takeIf(String::isNotEmpty) } ?: emptyList()
         val entry = repository.create(dateMs, mood, intensity, note, tags)
-        return ToolResult.ok("Logged mood #${entry.id}: ${entry.mood} (intensity=${entry.intensity}).", System.currentTimeMillis() - start)
+        return ToolResult.ok(
+            "Logged mood #${entry.id}: ${entry.mood} (intensity=${entry.intensity}) for ${ToolTime.words(dateMs)}.",
+            System.currentTimeMillis() - start,
+        )
     }
 
     private suspend fun handleList(arguments: Map<String, JsonElement>, start: Long): ToolResult {
@@ -166,7 +173,6 @@ class MoodTool @Inject constructor(
 
 private fun JsonElement.str(): String? = (this as? JsonPrimitive)?.contentOrNull
 private fun JsonElement.int(): Int? = (this as? JsonPrimitive)?.intOrNull
-private fun JsonElement.longOrNull(): Long? = (this as? JsonPrimitive)?.longOrNull
 
 @Module
 @InstallIn(SingletonComponent::class)

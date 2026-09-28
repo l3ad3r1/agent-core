@@ -84,7 +84,7 @@ class CalendarToolTest {
     fun `creates an event and calls the system gateway`() = runTest {
         val repo = FakeCalendarRepository()
         val gateway = FakeGateway()
-        val tool = CalendarTool(repo, gateway)
+        val tool = CalendarTool(repo, gateway).apply { clock = { 1_000_000L } }
         val result = tool.execute(
             mapOf(
                 "action" to JsonPrimitive("create"),
@@ -104,7 +104,7 @@ class CalendarToolTest {
     fun `falls back gracefully when gateway fails`() = runTest {
         val repo = FakeCalendarRepository()
         val gateway = FakeGateway(Result.failure(IllegalStateException("permission denied")))
-        val tool = CalendarTool(repo, gateway)
+        val tool = CalendarTool(repo, gateway).apply { clock = { 1_000_000L } }
         val result = tool.execute(
             mapOf(
                 "action" to JsonPrimitive("create"),
@@ -138,9 +138,73 @@ class CalendarToolTest {
     }
 
     @Test
-    fun `rejects an event ending before it starts`() = runTest {
+    fun `accepts a local date-time and names the stored date in words`() = runTest {
+        // The model sent a 2025 epoch for "Friday 2 October 2026", and the result echoed the
+        // raw number, so the reply claimed 2026. A local date-time needs no arithmetic.
+        val zone = java.time.ZoneId.systemDefault()
+        val expected = java.time.LocalDateTime.of(2026, 10, 2, 16, 0).atZone(zone).toInstant().toEpochMilli()
+        val repo = FakeCalendarRepository()
+        val tool = CalendarTool(repo, FakeGateway()).apply { clock = { expected - 86_400_000L } }
+
+        val result = tool.execute(
+            mapOf(
+                "action" to JsonPrimitive("create"),
+                "title" to JsonPrimitive("Dentist"),
+                "start_ms" to JsonPrimitive("2026-10-02T16:00"),
+                "end_ms" to JsonPrimitive("2026-10-02 17:00"),
+            ),
+        )
+
+        Assert.assertTrue(result.errorMessage, result.success)
+        Assert.assertTrue(result.output, result.output.contains("Fri 2 Oct 2026, 16:00 to Fri 2 Oct 2026, 17:00"))
+        Assert.assertEquals(expected, repo.get("ce_1")!!.startMs)
+    }
+
+    @Test
+    fun `a create well in the past is refused unless allow_past is set`() = runTest {
+        val now = 1_790_570_000_000L // 28 Sep 2026
+        val lastYear = 1_759_314_600_000L // 1 Oct 2025, what the model actually sent
+        val gateway = FakeGateway()
+        val tool = CalendarTool(FakeCalendarRepository(), gateway).apply { clock = { now } }
+        val args = mapOf(
+            "action" to JsonPrimitive("create"),
+            "title" to JsonPrimitive("Dentist"),
+            "start_ms" to JsonPrimitive(lastYear),
+        )
+
+        val refused = tool.execute(args)
+
+        Assert.assertFalse(refused.success)
+        Assert.assertTrue(refused.errorMessage, refused.errorMessage.orEmpty().contains("2025"))
+        Assert.assertTrue(refused.errorMessage, refused.errorMessage.orEmpty().contains("in the past"))
+        Assert.assertNull("nothing may be written for a refused date", gateway.lastRequest)
+
+        val allowed = tool.execute(args + ("allow_past" to JsonPrimitive(true)))
+        Assert.assertTrue(allowed.errorMessage, allowed.success)
+    }
+
+    @Test
+    fun `an unreadable date is reported, not stored`() = runTest {
         val gateway = FakeGateway()
         val tool = CalendarTool(FakeCalendarRepository(), gateway)
+
+        val result = tool.execute(
+            mapOf(
+                "action" to JsonPrimitive("create"),
+                "title" to JsonPrimitive("Dentist"),
+                "start_ms" to JsonPrimitive("next friday"),
+            ),
+        )
+
+        Assert.assertFalse(result.success)
+        Assert.assertTrue(result.errorMessage.orEmpty().contains("could not be read as a date"))
+        Assert.assertNull(gateway.lastRequest)
+    }
+
+    @Test
+    fun `rejects an event ending before it starts`() = runTest {
+        val gateway = FakeGateway()
+        val tool = CalendarTool(FakeCalendarRepository(), gateway).apply { clock = { 2_000L } }
         val result = tool.execute(
             mapOf(
                 "action" to JsonPrimitive("create"),

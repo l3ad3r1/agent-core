@@ -68,6 +68,35 @@ class ProductivityToolsTest {
     }
 
     @Test
+    fun `todo takes a local due date and refuses one well in the past`() = runTest {
+        val repository = mockk<TodoRepository>(relaxed = true)
+        val zone = java.time.ZoneId.systemDefault()
+        val due = java.time.LocalDateTime.of(2026, 9, 28, 18, 0).atZone(zone).toInstant().toEpochMilli()
+        val tool = TodoTool(repository).apply { clock = { due - 3_600_000L } }
+
+        val ok = tool.execute(
+            mapOf(
+                "action" to JsonPrimitive("create"),
+                "title" to JsonPrimitive("Buy groceries"),
+                "due_date_ms" to JsonPrimitive("2026-09-28T18:00"),
+            ),
+        )
+        assertTrue(ok.errorMessage, ok.success)
+        coVerify { repository.create("Buy groceries", "", any(), due, any(), any()) }
+
+        val refused = tool.execute(
+            mapOf(
+                "action" to JsonPrimitive("create"),
+                "title" to JsonPrimitive("Old"),
+                "due_date_ms" to JsonPrimitive("2025-09-28T18:00"),
+            ),
+        )
+        assertFalse(refused.success)
+        assertTrue(refused.errorMessage, refused.errorMessage.orEmpty().contains("in the past"))
+        coVerify(exactly = 0) { repository.create("Old", any(), any(), any(), any(), any()) }
+    }
+
+    @Test
     fun `bookmark list clamps a negative limit`() = runTest {
         val repository = mockk<BookmarkRepository>()
         every { repository.observeAll() } returns flowOf(

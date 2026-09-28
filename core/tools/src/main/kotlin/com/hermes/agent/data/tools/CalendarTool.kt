@@ -13,7 +13,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.booleanOrNull
 import java.time.Instant
 import java.time.ZoneId
@@ -42,21 +41,25 @@ class CalendarTool @Inject constructor(
             ToolParameter("id", ToolParameterType.STRING, "Event ID (for get, update, delete)."),
             ToolParameter("title", ToolParameterType.STRING, "Event title (required for create)."),
             ToolParameter("description", ToolParameterType.STRING, "Event description."),
-            ToolParameter("start_ms", ToolParameterType.INTEGER, "Start time as epoch milliseconds."),
-            ToolParameter("end_ms", ToolParameterType.INTEGER, "End time as epoch milliseconds."),
+            ToolParameter("start_ms", ToolParameterType.STRING, "Start time. ${ToolTime.INPUT_HINT}"),
+            ToolParameter("end_ms", ToolParameterType.STRING, "End time. ${ToolTime.INPUT_HINT} Default: one hour after start."),
+            ToolParameter("allow_past", ToolParameterType.BOOLEAN, "For create: set true only to record an event that already happened."),
             ToolParameter("all_day", ToolParameterType.BOOLEAN, "True if the event spans the full day."),
             ToolParameter("location", ToolParameterType.STRING, "Event location."),
             ToolParameter("source_calendar", ToolParameterType.STRING, "Calendar source name (default: 'default')."),
             ToolParameter("reminder_minutes", ToolParameterType.INTEGER, "Reminder before event in minutes (default: 0)."),
             ToolParameter("limit", ToolParameterType.INTEGER, "Max upcoming events to return. Default: 10."),
-            ToolParameter("start_date_ms", ToolParameterType.INTEGER, "Start of date range for 'range' action."),
-            ToolParameter("end_date_ms", ToolParameterType.INTEGER, "End of date range for 'range' action."),
+            ToolParameter("start_date_ms", ToolParameterType.STRING, "Start of the range for 'range'. ${ToolTime.INPUT_HINT}"),
+            ToolParameter("end_date_ms", ToolParameterType.STRING, "End of the range for 'range'. ${ToolTime.INPUT_HINT}"),
         ),
         category = "productivity",
         capabilities = setOf("calendar", "deferrable"),
         requiresConfirmation = true,
         maxResultSizeChars = 8192,
     )
+
+    /** Replaced in tests. */
+    internal var clock: () -> Long = System::currentTimeMillis
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {
         val start = System.currentTimeMillis()
@@ -93,8 +96,8 @@ class CalendarTool @Inject constructor(
             append("Event #${event.id}\n")
             append("Title: ${event.title}\n")
             append("Calendar: ${event.sourceCalendar}\n")
-            append("Start: ${event.startMs}\n")
-            append("End: ${event.endMs}\n")
+            append("Start: ${ToolTime.words(event.startMs)}\n")
+            append("End: ${ToolTime.words(event.endMs)}\n")
             append("All-day: ${event.allDay}\n")
             if (event.location != null) append("Location: ${event.location}\n")
             if (event.reminderMinutes > 0) append("Reminder: ${event.reminderMinutes} min before\n")
@@ -107,8 +110,20 @@ class CalendarTool @Inject constructor(
         val title = arguments["title"]?.str()?.trim().orEmpty()
         if (title.isBlank()) return ToolResult.error("Missing required parameter 'title'.", System.currentTimeMillis() - start)
         val description = arguments["description"]?.str()?.trim().orEmpty()
-        val startMs = arguments["start_ms"]?.longOrNull() ?: return ToolResult.error("Missing required parameter 'start_ms'.", System.currentTimeMillis() - start)
-        val endMs = arguments["end_ms"]?.longOrNull() ?: startMs + 3_600_000L
+        val startMs = when (val p = ToolTime.parse(arguments["start_ms"])) {
+            null -> return ToolResult.error("Missing required parameter 'start_ms'.", System.currentTimeMillis() - start)
+            is ToolTime.Parsed.Invalid -> return ToolResult.error(ToolTime.invalidMessage("start_ms", p.raw), System.currentTimeMillis() - start)
+            is ToolTime.Parsed.Ok -> p.epochMs
+        }
+        val endMs = when (val p = ToolTime.parse(arguments["end_ms"])) {
+            null -> startMs + 3_600_000L
+            is ToolTime.Parsed.Invalid -> return ToolResult.error(ToolTime.invalidMessage("end_ms", p.raw), System.currentTimeMillis() - start)
+            is ToolTime.Parsed.Ok -> p.epochMs
+        }
+        val now = clock()
+        if (startMs < now - ToolTime.PAST_TOLERANCE_MS && arguments["allow_past"]?.bool() != true) {
+            return ToolResult.error(ToolTime.pastMessage("start_ms", startMs, now), System.currentTimeMillis() - start)
+        }
         if (endMs <= startMs) {
             return ToolResult.error("'end_ms' must be later than 'start_ms'.", System.currentTimeMillis() - start)
         }
@@ -136,14 +151,16 @@ class CalendarTool @Inject constructor(
             systemResult.isFailure -> {
                 val errMsg = systemResult.exceptionOrNull()?.message?.takeIf { it.isNotEmpty() } ?: "unknown error"
                 ToolResult.ok(
-                    "Local event #${event.id} created (\"$title\"), but device calendar write failed: $errMsg. Check calendar permissions.",
+                    "Local event #${event.id} created (\"$title\", ${ToolTime.words(startMs)} to ${ToolTime.words(endMs)}), " +
+                        "but device calendar write failed: $errMsg. Check calendar permissions.",
                     System.currentTimeMillis() - start,
                 )
             }
             else -> {
                 val systemId = systemResult.getOrNull()
                 ToolResult.ok(
-                    "Created event #${event.id}: \"$title\" (local) | device calendar ID=${systemId?.id}, calendar=${systemId?.calendarName} (${event.startMs}-${event.endMs}).",
+                    "Created event #${event.id}: \"$title\", ${ToolTime.words(event.startMs)} to ${ToolTime.words(event.endMs)} " +
+                        "(local) | device calendar ID=${systemId?.id}, calendar=${systemId?.calendarName}.",
                     System.currentTimeMillis() - start,
                 )
             }
@@ -156,12 +173,24 @@ class CalendarTool @Inject constructor(
         val current = repository.get(id) ?: return ToolResult.error("Event #$id not found.", System.currentTimeMillis() - start)
         val title = arguments["title"]?.str()?.takeIf { it.isNotBlank() }
         val description = arguments["description"]?.str()?.takeIf { !it.isNullOrBlank() }
-        val startMs = arguments["start_ms"]?.longOrNull()
-        val endMs = arguments["end_ms"]?.longOrNull()
+        val startMs = when (val p = ToolTime.parse(arguments["start_ms"])) {
+            is ToolTime.Parsed.Invalid -> return ToolResult.error(ToolTime.invalidMessage("start_ms", p.raw), System.currentTimeMillis() - start)
+            is ToolTime.Parsed.Ok -> p.epochMs
+            null -> null
+        }
+        val endMs = when (val p = ToolTime.parse(arguments["end_ms"])) {
+            is ToolTime.Parsed.Invalid -> return ToolResult.error(ToolTime.invalidMessage("end_ms", p.raw), System.currentTimeMillis() - start)
+            is ToolTime.Parsed.Ok -> p.epochMs
+            null -> null
+        }
         val allDay = arguments["all_day"]?.bool()
         val location = arguments["location"]?.str()?.takeIf { it.isNotBlank() }
         repository.update(id, title, description, startMs, endMs, allDay, location)
-        return ToolResult.ok("Updated event #${id} (\"${current.title}\").", System.currentTimeMillis() - start)
+        val updated = repository.get(id) ?: current
+        return ToolResult.ok(
+            "Updated event #${id} (\"${updated.title}\"), now ${ToolTime.words(updated.startMs)} to ${ToolTime.words(updated.endMs)}.",
+            System.currentTimeMillis() - start,
+        )
     }
 
     private suspend fun handleDelete(arguments: Map<String, JsonElement>, start: Long): ToolResult {
@@ -173,8 +202,16 @@ class CalendarTool @Inject constructor(
     }
 
     private suspend fun handleRange(arguments: Map<String, JsonElement>, start: Long): ToolResult {
-        val startMs = arguments["start_date_ms"]?.longOrNull() ?: return ToolResult.error("Missing required parameter 'start_date_ms'.", System.currentTimeMillis() - start)
-        val endMs = arguments["end_date_ms"]?.longOrNull() ?: return ToolResult.error("Missing required parameter 'end_date_ms'.", System.currentTimeMillis() - start)
+        val startMs = when (val p = ToolTime.parse(arguments["start_date_ms"])) {
+            null -> return ToolResult.error("Missing required parameter 'start_date_ms'.", System.currentTimeMillis() - start)
+            is ToolTime.Parsed.Invalid -> return ToolResult.error(ToolTime.invalidMessage("start_date_ms", p.raw), System.currentTimeMillis() - start)
+            is ToolTime.Parsed.Ok -> p.epochMs
+        }
+        val endMs = when (val p = ToolTime.parse(arguments["end_date_ms"])) {
+            null -> return ToolResult.error("Missing required parameter 'end_date_ms'.", System.currentTimeMillis() - start)
+            is ToolTime.Parsed.Invalid -> return ToolResult.error(ToolTime.invalidMessage("end_date_ms", p.raw), System.currentTimeMillis() - start)
+            is ToolTime.Parsed.Ok -> p.epochMs
+        }
         if (endMs <= startMs) {
             return ToolResult.error("'end_date_ms' must be later than 'start_date_ms'.", System.currentTimeMillis() - start)
         }
@@ -190,7 +227,7 @@ class CalendarTool @Inject constructor(
     private fun StringBuilder.appendEventLine(e: com.hermes.agent.domain.model.CalendarEvent) {
         append("• #${e.id} ${e.title}")
         if (e.location != null) append(" @${e.location}")
-        append(" [${e.sourceCalendar}] start=${e.startMs} end=${e.endMs}")
+        append(" [${e.sourceCalendar}] ${ToolTime.words(e.startMs)} to ${ToolTime.words(e.endMs)}")
         if (e.allDay) append(" (all-day)")
         append("\n")
     }
@@ -198,7 +235,6 @@ class CalendarTool @Inject constructor(
 
 private fun JsonElement.str(): String? = (this as? JsonPrimitive)?.contentOrNull
 private fun JsonElement.int(): Int? = (this as? JsonPrimitive)?.intOrNull
-private fun JsonElement.longOrNull(): Long? = (this as? JsonPrimitive)?.longOrNull
 private fun JsonElement.bool(): Boolean? = (this as? JsonPrimitive)?.booleanOrNull
 
 @Module

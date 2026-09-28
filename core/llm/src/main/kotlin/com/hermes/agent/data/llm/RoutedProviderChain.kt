@@ -70,9 +70,16 @@ internal class RoutedProviderChain(
             val provider = providers[index]
             // Reasoning models think for minutes before the first token; the
             // default 30 s cap would fail them over to a weaker model mid-think.
-            val attemptTimeout = ReasoningStaleTimeout.floorMillis(provider.model)
-                ?.coerceAtLeast(PROVIDER_ATTEMPT_TIMEOUT_MS)
-                ?: PROVIDER_ATTEMPT_TIMEOUT_MS
+            val attemptTimeout = if (provider.isOnDevice) {
+                // A phone CPU needs 30-40 s just to read an agent prompt before the first
+                // token (a 1,536-token system prompt took 38 s on a TCL tablet), so the cloud
+                // cap timed every local turn out before it could answer.
+                ON_DEVICE_ATTEMPT_TIMEOUT_MS
+            } else {
+                ReasoningStaleTimeout.floorMillis(provider.model)
+                    ?.coerceAtLeast(PROVIDER_ATTEMPT_TIMEOUT_MS)
+                    ?: PROVIDER_ATTEMPT_TIMEOUT_MS
+            }
             try {
                 val result = withTimeout(attemptTimeout) { call(provider) }
                 activeIndex.set(index)
@@ -175,6 +182,7 @@ internal class RoutedProviderChain(
 
     private companion object {
         const val PROVIDER_ATTEMPT_TIMEOUT_MS = 30_000L
+        const val ON_DEVICE_ATTEMPT_TIMEOUT_MS = 120_000L
         // A provider-specific billing failure must not terminate a routed
         // request: another configured cloud provider (or the final local
         // fallback) may still be available.  CloudLlmProvider wraps HTTP

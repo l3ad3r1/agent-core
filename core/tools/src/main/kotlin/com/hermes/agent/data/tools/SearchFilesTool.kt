@@ -160,20 +160,7 @@ class SearchFilesTool(
     }
 
     private suspend fun getEffectiveRootDir(): File {
-        val settings = settingsRepository?.current()
-        if (settings != null && settings.filesRootUri.isNotBlank()) {
-            val rootFile = File(settings.filesRootUri)
-            if (rootFile.exists() && rootFile.isDirectory) {
-                return rootFile
-            }
-        }
-        val ctx = context ?: return File(System.getProperty("java.io.tmpdir"), "hermes_workspace").apply { mkdirs() }
-        val ext = ctx.getExternalFilesDir(null)
-        val workspace = File(ext ?: ctx.filesDir, "workspace")
-        if (!workspace.exists()) {
-            workspace.mkdirs()
-        }
-        return workspace
+        return WorkspaceRoots.resolve(context, settingsRepository)
     }
 
     @Module

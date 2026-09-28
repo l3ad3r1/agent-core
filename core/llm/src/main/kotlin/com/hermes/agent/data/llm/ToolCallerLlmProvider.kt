@@ -43,6 +43,27 @@ private const val HANDOFF_THRESHOLD = 0.60
 private const val MAX_TOOL_CALLER_TOOLS = 40
 
 /**
+ * How much of the system block the declarations may take.
+ *
+ * The count cap alone did not keep the prompt inside the model's 4,092-token lane: forty
+ * declarations of the agent's real tools came to 22.5K characters (4,732 tokens), llama.cpp
+ * refused the system prompt, and every tool turn fell through to the cloud. The native side also
+ * caps system prefill at 1,536 tokens and cuts off whatever is past it, which would truncate a
+ * declaration mid-schema. FunctionGemma reads declarations at about 4.8 characters a token, so
+ * 6,000 characters stays under that cap with room for the preamble and recent turns.
+ */
+internal const val MAX_TOOL_CALLER_DECLARATION_CHARS = 6_000
+
+/** The leading tools whose declarations fit in [maxChars], in the order they were offered. */
+internal fun toolsWithinBudget(tools: List<ToolDescriptor>, maxChars: Int): List<ToolDescriptor> {
+    var used = 0
+    return tools.takeWhile { tool ->
+        used += renderFunctionDeclarations(listOf(tool)).length
+        used <= maxChars
+    }
+}
+
+/**
  * A small on-device model that attempts device control before any cloud
  * provider, and abstains when it is not confident.
  *
@@ -83,7 +104,8 @@ class ToolCallerLlmProvider @Inject constructor(
     ): LlmToolResponse {
         if (tools.isEmpty()) throw ToolCallerAbstained("no tools were offered")
 
-        val listed = tools.take(MAX_TOOL_CALLER_TOOLS)
+        val listed = toolsWithinBudget(tools.take(MAX_TOOL_CALLER_TOOLS), MAX_TOOL_CALLER_DECLARATION_CHARS)
+        if (listed.isEmpty()) throw ToolCallerAbstained("no tool declaration fits the tool caller's context")
         val prompt = buildToolCallerPrompt(messages, listed)
         if (prompt.conversation.isBlank()) throw ToolCallerAbstained("no user turn to act on")
 

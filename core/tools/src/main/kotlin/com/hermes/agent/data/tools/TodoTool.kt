@@ -39,7 +39,8 @@ class TodoTool @Inject constructor(
             ToolParameter("title", ToolParameterType.STRING, "Task title (for create)."),
             ToolParameter("body", ToolParameterType.STRING, "Optional task description."),
             ToolParameter("priority", ToolParameterType.STRING, "Priority: LOW, MEDIUM, HIGH, CRITICAL. Default: MEDIUM."),
-            ToolParameter("due_date_ms", ToolParameterType.INTEGER, "Due date as epoch milliseconds (for create, reschedule)."),
+            ToolParameter("due_date_ms", ToolParameterType.STRING, "Due date for create and reschedule. ${ToolTime.INPUT_HINT}"),
+            ToolParameter("allow_past", ToolParameterType.BOOLEAN, "Set true only to give a task a due date that has already passed."),
             ToolParameter("reminder", ToolParameterType.STRING, "Optional reminder label (for create)."),
             ToolParameter("query", ToolParameterType.STRING, "Search query (for search)."),
             ToolParameter("tag", ToolParameterType.STRING, "Tag to filter by (for search by tag)."),
@@ -54,6 +55,27 @@ class TodoTool @Inject constructor(
         capabilities = setOf("common", "todo"),
         maxResultSizeChars = 8192,
     )
+
+    /** Replaced in tests. */
+    internal var clock: () -> Long = System::currentTimeMillis
+
+    /**
+     * The due date argument, or the error to return. A date well in the past is refused unless
+     * allow_past is set: it is almost always the model's date arithmetic, not the user's intent.
+     */
+    private fun dueDate(arguments: Map<String, JsonElement>): Result<Long?> =
+        when (val p = ToolTime.parse(arguments["due_date_ms"])) {
+            null -> Result.success(null)
+            is ToolTime.Parsed.Invalid -> Result.failure(IllegalArgumentException(ToolTime.invalidMessage("due_date_ms", p.raw)))
+            is ToolTime.Parsed.Ok -> {
+                val now = clock()
+                if (p.epochMs < now - ToolTime.PAST_TOLERANCE_MS && (arguments["allow_past"] as? JsonPrimitive)?.contentOrNull != "true") {
+                    Result.failure(IllegalArgumentException(ToolTime.pastMessage("due_date_ms", p.epochMs, now)))
+                } else {
+                    Result.success(p.epochMs)
+                }
+            }
+        }
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {
         val start = System.currentTimeMillis()
@@ -82,11 +104,11 @@ class TodoTool @Inject constructor(
         val priorityStr = arguments["priority"]?.str()?.uppercase()?.trim() ?: "MEDIUM"
         val priority = TaskPriority.entries.firstOrNull { it.name == priorityStr }
             ?: return ToolResult.error("Invalid priority '$priorityStr'. Expected LOW, MEDIUM, HIGH, or CRITICAL.", System.currentTimeMillis() - start)
-        val dueDateMs = arguments["due_date_ms"]?.longOrNull()
+        val dueDateMs = dueDate(arguments).getOrElse { return ToolResult.error(it.message.orEmpty(), System.currentTimeMillis() - start) }
         val reminder = arguments["reminder"]?.str()?.takeIf { it.isNotBlank() }
         val tags = (arguments["tags"] as? JsonArray)?.mapNotNull { it.str()?.trim()?.takeIf(String::isNotEmpty) } ?: emptyList()
         val task = repository.create(title, body, priority, dueDateMs, reminder, tags)
-        val dueStr = if (task.dueDateMs != null) " due=${task.dueDateMs}" else ""
+        val dueStr = task.dueDateMs?.let { ", due ${ToolTime.words(it)}" }.orEmpty()
         return ToolResult.ok("Created task #${task.id}: \"$title\" [${task.priority}]$dueStr", System.currentTimeMillis() - start)
     }
 
@@ -116,7 +138,7 @@ class TodoTool @Inject constructor(
             append("Title: ${task.title}\n")
             append("Done: ${task.done}\n")
             append("Priority: ${task.priority}\n")
-            if (task.dueDateMs != null) append("Due: ${task.dueDateMs}\n")
+            task.dueDateMs?.let { append("Due: ${ToolTime.words(it)}\n") }
             if (task.reminderText != null) append("Reminder: ${task.reminderText}\n")
             if (task.tags.isNotEmpty()) append("Tags: ${task.tags.joinToString(", ")}\n")
             if (task.body.isNotBlank()) append("\n${task.body}\n")
@@ -169,10 +191,10 @@ class TodoTool @Inject constructor(
     private suspend fun handleReschedule(arguments: Map<String, JsonElement>, start: Long): ToolResult {
         val id = arguments["id"]?.str()?.trim().orEmpty()
         if (id.isBlank()) return ToolResult.error("Missing required parameter 'id'.", System.currentTimeMillis() - start)
-        val dueDateMs = arguments["due_date_ms"]?.longOrNull()
+        val dueDateMs = dueDate(arguments).getOrElse { return ToolResult.error(it.message.orEmpty(), System.currentTimeMillis() - start) }
         val task = repository.get(id) ?: return ToolResult.error("Task #$id not found.", System.currentTimeMillis() - start)
         repository.reschedule(id, dueDateMs)
-        val newDue = if (dueDateMs != null) "$dueDateMs" else "cleared"
+        val newDue = if (dueDateMs != null) "set to ${ToolTime.words(dueDateMs)}" else "cleared"
         return ToolResult.ok("Task #${id} (\"${task.title}\") due date $newDue.", System.currentTimeMillis() - start)
     }
 
@@ -188,7 +210,7 @@ class TodoTool @Inject constructor(
 
     private fun StringBuilder.appendTaskLine(t: com.hermes.agent.domain.model.TodoTask) {
         append("${if (t.done) "✓" else "○"} #${t.id} [${t.priority}] ${t.title}")
-        if (t.dueDateMs != null) append(" due=${t.dueDateMs}")
+        t.dueDateMs?.let { append(" due ${ToolTime.words(it)}") }
         if (t.tags.isNotEmpty()) append(" [${t.tags.joinToString(", ")}]")
         append("\n")
     }
@@ -196,7 +218,6 @@ class TodoTool @Inject constructor(
 
 private fun JsonElement.str(): String? = (this as? JsonPrimitive)?.contentOrNull
 private fun JsonElement.int(): Int? = (this as? JsonPrimitive)?.intOrNull
-private fun JsonElement.longOrNull(): Long? = (this as? JsonPrimitive)?.longOrNull
 
 @Module
 @InstallIn(SingletonComponent::class)

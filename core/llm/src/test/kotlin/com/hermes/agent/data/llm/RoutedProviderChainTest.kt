@@ -39,6 +39,19 @@ class RoutedProviderChainTest {
     }
 
     @Test
+    fun `an on-device model gets longer than a cloud one to answer`() = runTest {
+        val local = provider("On-device model", "llama-3.2-1b").also { every { it.isOnDevice } returns true }
+        val messages = listOf(LlmMessage("user", "hello"))
+        val expected = LlmResponse("hi", 1, "llama-3.2-1b")
+        coEvery { local.complete(messages) } coAnswers {
+            delay(45_000) // prefill on a phone CPU
+            expected
+        }
+
+        assertEquals(expected, RoutedProviderChain(listOf(local)).complete(messages))
+    }
+
+    @Test
     fun `rate-limited provider falls through to the next routed provider`() = runTest {
         val first = provider("Groq", "kimi")
         val second = provider("OpenRouter", "nemotron")
