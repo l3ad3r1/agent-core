@@ -25,22 +25,47 @@ class SkillHubToolTest {
         pairs.associate { it.first to JsonPrimitive(it.second) }
 
     @Test
+    fun `default taps do not include dead Nous repo`() {
+        val hasDeadRepo = com.hermes.agent.domain.skill.SkillTap.DEFAULT_TAPS.any {
+            it.repo == "NousResearch/hermes-agent-skills"
+        }
+        org.junit.Assert.assertFalse("Dead NousResearch/hermes-agent-skills tap should be removed", hasDeadRepo)
+    }
+
+    @Test
     fun `search returns matching hub skills`() = runTest {
-        coEvery { hubClient.searchSkills("git") } returns listOf(
-            HubSkillMeta(
-                name = "git-workflow",
-                description = "Automates git branches and commits",
-                source = "github",
-                identifier = "NousResearch/hermes-agent-skills/skills/git-workflow",
-                repo = "NousResearch/hermes-agent-skills",
-                path = "skills/git-workflow",
-                tags = listOf("git", "vcs"),
-            )
+        coEvery { hubClient.searchSkills("git") } returns SkillsHubClient.SearchResult(
+            skills = listOf(
+                HubSkillMeta(
+                    name = "git-workflow",
+                    description = "Automates git branches and commits",
+                    source = "github",
+                    identifier = "NousResearch/hermes-agent-skills/skills/git-workflow",
+                    repo = "NousResearch/hermes-agent-skills",
+                    path = "skills/git-workflow",
+                    tags = listOf("git", "vcs"),
+                )
+            ),
+            errors = emptyList(),
+            totalTaps = 2
         )
 
         val result = tool.execute(args("action" to "search", "query" to "git"))
         assertTrue(result.success)
         assertTrue(result.output.orEmpty().contains("git-workflow"))
+    }
+
+    @Test
+    fun `search reports unreachable taps`() = runTest {
+        coEvery { hubClient.searchSkills("missing") } returns SkillsHubClient.SearchResult(
+            skills = emptyList(),
+            errors = listOf("NousResearch/hermes-agent-skills (HTTP 404)"),
+            totalTaps = 3
+        )
+
+        val result = tool.execute(args("action" to "search", "query" to "missing"))
+        assertTrue(result.success)
+        assertTrue(result.output.orEmpty().contains("1 of 3 skill sources could not be reached: NousResearch/hermes-agent-skills (HTTP 404)"))
     }
 
     @Test

@@ -94,21 +94,29 @@ class SkillHubTool @Inject constructor(
     }
 
     private suspend fun handleSearch(query: String): ToolResult {
-        val results = hubClient.searchSkills(query)
-        if (results.isEmpty()) {
-            return ToolResult.ok("No skills found matching '$query'. Try another search term or check configured taps.")
-        }
+        val searchResult = hubClient.searchSkills(query)
+        val results = searchResult.skills
+        val errors = searchResult.errors
+        
         val output = buildString {
-            appendLine("Found ${results.size} skills on Skills Hub:")
-            for (item in results) {
-                appendLine("- **${item.name}** (`${item.identifier}`)")
-                appendLine("  ${item.description}")
-                if (item.tags.isNotEmpty()) {
-                    appendLine("  Tags: ${item.tags.joinToString(", ")}")
-                }
+            if (errors.isNotEmpty()) {
+                appendLine("${errors.size} of ${searchResult.totalTaps} skill sources could not be reached: ${errors.joinToString(", ")}")
+                appendLine()
             }
-            appendLine("\nTo inspect: `skills_hub(action=\"inspect\", identifier=\"<id>\")`")
-            appendLine("To install: `skills_hub(action=\"install\", identifier=\"<id>\")`")
+            if (results.isEmpty()) {
+                appendLine("No skills found matching '$query'. Try another search term or check configured taps.")
+            } else {
+                appendLine("Found ${results.size} skills on Skills Hub:")
+                for (item in results) {
+                    appendLine("- **${item.name}** (`${item.identifier}`)")
+                    appendLine("  ${item.description}")
+                    if (item.tags.isNotEmpty()) {
+                        appendLine("  Tags: ${item.tags.joinToString(", ")}")
+                    }
+                }
+                appendLine("\nTo inspect: `skills_hub(action=\"inspect\", identifier=\"<id>\")`")
+                appendLine("To install: `skills_hub(action=\"install\", identifier=\"<id>\")`")
+            }
         }
         return ToolResult.ok(output.trim())
     }

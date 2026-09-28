@@ -32,7 +32,6 @@ data class SkillTap(
 ) {
     companion object {
         val DEFAULT_TAPS = listOf(
-            SkillTap(repo = "NousResearch/hermes-agent-skills", path = "skills", isDefault = true),
             SkillTap(repo = "anthropics/skills", path = "skills", isDefault = true),
             SkillTap(repo = "openai/skills", path = "skills/.curated", isDefault = true),
         )
