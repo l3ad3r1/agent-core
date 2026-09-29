@@ -52,6 +52,28 @@ class RoutedProviderChainTest {
     }
 
     @Test
+    fun `the PC relay gets time for a slow turn, and is not waited on twice when down`() = runTest {
+        // On the tablet a relay turn with tools and an image took 38 s; the 30 s cap
+        // failed it over to the on-device model, which cannot see images.
+        val relay = provider("Antigravity", "hermes-relay")
+        val local = provider("On-device model", "llama-3.2-1b").also { every { it.isOnDevice } returns true }
+        val messages = listOf(LlmMessage("user", "what is in this picture?"))
+        val answer = LlmResponse("a red tile", 1, "hermes-relay")
+        coEvery { relay.complete(messages) } coAnswers { delay(40_000); answer }
+        assertEquals(answer, RoutedProviderChain(listOf(relay, local)).complete(messages))
+
+        var calls = 0
+        val down = provider("Antigravity", "hermes-relay")
+        coEvery { down.complete(messages) } coAnswers { calls++; delay(Long.MAX_VALUE); answer }
+        val fallback = LlmResponse("local", 1, "llama-3.2-1b")
+        coEvery { local.complete(messages) } returns fallback
+        val started = testScheduler.currentTime
+        assertEquals(fallback, RoutedProviderChain(listOf(down, local)).complete(messages))
+        assertEquals("a dead relay is tried once", 1, calls)
+        assertEquals(90_000L, testScheduler.currentTime - started)
+    }
+
+    @Test
     fun `a tool caller that abstained is offered the next turn again`() = runTest {
         val caller = provider("On-device tool caller", "functiongemma")
         val cloud = provider("Cloud", "gemini")

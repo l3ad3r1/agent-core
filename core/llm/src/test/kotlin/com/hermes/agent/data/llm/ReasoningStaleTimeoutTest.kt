@@ -13,6 +13,7 @@ class ReasoningStaleTimeoutTest {
         assertEquals(300_000L, ReasoningStaleTimeout.floorMillis("nvidia/nemotron-3-nano-8b"))
         assertEquals(180_000L, ReasoningStaleTimeout.floorMillis("qwen/qwen3-235b-a22b-thinking"))
         assertEquals(240_000L, ReasoningStaleTimeout.floorMillis("anthropic/claude-opus-4-6"))
+        assertEquals(90_000L, ReasoningStaleTimeout.floorMillis("hermes-relay"))
     }
 
     @Test fun `longest slug wins so o3-mini is not swallowed by o3`() {

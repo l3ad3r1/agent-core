@@ -93,7 +93,9 @@ internal class RoutedProviderChain(
                 lastFailure = IOException(
                     "${provider.name} timed out after ${attemptTimeout / 1_000}s", cancelled,
                 )
-                if (!retriedSame) { retriedSame = true; continue }   // one retry on the same provider
+                // One retry on the same provider, but not after a raised limit: a second 90 s
+                // (or 10 min) wait on a provider that is down only delays the fallback.
+                if (!retriedSame && attemptTimeout <= PROVIDER_ATTEMPT_TIMEOUT_MS) { retriedSame = true; continue }
                 if (index == providers.lastIndex) throw checkNotNull(lastFailure)
                 Timber.tag("LlmRouter").w(lastFailure, "%s timed out on %s; trying %s",
                     operation, provider.name, providers[index + 1].name)
