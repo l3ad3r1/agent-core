@@ -88,6 +88,21 @@ class RoutedProviderChainTest {
     }
 
     @Test
+    fun `the answer is credited to the provider that gave it, not the abstaining tool caller`() = runTest {
+        // Usage showed 162 on-device requests for a day of relay answers.
+        val caller = provider("On-device tool caller", "functiongemma").also { every { it.isOnDevice } returns true }
+        val cloud = provider("Cloud", "gemini").also { every { it.isOnDevice } returns false }
+        coEvery { caller.completeWithTools(any(), any()) } throws ToolCallerAbstained("not confident")
+        coEvery { cloud.completeWithTools(any(), any()) } returns LlmToolResponse("done", emptyList(), 1, "gemini", "stop")
+        val chain = RoutedProviderChain(listOf(caller, cloud))
+
+        chain.completeWithTools(listOf(LlmMessage("user", "what is the capital of France")), emptyList())
+
+        assertEquals(false, chain.isOnDevice)
+        assertEquals("gemini", chain.model)
+    }
+
+    @Test
     fun `a provider that failed is still skipped on the next turn`() = runTest {
         val broken = provider("Broken", "x")
         val cloud = provider("Cloud", "gemini")

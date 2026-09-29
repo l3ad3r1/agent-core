@@ -18,16 +18,22 @@ internal class RoutedProviderChain(
     providers: List<LlmProvider>,
 ) : LlmProvider {
     private val providers = providers.distinctBy { "${it.name}|${it.model}" }
+    /** Where the next turn starts (an abstaining tool caller keeps its place). */
     private val activeIndex = AtomicInteger(0)
+
+    /** Who produced the last answer: what [name], [model] and [isOnDevice] report. */
+    private val answeredIndex = AtomicInteger(0)
 
     init {
         require(this.providers.isNotEmpty()) { "Provider chain cannot be empty." }
     }
 
-    private val active: LlmProvider get() = providers[activeIndex.get().coerceIn(providers.indices)]
-    override val name: String get() = active.name
-    override val isOnDevice: Boolean get() = active.isOnDevice
-    override val model: String get() = active.model
+    // Reporting the resume position here labelled every relay answer after an abstaining
+    // tool caller as on-device, which skewed usage and cost.
+    private val answered: LlmProvider get() = providers[answeredIndex.get().coerceIn(providers.indices)]
+    override val name: String get() = answered.name
+    override val isOnDevice: Boolean get() = answered.isOnDevice
+    override val model: String get() = answered.model
 
     override suspend fun complete(messages: List<LlmMessage>): LlmResponse =
         execute("completion") { it.complete(messages) }
@@ -86,7 +92,7 @@ internal class RoutedProviderChain(
             }
             try {
                 val result = withTimeout(attemptTimeout) { call(provider) }
-                activeIndex.set(minOf(resumeFrom, index))
+                activeIndex.set(minOf(resumeFrom, index)); answeredIndex.set(index)
                 return result
             } catch (cancelled: CancellationException) {
                 if (cancelled !is TimeoutCancellationException) throw cancelled
@@ -138,7 +144,7 @@ internal class RoutedProviderChain(
                     when (chunk) {
                         is LlmStreamChunk.Delta, is LlmStreamChunk.ToolCallDelta -> {
                             emittedOutput = true
-                            activeIndex.set(minOf(resumeFrom, index))
+                            activeIndex.set(minOf(resumeFrom, index)); answeredIndex.set(index)
                             emit(chunk)
                         }
                         is LlmStreamChunk.Error -> {
