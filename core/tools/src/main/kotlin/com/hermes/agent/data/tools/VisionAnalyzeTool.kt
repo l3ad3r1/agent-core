@@ -1,8 +1,6 @@
 package com.hermes.agent.data.tools
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
 import com.hermes.agent.data.llm.HybridLlmRouter
@@ -26,12 +24,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import timber.log.Timber
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.InputStream
-import java.util.concurrent.TimeUnit
 import com.hermes.agent.util.net.PublicNetworkGuard
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -50,12 +43,7 @@ class VisionAnalyzeTool @Inject constructor(
     networkGuard: PublicNetworkGuard,
 ) : Tool {
 
-    private val httpClient: OkHttpClient = okHttpClient.newBuilder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-
-    private val downloadClient: OkHttpClient = networkGuard.restrict(httpClient)
+    private val images = ImageAttachments(context, okHttpClient, networkGuard)
 
     override val descriptor = ToolDescriptor(
         name = "vision_analyze",
@@ -92,12 +80,12 @@ class VisionAnalyzeTool @Inject constructor(
             ?: "Describe this image in detail and extract any relevant text or details."
 
         try {
-            val (imageBytes, detectedMime) = loadImageBytes(imageInput)
+            val (imageBytes, detectedMime) = images.load(imageInput)
             if (imageBytes.isEmpty()) {
                 return@withContext ToolResult.error("Failed to load image from $imageInput (empty data)", System.currentTimeMillis() - start)
             }
 
-            val (optimizedBytes, finalMime) = optimizeImage(imageBytes, detectedMime)
+            val (optimizedBytes, finalMime) = images.optimize(imageBytes, detectedMime)
             val base64Data = Base64.encodeToString(optimizedBytes, Base64.NO_WRAP)
             val dataUrl = "data:$finalMime;base64,$base64Data"
 
@@ -143,111 +131,6 @@ class VisionAnalyzeTool @Inject constructor(
             Timber.tag("VisionAnalyzeTool").e(e, "Vision analysis failed for input: %s", imageInput)
             ToolResult.error("Vision analysis failed: ${e.message ?: e.javaClass.simpleName}", System.currentTimeMillis() - start)
         }
-    }
-
-    private suspend fun loadImageBytes(input: String): Pair<ByteArray, String> = withContext(Dispatchers.IO) {
-        val trimmed = input.trim()
-        when {
-            trimmed.startsWith("data:") -> {
-                val commaIndex = trimmed.indexOf(',')
-                val header = if (commaIndex > 0) trimmed.substring(0, commaIndex) else ""
-                val mime = header.substringAfter("data:").substringBefore(";").takeIf { it.isNotBlank() } ?: "image/jpeg"
-                val b64 = if (commaIndex > 0) trimmed.substring(commaIndex + 1) else trimmed
-                val bytes = Base64.decode(b64, Base64.DEFAULT)
-                bytes to mime
-            }
-            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> {
-                val request = Request.Builder().url(trimmed).build()
-                // An image link from the model: public internet only.
-                val response = downloadClient.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    throw IllegalStateException("HTTP ${response.code} downloading image from $trimmed")
-                }
-                val mime = response.header("Content-Type")?.substringBefore(";")?.trim() ?: "image/jpeg"
-                val bytes = response.body?.bytes() ?: throw IllegalStateException("Empty response body from $trimmed")
-                bytes to mime
-            }
-            trimmed.startsWith("content://") -> {
-                val uri = Uri.parse(trimmed)
-                val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
-                val stream: InputStream = context.contentResolver.openInputStream(uri)
-                    ?: throw IllegalArgumentException("Cannot open content URI: $trimmed")
-                val bytes = stream.use { it.readBytes() }
-                bytes to mime
-            }
-            else -> {
-                val filePath = trimmed.removePrefix("file://")
-                val file = File(filePath)
-                if (!file.exists() || !file.canRead()) {
-                    throw IllegalArgumentException("File not found or unreadable: $filePath")
-                }
-                val mime = when (file.extension.lowercase()) {
-                    "png" -> "image/png"
-                    "webp" -> "image/webp"
-                    "gif" -> "image/gif"
-                    else -> "image/jpeg"
-                }
-                val bytes = file.readBytes()
-                bytes to mime
-            }
-        }
-    }
-
-    private fun optimizeImage(bytes: ByteArray, mimeType: String): Pair<ByteArray, String> {
-        val maxDimension = 1568
-        val maxByteLimit = 4 * 1024 * 1024 // 4 MB
-
-        val options = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
-        }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-
-        val origWidth = options.outWidth
-        val origHeight = options.outHeight
-
-        if (origWidth <= 0 || origHeight <= 0) {
-            // Not a decodable image bitmap (or raw bytes), return as-is
-            return bytes to mimeType
-        }
-
-        val longestSide = maxOf(origWidth, origHeight)
-        val needsDownscale = longestSide > maxDimension || bytes.size > maxByteLimit
-
-        if (!needsDownscale) {
-            return bytes to mimeType
-        }
-
-        var sampleSize = 1
-        while ((longestSide / sampleSize) > maxDimension) {
-            sampleSize *= 2
-        }
-
-        val decodeOptions = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize
-        }
-        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
-            ?: return bytes to mimeType
-
-        val scaled = if (maxOf(decoded.width, decoded.height) > maxDimension) {
-            val scale = maxDimension.toFloat() / maxOf(decoded.width, decoded.height)
-            val targetW = (decoded.width * scale).toInt().coerceAtLeast(1)
-            val targetH = (decoded.height * scale).toInt().coerceAtLeast(1)
-            Bitmap.createScaledBitmap(decoded, targetW, targetH, true)
-        } else {
-            decoded
-        }
-
-        val outputStream = ByteArrayOutputStream()
-        val format = if (mimeType.contains("png", ignoreCase = true)) {
-            Bitmap.CompressFormat.PNG
-        } else {
-            Bitmap.CompressFormat.JPEG
-        }
-        scaled.compress(format, 85, outputStream)
-        val compressedBytes = outputStream.toByteArray()
-        val outMime = if (format == Bitmap.CompressFormat.PNG) "image/png" else "image/jpeg"
-
-        return compressedBytes to outMime
     }
 }
 
