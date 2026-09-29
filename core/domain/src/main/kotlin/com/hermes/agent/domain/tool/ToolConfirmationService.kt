@@ -20,6 +20,8 @@ data class PendingConfirmation(
     val call: ToolCall,
 )
 
+class ConfirmationTimeoutException : Exception("timeout (no answer was given)")
+
 @Singleton
 class ToolConfirmationService @Inject constructor(
     private val authorizationSettings: ToolAuthorizationSettings,
@@ -87,7 +89,7 @@ class ToolConfirmationService @Inject constructor(
             // another turn's deferred response.
             val approved = kotlinx.coroutines.withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) {
                 deferred.await()
-            } ?: false
+            } ?: throw ConfirmationTimeoutException()
             Timber.tag("ToolConfirmation").i(
                 "Resolved request=%s tool=%s approved=%s",
                 request.id,

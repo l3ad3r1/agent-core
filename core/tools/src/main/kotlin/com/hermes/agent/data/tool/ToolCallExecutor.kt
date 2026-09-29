@@ -52,7 +52,11 @@ class ToolCallExecutor @Inject constructor(
             ?: return ToolResult.error("unknown tool: ${call.name}")
 
         if (tool.requiresConfirmation(call.arguments)) {
-            val approved = confirmationGate?.confirm(call, requiresConfirmation = true) ?: true
+            val approved = try {
+                confirmationGate?.confirm(call, requiresConfirmation = true) ?: true
+            } catch (e: com.hermes.agent.domain.tool.ConfirmationTimeoutException) {
+                return ToolResult.error("timeout (no answer was given)")
+            }
             if (!approved) {
                 return ToolResult.error("user declined to run tool '${call.name}'")
             }
