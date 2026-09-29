@@ -172,6 +172,39 @@ class ToolCallExecutorTest {
     }
 
     @Test
+    fun `confirmation gate timing out returns timeout error`() = runTest {
+        val registry = ToolRegistryImpl()
+        var executed = false
+        registry.register(StubTool(descriptor("guarded", requiresConfirmation = true)) {
+            executed = true
+            ToolResult.ok("ok")
+        })
+        val executor = ToolCallExecutor(registry, fakeRedactor())
+
+        val gate = object : ToolCallExecutor.ConfirmationGate {
+            override suspend fun confirm(
+                call: com.hermes.agent.domain.llm.ToolCall,
+                requiresConfirmation: Boolean,
+            ): Boolean {
+                kotlinx.coroutines.delay(65_000L) // Wait longer than the 60s timeout
+                return true
+            }
+        }
+
+        val result = executor.execute(
+            com.hermes.agent.domain.llm.ToolCall(
+                id = "c1",
+                name = "guarded",
+                arguments = emptyMap(),
+            ),
+            confirmationGate = gate,
+        )
+        assertTrue(!result.success)
+        assertTrue(!executed)
+        assertTrue(result.errorMessage!!.contains("timed out"))
+    }
+
+    @Test
     fun `tool output containing a configured secret is redacted`() = runTest {
         val registry = ToolRegistryImpl()
         registry.register(StubTool(descriptor("leaky")) {

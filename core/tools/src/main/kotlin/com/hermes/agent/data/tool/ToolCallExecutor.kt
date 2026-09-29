@@ -52,7 +52,12 @@ class ToolCallExecutor @Inject constructor(
             ?: return ToolResult.error("unknown tool: ${call.name}")
 
         if (tool.requiresConfirmation(call.arguments)) {
-            val approved = confirmationGate?.confirm(call, requiresConfirmation = true) ?: true
+            val approved = kotlinx.coroutines.withTimeoutOrNull(60_000L) {
+                confirmationGate?.confirm(call, requiresConfirmation = true) ?: true
+            }
+            if (approved == null) {
+                return ToolResult.error("tool '${call.name}' confirmation timed out")
+            }
             if (!approved) {
                 return ToolResult.error("user declined to run tool '${call.name}'")
             }

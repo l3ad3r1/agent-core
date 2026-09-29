@@ -120,7 +120,7 @@ class ToolConfirmationService @Inject constructor(
     }
 
     companion object {
-        const val CONFIRMATION_TIMEOUT_MS = 60_000L
+        const val CONFIRMATION_TIMEOUT_MS = 65_000L
 
         /**
          * Per-tool allowlist of `action` values that only read.
