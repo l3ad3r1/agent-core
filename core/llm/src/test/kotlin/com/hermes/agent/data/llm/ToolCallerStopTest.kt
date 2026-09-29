@@ -113,6 +113,32 @@ class ToolCallerStopTest {
     }
 
     @Test
+    fun `one stray shared word does not make a tool the request`() = runTest {
+        // "Install ... skill" matched media_control's "installed music app"; shown only that
+        // tool, the model toggled playback on the tablet.
+        var ran = false
+        val player = ToolDescriptor(
+            name = "media_control",
+            description = "Play or pause media, skip tracks, or ask an installed music app to play a search.",
+            parameters = listOf(ToolParameter("action", ToolParameterType.STRING, "Media action.", required = true)),
+        )
+        val manager = managerReplying("<start_function_call>call:media_control{action:<escape>play_pause<escape>}<end_function_call>") { ran = true }
+
+        val refused = runCatching {
+            ToolCallerLlmProvider(manager).completeWithTools(
+                listOf(LlmMessage("user", "Install the canvas-design skill from the Skills Hub.")),
+                listOf(player, volume),
+            )
+        }.exceptionOrNull()
+
+        assertTrue(refused is ToolCallerAbstained)
+        assertFalse("the model is not run for a coincidence", ran)
+        // Real requests for the tool still reach it.
+        assertTrue(toolCoverage(player, "Play the next track") >= MIN_TOOL_COVERAGE)
+        assertTrue(toolCoverage(volume, "Set media volume to 30 percent") >= MIN_TOOL_COVERAGE)
+    }
+
+    @Test
     fun `a request that names no tool is handed on without running the model`() = runTest {
         var ran = false
         val manager = managerReplying("<start_function_call>call:media_control{}<end_function_call>") { ran = true }

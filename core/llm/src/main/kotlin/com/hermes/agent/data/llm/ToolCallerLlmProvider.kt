@@ -115,6 +115,12 @@ class ToolCallerLlmProvider @Inject constructor(
         // the tablet it guessed wrong or asked a question. Hand the turn on without running it.
         val lead = scored.first().first.takeIf { toolRelevance(it, turn) > 0.0 }
             ?: throw ToolCallerAbstained("the request names none of the offered tools")
+        // One stray shared word is not a request for the tool: "Install the canvas-design
+        // skill from the Skills Hub" matched media_control's "installed music app" and the
+        // model, shown only that tool, toggled playback.
+        if (toolCoverage(lead, turn) < MIN_TOOL_COVERAGE) {
+            throw ToolCallerAbstained("the request is mostly about something ${lead.name} does not cover")
+        }
         val listed = toolsWithinBudget(toolsToShow(scored, MAX_TOOL_CALLER_TOOLS), MAX_TOOL_CALLER_DECLARATION_CHARS)
         if (listed.isEmpty()) throw ToolCallerAbstained("no tool declaration fits the tool caller's context")
         val prompt = buildToolCallerPrompt(messages, listed)
@@ -292,7 +298,7 @@ internal fun rankToolsForTurn(tools: List<ToolDescriptor>, turn: String): List<T
 internal fun scoreToolsForTurn(tools: List<ToolDescriptor>, turn: String): List<Pair<ToolDescriptor, Double>> {
     val words = requestWords(turn)
     if (words.isEmpty()) return tools.map { it to 0.0 }
-    val texts = tools.map(::rankingText)
+    val texts = tools.map { rankingWords(it) }
     // A word most tools mention ("set", "turn") says little; one only a few mention
     // ("flashlight") says which tool is meant. Each match counts 1 / tools matching it.
     val weight = words.associateWith { word -> texts.count { it.contains(word) }.let { if (it == 0) 0.0 else 1.0 / it } }
@@ -320,12 +326,32 @@ private const val CLOSE_SCORE_RATIO = 0.75
 
 /** How many of the request's meaningful words [tool] mentions. */
 internal fun toolRelevance(tool: ToolDescriptor, turn: String): Double {
-    val text = rankingText(tool)
+    val text = rankingWords(tool)
     return requestWords(turn).count { text.contains(it) }.toDouble()
 }
 
-private fun requestWords(turn: String): Set<String> =
-    turn.lowercase().split(Regex("[^a-z0-9]+")).filter { it.length >= 3 && it !in RANKING_STOPWORDS }.toSet()
+/** The share of the request's meaningful words that [tool] mentions. */
+internal fun toolCoverage(tool: ToolDescriptor, turn: String): Double {
+    val words = requestWords(turn)
+    return if (words.isEmpty()) 0.0 else toolRelevance(tool, turn) / words.size
+}
+
+/** Below this share of the request's words, the lead tool is a coincidence, not the request. */
+internal const val MIN_TOOL_COVERAGE = 0.34
+
+private fun requestWords(turn: String): Set<String> = words(turn).filter { it !in RANKING_STOPWORDS }.toSet()
+
+/** Whole words, plural-folded ("tracks" -> "track"); substring matching let "install" hit "installed". */
+private fun words(text: String): List<String> =
+    text.lowercase().split(Regex("[^a-z0-9]+")).filter { it.length >= 3 }.map(::singular)
+
+private fun singular(word: String): String = when {
+    word.length > 4 && word.endsWith("ies") -> word.dropLast(3) + "y"
+    word.length > 3 && word.endsWith("s") && !word.endsWith("ss") -> word.dropLast(1)
+    else -> word
+}
+
+private fun rankingWords(tool: ToolDescriptor): Set<String> = words(rankingText(tool)).toSet()
 
 /** Name, description and parameters, with snake_case split so `media_volume` reads "media volume". */
 private fun rankingText(tool: ToolDescriptor): String =
