@@ -31,7 +31,7 @@ The engine's current priorities, roughly in order:
 | `core:tools` | Deterministic phone tools and the approval boundary. |
 | `core:memory` | Embeddings, vector store, RAG pipeline, memory consolidation. |
 | `core:persistence` | Room entities, DAOs and migrations. |
-| `core:plugin` | Script-plugin engine plus the signed native-module catalog, verification and install review. |
+| `core:plugin` | Script-plugin engine plus the signed native-module catalog, verification and install review; the feature-evolution engine (`data.plugin.evolution`: usage mining, builder/reviewer bot loop, on-device module vetting and smoke tests, local install, tool overrides with auto-revert). |
 | `core:settings` | Settings repository and encrypted credential storage. |
 | `core:theme`, `core:util` | Shared presentation and platform support. |
 
