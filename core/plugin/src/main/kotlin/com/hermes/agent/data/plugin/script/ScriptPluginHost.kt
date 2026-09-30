@@ -57,7 +57,8 @@ interface ScriptPluginHost {
  */
 class ScriptPluginTool(
     override val descriptor: ToolDescriptor,
-    private val pluginId: String,
+    /** The module this tool belongs to. */
+    val pluginId: String,
     private val engine: ScriptPluginEngine,
 ) : Tool {
 
