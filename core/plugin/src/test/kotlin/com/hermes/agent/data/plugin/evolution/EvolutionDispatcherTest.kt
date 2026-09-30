@@ -15,6 +15,8 @@ class EvolutionDispatcherTest {
         val replies = mutableMapOf<String, ArrayDeque<BotRunResult>>()
         val calls = mutableListOf<Triple<String, String, String>>()
         var gate: CompletableDeferred<Unit>? = null
+        /** Runs while a bot "works", before its reply is returned — e.g. the user acting meanwhile. */
+        var whileRunning: (suspend (profile: String) -> Unit)? = null
 
         fun script(profile: String, vararg outputs: BotRunResult) {
             replies.getOrPut(profile) { ArrayDeque() }.addAll(outputs)
@@ -23,6 +25,7 @@ class EvolutionDispatcherTest {
         override suspend fun isConfigured() = configured
         override suspend fun run(profile: String, input: String, instructions: String): BotRunResult {
             gate?.await()
+            whileRunning?.invoke(profile)
             calls += Triple(profile, input, instructions)
             return replies[profile]?.removeFirstOrNull() ?: BotRunResult.Failed("no scripted reply")
         }
@@ -216,5 +219,56 @@ class EvolutionDispatcherTest {
         gateway.gate!!.complete(Unit)
         assertTrue(run.await() is EvolutionDispatcher.Outcome.Skipped)
         assertEquals(ProposalStatus.REJECTED, store.get("p1")!!.status)
+    }
+
+    @Test
+    fun `a rejection during a round the phone refuses is not undone`() = runTest {
+        store.insert(proposal())
+        gateway.script("builder", ok("no manifest here"), ok(fenced(moduleJson())))
+        gateway.script("reviewer", approve)
+        gateway.whileRunning = { profile ->
+            if (profile == "builder") store.transition("p1", ProposalStatus.REJECTED, "user rejected")
+        }
+        val outcome = dispatcher.dispatch("p1", "builder", "reviewer")
+        assertTrue(outcome.toString(), outcome is EvolutionDispatcher.Outcome.Skipped)
+        assertEquals(ProposalStatus.REJECTED, store.get("p1")!!.status)
+        assertEquals("the builder is not asked again", 1, gateway.calls.size)
+    }
+
+    @Test
+    fun `a rejection while the reviewer asks for changes is not undone`() = runTest {
+        store.insert(proposal())
+        gateway.script("builder", ok(fenced(moduleJson())), ok(fenced(moduleJson())))
+        gateway.script("reviewer", changes("rename it"), approve)
+        gateway.whileRunning = { profile ->
+            if (profile == "reviewer") store.transition("p1", ProposalStatus.REJECTED, "user rejected")
+        }
+        val outcome = dispatcher.dispatch("p1", "builder", "reviewer")
+        assertTrue(outcome.toString(), outcome is EvolutionDispatcher.Outcome.Skipped)
+        assertEquals(ProposalStatus.REJECTED, store.get("p1")!!.status)
+        assertEquals(2, gateway.calls.size)
+    }
+
+    @Test
+    fun `an interrupted build resumes after the rounds it used and never runs past the limit`() = runTest {
+        // Killed during round 3 of 3: nothing is sent to the bots again.
+        store.insert(proposal(status = ProposalStatus.BUILDING).copy(rounds = 3))
+        val exhausted = dispatcher.dispatch("p1", "builder", "reviewer")
+        assertTrue(exhausted.toString(), exhausted is EvolutionDispatcher.Outcome.Failed)
+        assertTrue(gateway.calls.isEmpty())
+        assertEquals(ProposalStatus.FAILED, store.get("p1")!!.status)
+
+        // Killed during round 2: only round 3 runs, with the findings stored so far.
+        store.insert(
+            proposal(id = "p2", status = ProposalStatus.IN_REVIEW)
+                .copy(rounds = 2, reviewFindings = listOf("handle negative numbers")),
+        )
+        gateway.script("builder", ok(fenced(moduleJson())))
+        gateway.script("reviewer", changes("still wrong"))
+        val last = dispatcher.dispatch("p2", "builder", "reviewer")
+        assertTrue(last.toString(), last is EvolutionDispatcher.Outcome.Failed)
+        assertEquals(2, gateway.calls.size)
+        assertTrue(gateway.calls[0].second.contains("handle negative numbers"))
+        assertEquals(3, store.get("p2")!!.rounds)
     }
 }

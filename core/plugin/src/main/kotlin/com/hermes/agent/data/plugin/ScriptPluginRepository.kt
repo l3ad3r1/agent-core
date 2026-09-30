@@ -137,6 +137,9 @@ class ScriptPluginRepository @Inject constructor(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             validate(manifest)
+            // The local namespace means "built and pinned on this device"; reload trusts it
+            // with overrides, so only installLocal may write it.
+            require(!isLocalSource(sourceUrl)) { "A registry install cannot use a local module source" }
             require(manifest.overrides.isEmpty()) {
                 "Only a module built and approved on this device may override an existing tool"
             }
@@ -185,8 +188,9 @@ class ScriptPluginRepository @Inject constructor(
      * [ScriptPluginManifest.overrides]; those tools are exposed through
      * [overrideCandidates] instead of being registered.
      *
-     * A module that fails to load after install is switched off again and the
-     * failure is returned, so a broken local build never lingers half-enabled.
+     * A module that fails to load after install is switched off again (or, for an
+     * upgrade, the previously installed row is put back) and the failure is
+     * returned, so a broken local build never lingers half-enabled.
      */
     suspend fun installLocal(
         manifestJson: String,
@@ -242,7 +246,14 @@ class ScriptPluginRepository @Inject constructor(
             )
             val failures = reloadEnabled().filter { it.startsWith("${manifest.id}:") }
             if (failures.isNotEmpty()) {
-                setEnabled(manifest.id, false)
+                if (existing != null) {
+                    // An upgrade that does not load puts the version that was there back,
+                    // rather than leaving the module switched off on the broken bytes.
+                    dao.upsert(existing)
+                    reloadEnabled()
+                } else {
+                    setEnabled(manifest.id, false)
+                }
                 throw IllegalStateException(failures.joinToString("; "))
             }
             manifest

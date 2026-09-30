@@ -218,4 +218,33 @@ class ScriptPluginRepositoryLocalInstallTest {
         assertNull(ScriptPluginRepository.pinnedDigest("https://example.com/m.json"))
         assertFalse(ScriptPluginRepository.isLocalSource("https://example.com/m.json"))
     }
+
+    @Test
+    fun `an upgrade that fails to load puts the working version back`() = runTest {
+        val good = manifestJson()
+        repository.installLocal(good, emptySet()).getOrThrow()
+        val broken = ScriptPluginManifest.json.encodeToString(
+            ScriptPluginManifest(
+                id = "evo-greeter",
+                name = "Greeter",
+                version = "2.0.0",
+                tools = listOf(ScriptToolSpec(name = "greet", description = "x")),
+                main = "throw new Error('boom');",
+            ),
+        )
+        assertTrue(repository.installLocal(broken, emptySet()).isFailure)
+        val row = dao.items.getValue("evo-greeter")
+        assertEquals(good, row.manifestJson)
+        assertTrue(row.enabled)
+        assertNotNull("the working version is live again", registry.byName("greet"))
+    }
+
+    @Test
+    fun `a registry install cannot claim the local namespace`() = runTest {
+        val manifest = ScriptPluginManifest.json.decodeFromString<ScriptPluginManifest>(manifestJson(id = "sneaky"))
+        val digest = ScriptModuleDigest.sha256Hex(ScriptPluginManifest.json.encodeToString(manifest))
+        val result = repository.install(manifest, ScriptPluginRepository.localSourceUrl("evolution", digest))
+        assertTrue(result.isFailure)
+        assertNull(dao.items["sneaky"])
+    }
 }

@@ -77,10 +77,25 @@ class EvolutionDispatcher(
 
     private suspend fun run(id: String, builder: String, reviewer: String): Outcome {
         var proposal = store.get(id) ?: return Outcome.Skipped("proposal no longer exists")
-        // A run killed mid-way (process death) left it BUILDING/IN_REVIEW: start over from APPROVED.
+        var findings = emptyList<String>()
+        var previous: String? = null
+        var firstRound = 1
+        // A run killed mid-way (process death, or the OS stopping the worker) left it
+        // BUILDING/IN_REVIEW. The interrupted round counts as used, so a run that keeps
+        // getting killed still ends after maxRounds instead of rebuilding forever.
         if (proposal.status == ProposalStatus.BUILDING || proposal.status == ProposalStatus.IN_REVIEW) {
-            proposal = store.transition(id, ProposalStatus.APPROVED, "Restarting an interrupted build", clock())
+            val used = proposal.rounds.coerceIn(0, maxRounds)
+            if (used >= maxRounds) {
+                val reason = "The build was interrupted in its last round ($used/$maxRounds)"
+                store.transition(id, ProposalStatus.FAILED, reason, clock())
+                    ?: return Outcome.Skipped("the proposal changed")
+                return Outcome.Failed(reason)
+            }
+            proposal = store.transition(id, ProposalStatus.APPROVED, "Resuming an interrupted build", clock())
                 ?: return Outcome.Skipped("could not resume")
+            findings = proposal.reviewFindings
+            previous = proposal.artifact
+            firstRound = used + 1
         }
         if (proposal.status != ProposalStatus.APPROVED) {
             return Outcome.Skipped("only an approved proposal can be sent to the bots (it is ${proposal.status.label})")
@@ -88,15 +103,13 @@ class EvolutionDispatcher(
         if (builder.isEmpty() || reviewer.isEmpty() || !gateway.isConfigured()) {
             val why = "No builder/reviewer bots are set up — connect the desktop gateway and pick both bots in Feature evolution settings" +
                 if (proposal.kind == ProposalKind.APP_CHANGE) ", or file this app change to the self-repair repo directly." else "."
-            store.update(proposal.copy(statusMessage = why, updatedAt = clock()))
+            store.patchIf(id, ProposalStatus.APPROVED) { it.copy(statusMessage = why, updatedAt = clock()) }
             return Outcome.NotConfigured(why)
         }
 
         val target = proposal.targetTool?.let(existingTool)
-        var findings = emptyList<String>()
-        var previous: String? = null
 
-        for (round in 1..maxRounds) {
+        for (round in firstRound..maxRounds) {
             proposal = store.transition(
                 id, ProposalStatus.BUILDING, "Round $round/$maxRounds: builder bot '$builder' is working", clock(),
             ) { it.copy(rounds = round) } ?: return Outcome.Skipped("the proposal changed while it was being built")
@@ -111,7 +124,10 @@ class EvolutionDispatcher(
             if (candidate is Candidate.Rejected) {
                 findings = candidate.findings
                 previous = candidate.artifact
-                store.update(proposal.copy(reviewFindings = findings, testReport = candidate.report, updatedAt = clock()))
+                // Only while still BUILDING: a raw write would resurrect a proposal the user rejected meanwhile.
+                store.patchIf(id, ProposalStatus.BUILDING) {
+                    it.copy(reviewFindings = findings, testReport = candidate.report, updatedAt = clock())
+                } ?: return Outcome.Skipped("the proposal changed while it was being built")
                 Timber.tag(TAG).i("round %d of %s rejected on device: %s", round, id, findings.firstOrNull())
                 continue
             }
@@ -153,7 +169,9 @@ class EvolutionDispatcher(
             }
             findings = verdict.findings.ifEmpty { listOf("Reviewer requested changes without details") }
             previous = candidate.artifact
-            store.update(proposal.copy(reviewVerdict = Verdict.REQUEST_CHANGES, reviewFindings = findings, updatedAt = clock()))
+            store.patchIf(id, ProposalStatus.IN_REVIEW) {
+                it.copy(reviewVerdict = Verdict.REQUEST_CHANGES, reviewFindings = findings, updatedAt = clock())
+            } ?: return Outcome.Skipped("the proposal changed during review")
         }
 
         val reason = "No approved build after $maxRounds rounds"

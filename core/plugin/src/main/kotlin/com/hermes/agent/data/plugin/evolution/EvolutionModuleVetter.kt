@@ -6,6 +6,7 @@ import com.hermes.agent.data.plugin.script.ScriptPluginManifest
 import com.hermes.agent.data.plugin.script.ScriptPluginPermissions
 import com.hermes.agent.domain.skill.SkillGuard
 import com.hermes.agent.domain.tool.ToolDescriptor
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -49,6 +50,12 @@ class EvolutionModuleVetter(
         val raw = runCatching { STRICT.parseToJsonElement(manifestJson).jsonObject }.getOrNull()
         if (raw == null) {
             findings += "Manifest is not a JSON object"
+            return fail()
+        }
+        // The JSON tree keeps the last of two equal keys; a reviewer reading the raw text
+        // may stop at the first. Code the reviewers did not see must not be what runs.
+        duplicateKey(manifestJson)?.let {
+            findings += "Manifest repeats the key \"${it.take(40)}\"; every key may appear once"
             return fail()
         }
         (raw.keys - ALLOWED_KEYS).takeIf { it.isNotEmpty() }?.let {
@@ -116,6 +123,12 @@ class EvolutionModuleVetter(
         }
 
         m.overrides.forEach { name ->
+            // The live wiring only ever shadows first-party tools; say so now rather than
+            // let the user install a fix that would never take effect.
+            if (moduleOwning(name) != null) {
+                findings += "Cannot override '$name': it belongs to another module, not a built-in"
+                return@forEach
+            }
             when (val decision = ToolOverridePolicy.evaluate(name, existingTool(name))) {
                 is ToolOverridePolicy.Decision.Denied -> findings += "Cannot override '$name': ${decision.reason}"
                 ToolOverridePolicy.Decision.Allowed -> {
@@ -205,6 +218,38 @@ class EvolutionModuleVetter(
     }
 
     companion object {
+        /**
+         * The first key that appears twice in one object of [json] (already known to be
+         * valid JSON), decoded, or null. A plain scan: strings are skipped as tokens and
+         * a string is a key when it opens an object entry.
+         */
+        internal fun duplicateKey(json: String): String? {
+            val objects = ArrayDeque<MutableSet<String>?>() // null marks an array
+            var expectKey = false
+            var i = 0
+            while (i < json.length) {
+                when (json[i]) {
+                    '{' -> { objects.addLast(mutableSetOf()); expectKey = true }
+                    '[' -> { objects.addLast(null); expectKey = false }
+                    '}', ']' -> { objects.removeLastOrNull(); expectKey = false }
+                    ',' -> expectKey = objects.lastOrNull() != null
+                    '"' -> {
+                        val start = i
+                        i++
+                        while (i < json.length && json[i] != '"') i += if (json[i] == '\\') 2 else 1
+                        if (expectKey) {
+                            val token = json.substring(start, minOf(i + 1, json.length))
+                            val key = runCatching { STRICT.decodeFromString(String.serializer(), token) }.getOrDefault(token)
+                            if (objects.lastOrNull()?.add(key) == false) return key
+                            expectKey = false
+                        }
+                    }
+                }
+                i++
+            }
+            return null
+        }
+
         const val MAX_MANIFEST_CHARS = 48 * 1024
         const val MAX_SCRIPT_CHARS = 32 * 1024
         const val MAX_TOOLS = 5

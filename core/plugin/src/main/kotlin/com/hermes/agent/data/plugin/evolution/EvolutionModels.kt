@@ -194,6 +194,23 @@ suspend fun EvolutionProposalStore.transition(
     return next
 }
 
+/**
+ * Rewrites [id] with [mutate] only while it is still in [expected]; returns the stored
+ * copy, or null (nothing written) when it moved on. For progress notes written while a
+ * proposal is being worked on: re-reading first means a stale copy never overwrites a
+ * concurrent change such as the user rejecting it.
+ */
+suspend fun EvolutionProposalStore.patchIf(
+    id: String,
+    expected: ProposalStatus,
+    mutate: (EvolutionProposal) -> EvolutionProposal,
+): EvolutionProposal? {
+    val current = get(id)?.takeIf { it.status == expected } ?: return null
+    val next = mutate(current).copy(status = expected)
+    update(next)
+    return next
+}
+
 /** Version history for evolution modules, implemented by the host app. */
 interface EvolutionModuleVersionStore {
     suspend fun versions(moduleId: String): List<EvolutionModuleVersion>
