@@ -67,11 +67,11 @@ class BrowserToolTest {
     }
 
     @Test
-    fun `links are followed freely, typing and buttons ask first`() = runTest {
+    fun `every click and typing asks first, reading does not`() = runTest {
         engine.page = shop
         tool.execute(args("action" to "open", "url" to "https://shop.example/search"))
 
-        assertFalse(tool.requiresConfirmation(args("action" to "click", "ref" to "e3")))
+        assertTrue("a page-made link can still act", tool.requiresConfirmation(args("action" to "click", "ref" to "e3")))
         assertTrue("a button can submit or buy", tool.requiresConfirmation(args("action" to "click", "ref" to "e4")))
         assertTrue(tool.requiresConfirmation(args("action" to "type", "ref" to "e1", "text" to "kettle")))
         assertTrue("an unknown ref is not waved through", tool.requiresConfirmation(args("action" to "click", "ref" to "e99")))
