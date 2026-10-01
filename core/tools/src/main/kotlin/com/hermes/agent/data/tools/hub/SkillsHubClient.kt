@@ -28,11 +28,18 @@ class SkillsHubClient @Inject constructor(
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
+    data class SearchResult(
+        val skills: List<HubSkillMeta>,
+        val errors: List<String>,
+        val totalTaps: Int,
+    )
+
     suspend fun searchSkills(
         query: String,
         taps: List<SkillTap> = SkillTap.DEFAULT_TAPS,
-    ): List<HubSkillMeta> = withContext(dispatchers.io) {
+    ): SearchResult = withContext(dispatchers.io) {
         val results = mutableListOf<HubSkillMeta>()
+        val errors = mutableListOf<String>()
         val lowerQuery = query.trim().lowercase()
 
         for (tap in taps) {
@@ -46,9 +53,10 @@ class SkillsHubClient @Inject constructor(
                 }
             } catch (t: Throwable) {
                 Timber.tag("SkillsHubClient").w(t, "Failed to list skills in tap %s", tap.repo)
+                errors.add("${tap.repo} (${t.message})")
             }
         }
-        results.distinctBy { it.identifier }
+        SearchResult(results.distinctBy { it.identifier }, errors, taps.size)
     }
 
     suspend fun listSkillsInTap(tap: SkillTap): List<HubSkillMeta> = withContext(dispatchers.io) {
@@ -62,7 +70,7 @@ class SkillsHubClient @Inject constructor(
         val resp = httpClient.newCall(req).execute()
         if (!resp.isSuccessful) {
             Timber.tag("SkillsHubClient").w("GitHub API HTTP %d for %s", resp.code, apiUrl)
-            return@withContext emptyList()
+            throw java.io.IOException("HTTP ${resp.code}")
         }
 
         val body = resp.body?.string().orEmpty()
