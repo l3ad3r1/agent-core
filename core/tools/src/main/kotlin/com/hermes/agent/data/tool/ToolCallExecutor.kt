@@ -84,10 +84,15 @@ class ToolCallExecutor @Inject constructor(
                 output = redactor.redact(result.output),
                 errorMessage = result.errorMessage?.let { redactor.redact(it) },
             )
-        }.getOrDefault(result)
+        }.getOrElse { error ->
+            if (error is CancellationException) throw error
+            // Fail closed: unredacted output must not reach the model or the result store.
+            return ToolResult.error("Tool output could not be redacted safely.")
+        }
         // Too long to hand over whole: the model gets a preview and pages through the
         // rest with read_tool_result, instead of the context overflowing or the rest being lost.
-        val limit = tool.descriptor.maxResultSizeChars
+        val limit = (tool as? ToolResultPreview)?.resultPreviewLimit(call.arguments)
+            ?: tool.descriptor.maxResultSizeChars
         return if (limit > 0 && redacted.output.length > limit) {
             redacted.copy(output = resultStore.overflow(call.name, redacted.output, limit))
         } else {

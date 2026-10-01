@@ -1,5 +1,6 @@
 package com.hermes.agent.data.tools
 
+import com.hermes.agent.data.tool.ToolResultPreview
 import com.hermes.agent.data.tool.ToolResultStore
 import com.hermes.agent.domain.tool.Tool
 import com.hermes.agent.domain.tool.ToolDescriptor
@@ -25,15 +26,16 @@ import dagger.multibindings.IntoSet
 
 /**
  * Fetches a URL and returns the page's readable text content.
- * Strips HTML tags, collapses whitespace, and truncates to a sensible limit
- * so the LLM gets clean context without token-bloat.
+ * Extracts readable article text and links. Execution pages large results after
+ * redaction so the model can recover the remainder without losing content.
  */
 @Singleton
 class WebFetchTool @Inject constructor(
     okHttpClient: OkHttpClient,
     networkGuard: PublicNetworkGuard,
-    private val resultStore: ToolResultStore = ToolResultStore(),
-) : Tool {
+    // Kept for existing callers; paging now happens in the executor, after redaction.
+    @Suppress("UNUSED_PARAMETER") resultStore: ToolResultStore = ToolResultStore(),
+) : Tool, ToolResultPreview {
 
     /** The URL comes from the model, so it may only reach the public internet. */
     private val okHttpClient: OkHttpClient = networkGuard.restrict(okHttpClient)
@@ -60,9 +62,13 @@ class WebFetchTool @Inject constructor(
         ),
         category = "information",
         capabilities = setOf("web"),
-        // The tool pages long results itself at max_chars; the executor must not cut again.
+        // The executor previews at max_chars (resultPreviewLimit) and pages the rest after redaction.
         maxResultSizeChars = 33_000,
     )
+
+    override fun resultPreviewLimit(arguments: Map<String, JsonElement>): Int =
+        (arguments["max_chars"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+            ?.coerceIn(500, 32_000) ?: 8_000
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult = withContext(Dispatchers.IO) {
         val start = System.currentTimeMillis()
@@ -71,9 +77,6 @@ class WebFetchTool @Inject constructor(
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             return@withContext ToolResult.error("url must start with http:// or https://")
         }
-        val maxChars = (arguments["max_chars"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
-            ?.coerceIn(500, 32_000) ?: 8_000
-
         return@withContext try {
             val request = Request.Builder()
                 .url(url)
@@ -96,10 +99,9 @@ class WebFetchTool @Inject constructor(
             val text = render(fetched.body, fetched.contentType, fetched.finalUrl)
             if (text.isBlank()) return@withContext ToolResult.error("No readable content found at $url")
 
-            // A page past max_chars is kept whole; the model reads on with read_tool_result.
-            val full = "URL: $url\n$text"
-            val output = if (full.length <= maxChars) full else resultStore.overflow(descriptor.name, full, maxChars)
-            ToolResult.ok(output, System.currentTimeMillis() - start)
+            // Returned whole: the executor redacts it, then keeps anything past max_chars
+            // for read_tool_result, so a stored page is never unredacted.
+            ToolResult.ok("URL: $url\n$text", System.currentTimeMillis() - start)
         } catch (e: Exception) {
             Timber.e(e, "WebFetchTool failed: $url")
             ToolResult.error("Failed to fetch $url: ${e.message}")

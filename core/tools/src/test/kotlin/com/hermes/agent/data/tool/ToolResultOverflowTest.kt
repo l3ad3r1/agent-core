@@ -91,6 +91,40 @@ class ToolResultOverflowTest {
     }
 
     @Test
+    fun `a redaction failure never exposes or stores the raw tool output`() = runTest {
+        val registry = ToolRegistryImpl()
+        registry.register(object : Tool {
+            override val descriptor = ToolDescriptor("secret", "stub", emptyList(), maxResultSizeChars = 100)
+            override suspend fun execute(arguments: Map<String, JsonElement>) = ToolResult.ok("sensitive".repeat(1_000))
+        })
+        val failedRedactor = mockk<OutputRedactor>()
+        coEvery { failedRedactor.redact(any()) } throws IllegalStateException("credentials unavailable")
+
+        val result = ToolCallExecutor(registry, failedRedactor, store).execute(ToolCall("c", "secret", emptyMap()))
+
+        assertFalse(result.success)
+        assertEquals("", result.output)
+        assertEquals("Tool output could not be redacted safely.", result.errorMessage)
+    }
+
+    @Test
+    fun `unavailable configured credentials fail closed before paging`() = runTest {
+        val repo = mockk<SettingsRepository>()
+        coEvery { repo.current() } throws IllegalStateException("settings unavailable")
+        val registry = ToolRegistryImpl()
+        registry.register(object : Tool {
+            override val descriptor = ToolDescriptor("secret", "stub", emptyList(), maxResultSizeChars = 100)
+            override suspend fun execute(arguments: Map<String, JsonElement>) = ToolResult.ok("arbitrary-password".repeat(1_000))
+        })
+
+        val result = ToolCallExecutor(registry, OutputRedactor(repo), store).execute(ToolCall("c", "secret", emptyMap()))
+
+        assertFalse(result.success)
+        assertEquals("", result.output)
+        assertEquals("Tool output could not be redacted safely.", result.errorMessage)
+    }
+
+    @Test
     fun `an unknown or expired id and a bad offset say what to do`() = runTest {
         val unknown = reader.execute(mapOf("result_id" to JsonPrimitive("res_missing")))
         assertFalse(unknown.success)
@@ -109,6 +143,25 @@ class ToolResultOverflowTest {
         }
         assertEquals(null, store.get(ids.first()))
         assertTrue(store.get(ids.last()) != null)
+    }
+
+    @Test
+    fun `memory pressure evicts as many old results as necessary`() {
+        val older = (1..3).map {
+            footerId.find(store.overflow("big", "a".repeat(1_000_000), 1_000))!!.groupValues[1]
+        }
+        val latest = footerId.find(store.overflow("big", "b".repeat(3_500_000), 1_000))!!.groupValues[1]
+
+        older.forEach { assertEquals(null, store.get(it)) }
+        assertTrue(store.get(latest) != null)
+    }
+
+    @Test
+    fun `an oversized result does not advertise an unavailable stored id`() {
+        val preview = store.overflow("big", "x".repeat(ToolResultStore.MAX_TOTAL_CHARS.toInt() + 1), 1_000)
+
+        assertFalse(preview.contains("result_id"))
+        assertTrue(preview.contains("remainder was not saved"))
     }
 
     @Test
