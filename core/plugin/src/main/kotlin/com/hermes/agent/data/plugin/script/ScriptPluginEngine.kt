@@ -64,6 +64,8 @@ class ScriptPluginEngine @Inject constructor() {
         val tools: MutableList<RegisteredTool> = mutableListOf(),
         /** Serializes calls into this module's scope, and only this module's. */
         val lock: Mutex = Mutex(),
+        /** Host capabilities are usable only inside an authorized tool invocation. */
+        var executing: Boolean = false,
     )
 
     private val mutex = Mutex()
@@ -142,11 +144,13 @@ class ScriptPluginEngine @Inject constructor() {
             try {
                 val cx = factory.enterContext()
                 try {
+                    plugin.executing = true
                     RunGuard.begin(cx)
                     val argsObject = arguments.toJsObject(cx, plugin.scope)
                     val result = tool.fn.call(cx, plugin.scope, plugin.scope, arrayOf<Any>(argsObject))
                     Result.success(result.toOutputString())
                 } finally {
+                    plugin.executing = false
                     RunGuard.end(cx)
                     Context.exit()
                 }
@@ -199,6 +203,7 @@ class ScriptPluginEngine @Inject constructor() {
             "get",
             object : BaseFunction() {
                 override fun call(cx: Context, scope: Scriptable, thisObj: Scriptable?, args: Array<out Any>?): Any {
+                    requireExecution(loaded)
                     requirePermission(permissions, ScriptPluginPermissions.NETWORK)
                     val url = args?.getOrNull(0)?.let { Context.toString(it) } ?: return ""
                     return host?.httpGet(pluginId, url, hosts) ?: ""
@@ -214,6 +219,7 @@ class ScriptPluginEngine @Inject constructor() {
             "read",
             object : BaseFunction() {
                 override fun call(cx: Context, scope: Scriptable, thisObj: Scriptable?, args: Array<out Any>?): Any {
+                    requireExecution(loaded)
                     requirePermission(permissions, ScriptPluginPermissions.DATA_READ)
                     val collection = args?.getOrNull(0)?.let { Context.toString(it) } ?: return ""
                     val query = args.getOrNull(1)?.let { Context.toString(it) } ?: ""
@@ -226,6 +232,7 @@ class ScriptPluginEngine @Inject constructor() {
             "write",
             object : BaseFunction() {
                 override fun call(cx: Context, scope: Scriptable, thisObj: Scriptable?, args: Array<out Any>?): Any {
+                    requireExecution(loaded)
                     requirePermission(permissions, ScriptPluginPermissions.DATA_WRITE)
                     val collection = args?.getOrNull(0)?.let { Context.toString(it) } ?: return ""
                     val payload = args.getOrNull(1)?.let { Context.toString(it) } ?: ""
@@ -239,6 +246,10 @@ class ScriptPluginEngine @Inject constructor() {
     }
 
     /** Throws a JS-catchable error when a module calls an API it was not granted. */
+    private fun requireExecution(plugin: LoadedPlugin) {
+        check(plugin.executing) { "Host data and network APIs cannot be used during module initialization" }
+    }
+
     private fun requirePermission(granted: Set<String>, permission: String) {
         if (permission !in granted) {
             throw IllegalStateException(
