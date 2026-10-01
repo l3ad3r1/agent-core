@@ -56,6 +56,20 @@ class ToolCallerStopTest {
         assertEquals("nothing after the finished call is generated", 3, piecesRead)
     }
 
+    @Test
+    fun `additional calls in the same generated piece are discarded`() = runTest {
+        val manager = managerReplying(
+            "<start_function_call>call:device_control{action:<escape>flashlight<escape>,enabled:true}<end_function_call>" +
+                "<start_function_call>call:invented_tool{}<end_function_call>",
+        )
+        val response = ToolCallerLlmProvider(manager).completeWithTools(
+            listOf(LlmMessage("user", "Turn on the flashlight")),
+            listOf(torch),
+        )
+        assertEquals(listOf("device_control"), response.toolCalls.map { it.name })
+        assertEquals(JsonPrimitive(true), response.toolCalls.single().arguments["enabled"])
+    }
+
     private val media = ToolDescriptor(
         name = "media_control",
         description = "Play or pause media, skip tracks, change the volume.",

@@ -135,7 +135,7 @@ private fun parseOneCall(region: String): Pair<ToolCall?, Int> {
     var index = 0
     // Seen on device: `<start_function_call>-call:device_settings{...}`. Stray punctuation
     // before the keyword made the whole call read as an unknown tool named "-call:...".
-    while (index < region.length && (region[index].isWhitespace() || region[index] in "-:*>")) index++
+    while (index < region.length && (region[index].isWhitespace() || region[index] in "-:*>•")) index++
     if (region.startsWith("call:", index)) index += "call:".length
     while (index < region.length && (region[index] == ' ' || region[index] == '\t')) index++
 
