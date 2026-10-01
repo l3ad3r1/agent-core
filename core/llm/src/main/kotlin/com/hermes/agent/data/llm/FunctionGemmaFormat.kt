@@ -163,13 +163,21 @@ private fun call(name: String, arguments: Map<String, JsonElement>) = ToolCall(
 /** Index of the `}` closing the `{` at [open], or the end of the string. */
 private fun matchingBrace(text: String, open: Int): Int {
     var depth = 0
+    var inEscape = false
     var index = open
     while (index < text.length) {
-        when (text[index]) {
-            '{' -> depth++
-            '}' -> {
-                depth--
-                if (depth == 0) return index
+        if (text.startsWith(ESCAPE, index)) {
+            inEscape = !inEscape
+            index += ESCAPE.length
+            continue
+        }
+        if (!inEscape) {
+            when (text[index]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return index
+                }
             }
         }
         index++
