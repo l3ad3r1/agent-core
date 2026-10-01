@@ -176,6 +176,39 @@ class ScriptPluginRepositoryTest {
     }
 
     @Test
+    fun `a failed registry update preserves the approved manifest grants and live tool`() = runTest {
+        val dao = FakeScriptPluginDao()
+        val engine = ScriptPluginEngine()
+        val registry = FakeToolRegistry()
+        val repository = ScriptPluginRepository(dao, engine, registry, FakeScriptPluginHost())
+        val good = sampleManifest("update-plugin", "update_tool")
+        repository.install(good, "https://example.com/v1.json").getOrThrow()
+        val previous = dao.getById(good.id)
+
+        val result = repository.install(
+            good.copy(version = "2.0.0", permissions = listOf("data.write"), main = "throw new Error('broken');"),
+            "https://example.com/v2.json",
+        )
+
+        assertTrue(result.isFailure)
+        assertEquals(previous, dao.getById(good.id))
+        assertEquals("result", registry.byName("update_tool")?.execute(emptyMap())?.output)
+    }
+
+    @Test
+    fun `a failed first registry install leaves no persisted row or tool`() = runTest {
+        val dao = FakeScriptPluginDao()
+        val registry = FakeToolRegistry()
+        val repository = ScriptPluginRepository(dao, ScriptPluginEngine(), registry, FakeScriptPluginHost())
+
+        val result = repository.install(sampleManifest().copy(main = "throw new Error('broken');"), "https://example.com/m.json")
+
+        assertTrue(result.isFailure)
+        assertTrue(dao.items.isEmpty())
+        assertTrue(registry.all().isEmpty())
+    }
+
+    @Test
     fun `observeInstalled reflects changes`() = runTest {
         val dao = FakeScriptPluginDao()
         val engine = ScriptPluginEngine()
