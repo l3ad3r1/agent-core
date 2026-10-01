@@ -2,6 +2,13 @@ package com.hermes.agent.data.llm
 
 import com.hermes.agent.domain.credentials.KeyStatus
 import com.hermes.agent.domain.credentials.PoolRotationStrategy
+import com.hermes.agent.domain.credentials.ProviderKeyEntry
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -65,5 +72,52 @@ class CredentialPoolManagerTest {
         val keys = poolManager.getKeysForProvider("deepseek")
         assertEquals(KeyStatus.DEAD, keys.first().keyStatus)
         assertEquals("sk-fallback", poolManager.getActiveKey("deepseek", fallbackKey = "sk-fallback"))
+    }
+
+    @Test
+    fun `concurrent provider updates publish state without nested list locks`() {
+        poolManager.addKey("a", "key-a")
+        poolManager.addKey("b", "key-b")
+        val field = CredentialPoolManager::class.java.getDeclaredField("providerPools")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val pools = field.get(poolManager) as ConcurrentHashMap<String, MutableList<ProviderKeyEntry>>
+        val barrier = CyclicBarrier(2)
+        for (provider in listOf("a", "b")) {
+            pools[provider] = BarrierList(pools.getValue(provider).toMutableList(), barrier)
+        }
+        val completed = CountDownLatch(2)
+        val failures = CopyOnWriteArrayList<Throwable>()
+        for (provider in listOf("a", "b")) {
+            Thread {
+                try {
+                    poolManager.reportKeySuccess(provider, "key-$provider")
+                } catch (failure: Throwable) {
+                    failures.add(failure)
+                } finally {
+                    completed.countDown()
+                }
+            }.apply { isDaemon = true; start() }
+        }
+        assertTrue("updates deadlocked while publishing provider state", completed.await(5, TimeUnit.SECONDS))
+        assertTrue(failures.toString(), failures.isEmpty())
+        assertEquals(1L, poolManager.getKeysForProvider("a").single().totalRequests)
+        assertEquals(1L, poolManager.getKeysForProvider("b").single().totalRequests)
+    }
+
+    /** Both mutations reach their list traversal while still holding their own monitor. */
+    private class BarrierList(
+        private val entries: MutableList<ProviderKeyEntry>,
+        private val barrier: CyclicBarrier,
+    ) : AbstractMutableList<ProviderKeyEntry>() {
+        private val firstRead = AtomicBoolean(true)
+        override val size: Int get() = entries.size
+        override fun get(index: Int): ProviderKeyEntry {
+            if (firstRead.compareAndSet(true, false)) barrier.await(2, TimeUnit.SECONDS)
+            return entries[index]
+        }
+        override fun set(index: Int, element: ProviderKeyEntry): ProviderKeyEntry = entries.set(index, element)
+        override fun add(index: Int, element: ProviderKeyEntry) = entries.add(index, element)
+        override fun removeAt(index: Int): ProviderKeyEntry = entries.removeAt(index)
     }
 }
