@@ -39,6 +39,15 @@ data class ScriptPluginManifest(
      */
     val hosts: List<String> = emptyList(),
     val tools: List<ScriptToolSpec> = emptyList(),
+    /**
+     * Names of existing tools this module's same-named tools are meant to stand in
+     * for. Only honoured for a module installed locally through
+     * [com.hermes.agent.data.plugin.ScriptPluginRepository.installLocal] — a registry
+     * install that declares any is refused. The repository never replaces a tool
+     * itself: it hands these to the host app as override candidates, and the app
+     * decides (by its own policy) whether to shadow the built-in with them.
+     */
+    val overrides: List<String> = emptyList(),
     /** The plugin's JavaScript source. */
     val main: String = "",
 ) {
