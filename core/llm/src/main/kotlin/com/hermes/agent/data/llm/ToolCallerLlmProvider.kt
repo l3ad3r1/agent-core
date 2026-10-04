@@ -137,7 +137,12 @@ class ToolCallerLlmProvider @Inject constructor(
             .collect { raw.append(it) }
         val elapsedMs = System.currentTimeMillis() - startedAt
 
-        val answer = raw.toString().trim()
+        val completeCallEnd = raw.indexOf(CALL_CLOSE)
+        val answer = if (completeCallEnd >= 0) {
+            raw.substring(0, completeCallEnd + CALL_CLOSE.length).trim()
+        } else {
+            raw.toString().trim()
+        }
 
         // What the model actually wrote. Without this an abstain says only that
         // no call was found, which reads the same whether the model declined,

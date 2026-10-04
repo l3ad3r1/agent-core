@@ -40,8 +40,8 @@ import javax.inject.Singleton
  * back. Each result is a snapshot: the page's readable text and its numbered
  * interactive elements.
  *
- * Following a link needs no approval; typing, and clicking anything that is
- * not a link (a button can submit a form or buy something), asks the user.
+ * Opening a URL and reading needs no approval; every click and every typing
+ * asks the user, since the page itself decides what a "link" does.
  * The session closes after [IDLE_CLOSE_MS] without use.
  */
 @Singleton
@@ -97,9 +97,9 @@ class BrowserTool @Inject constructor(
 
     override fun requiresConfirmation(arguments: Map<String, JsonElement>): Boolean =
         when (arguments.string("action")) {
-            "type" -> true
-            // Unknown ref: the call will fail anyway, but it is not waved through.
-            "click" -> lastElements[arguments.string("ref")]?.kind != "link"
+            // The page decides what looks like a link (an <a> can carry an onclick that
+            // buys or posts), so no click is waved through.
+            "type", "click" -> true
             else -> false
         }
 

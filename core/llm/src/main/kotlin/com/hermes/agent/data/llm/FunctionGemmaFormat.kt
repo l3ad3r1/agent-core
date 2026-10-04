@@ -135,7 +135,7 @@ private fun parseOneCall(region: String): Pair<ToolCall?, Int> {
     var index = 0
     // Seen on device: `<start_function_call>-call:device_settings{...}`. Stray punctuation
     // before the keyword made the whole call read as an unknown tool named "-call:...".
-    while (index < region.length && (region[index].isWhitespace() || region[index] in "-:*>")) index++
+    while (index < region.length && (region[index].isWhitespace() || region[index] in "-:*>•")) index++
     if (region.startsWith("call:", index)) index += "call:".length
     while (index < region.length && (region[index] == ' ' || region[index] == '\t')) index++
 
@@ -163,13 +163,21 @@ private fun call(name: String, arguments: Map<String, JsonElement>) = ToolCall(
 /** Index of the `}` closing the `{` at [open], or the end of the string. */
 private fun matchingBrace(text: String, open: Int): Int {
     var depth = 0
+    var inEscape = false
     var index = open
     while (index < text.length) {
-        when (text[index]) {
-            '{' -> depth++
-            '}' -> {
-                depth--
-                if (depth == 0) return index
+        if (text.startsWith(ESCAPE, index)) {
+            inEscape = !inEscape
+            index += ESCAPE.length
+            continue
+        }
+        if (!inEscape) {
+            when (text[index]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return index
+                }
             }
         }
         index++

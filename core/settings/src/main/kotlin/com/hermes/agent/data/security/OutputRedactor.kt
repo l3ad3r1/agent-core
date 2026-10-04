@@ -32,8 +32,10 @@ class OutputRedactor @Inject constructor(
         var out = text
 
         // Layer 1: literal configured secrets.
-        val settings = runCatching { settingsRepository.current() }.getOrNull()
-        if (settings != null) {
+        // Without configured credentials, heuristic-only redaction can leak arbitrary secrets.
+        // Callers must fail closed if settings cannot be read; cancellation also propagates.
+        val settings = settingsRepository.current()
+        run {
             val configuredSecrets = mutableListOf<Pair<String, String>>()
             if (settings.cloudApiKey.isNotBlank()) configuredSecrets += settings.cloudApiKey to "cloud-api-key"
             if (settings.auxApiKey.isNotBlank()) configuredSecrets += settings.auxApiKey to "aux-api-key"

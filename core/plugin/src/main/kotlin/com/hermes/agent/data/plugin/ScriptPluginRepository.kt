@@ -14,6 +14,7 @@ import com.hermes.agent.data.plugin.script.ScriptPluginTool
 import com.hermes.agent.domain.tool.Tool
 import com.hermes.agent.domain.tool.ToolRegistry
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +29,7 @@ import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Installs, enables, and loads script modules.
@@ -129,13 +131,15 @@ class ScriptPluginRepository @Inject constructor(
 
     /**
      * Persists [manifest] as installed, granting exactly the permissions it
-     * declared and the user approved, then reloads the engine.
+     * declared and the user approved, then reloads the engine. An update that
+     * does not load puts the previous version back; a first install that does not
+     * load is removed.
      */
     suspend fun install(
         manifest: ScriptPluginManifest,
         sourceUrl: String,
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        installCatching {
             validate(manifest)
             // The local namespace means "built and pinned on this device"; reload trusts it
             // with overrides, so only installLocal may write it.
@@ -154,7 +158,7 @@ class ScriptPluginRepository @Inject constructor(
             }) {
                 "Module tool name conflicts with an existing tool"
             }
-            dao.upsert(
+            persistAndReload(
                 ScriptPluginEntity(
                     id = manifest.id,
                     name = manifest.name,
@@ -166,9 +170,9 @@ class ScriptPluginRepository @Inject constructor(
                     enabled = true,
                     sourceUrl = sourceUrl,
                 ),
+                previous = dao.getById(manifest.id),
+                onFirstInstallFailure = { dao.delete(manifest.id) },
             )
-            reloadEnabled()
-            Unit
         }
     }
 
@@ -198,7 +202,7 @@ class ScriptPluginRepository @Inject constructor(
         source: String = SOURCE_EVOLUTION,
         expectedSha256: String? = null,
     ): Result<ScriptPluginManifest> = withContext(Dispatchers.IO) {
-        runCatching {
+        installCatching {
             require(LOCAL_SOURCE_NAME.matches(source)) { "Invalid local module source '$source'" }
             require(manifestJson.length <= MAX_LOCAL_MANIFEST_CHARS) {
                 "Local module manifest is larger than $MAX_LOCAL_MANIFEST_CHARS characters"
@@ -228,7 +232,7 @@ class ScriptPluginRepository @Inject constructor(
             ) { "Module tool name conflicts with an existing tool" }
 
             val digest = ScriptModuleDigest.sha256Hex(manifestJson)
-            dao.upsert(
+            persistAndReload(
                 ScriptPluginEntity(
                     id = manifest.id,
                     name = manifest.name,
@@ -243,22 +247,42 @@ class ScriptPluginRepository @Inject constructor(
                     enabled = true,
                     sourceUrl = localSourceUrl(source, digest),
                 ),
+                // An upgrade that does not load puts the version that was there back,
+                // rather than leaving the module switched off on the broken bytes.
+                previous = existing,
+                onFirstInstallFailure = { dao.setEnabled(manifest.id, false) },
             )
-            val failures = reloadEnabled().filter { it.startsWith("${manifest.id}:") }
-            if (failures.isNotEmpty()) {
-                if (existing != null) {
-                    // An upgrade that does not load puts the version that was there back,
-                    // rather than leaving the module switched off on the broken bytes.
-                    dao.upsert(existing)
-                    reloadEnabled()
-                } else {
-                    setEnabled(manifest.id, false)
-                }
-                throw IllegalStateException(failures.joinToString("; "))
-            }
             manifest
         }
     }
+
+    /**
+     * Stores [entity] and reloads. If the module then fails to load, or the caller
+     * is cancelled mid-reload, [previous] is put back (or [onFirstInstallFailure]
+     * runs) and the runtime reloaded before the failure propagates, so a broken or
+     * interrupted install never lingers half-applied.
+     */
+    private suspend fun persistAndReload(
+        entity: ScriptPluginEntity,
+        previous: ScriptPluginEntity?,
+        onFirstInstallFailure: suspend () -> Unit,
+    ) {
+        try {
+            dao.upsert(entity)
+            val failures = reloadEnabled().filter { it.startsWith("${entity.id}:") }
+            check(failures.isEmpty()) { failures.joinToString("; ") }
+        } catch (failure: Throwable) {
+            withContext(NonCancellable) {
+                if (previous != null) dao.upsert(previous) else onFirstInstallFailure()
+                reloadEnabled()
+            }
+            throw failure
+        }
+    }
+
+    /** [runCatching] that lets cancellation propagate instead of becoming a failed [Result]. */
+    private inline fun <T> installCatching(block: () -> T): Result<T> =
+        runCatching(block).onFailure { if (it is CancellationException) throw it }
 
     suspend fun setEnabled(id: String, enabled: Boolean) {
         dao.setEnabled(id, enabled)
@@ -322,6 +346,7 @@ class ScriptPluginRepository @Inject constructor(
                 )
             }.onFailure {
                 Timber.tag(TAG).w(it, "Could not prepare module %s", entity.id)
+                refused += "${entity.id}: ${it.message ?: "could not prepare module"}"
             }.getOrNull()
         }
 
@@ -336,6 +361,9 @@ class ScriptPluginRepository @Inject constructor(
             // Only publish a tool the script actually registered: a manifest may
             // declare a tool whose registerTool call never ran.
             val live = engine.registeredToolNames(manifest.id).toSet()
+            manifest.tools.filter { it.name !in live }.forEach {
+                failures += "${manifest.id}: Tool '${it.name}' was not registered by the script"
+            }
             // Overrides are only ever honoured for a module installed locally.
             val overriding = if (isLocalSource(entity.sourceUrl)) manifest.overrides.toSet() else emptySet()
             manifest.tools.filter { it.name in live }.forEach { spec ->

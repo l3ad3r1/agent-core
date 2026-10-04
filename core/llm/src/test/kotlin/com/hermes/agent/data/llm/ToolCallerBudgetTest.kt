@@ -83,4 +83,12 @@ class ToolCallerBudgetTest {
 
         assertEquals(tools, toolsWithinBudget(tools, MAX_TOOL_CALLER_DECLARATION_CHARS))
     }
+
+    @Test
+    fun `a declaration too large for the budget is not truncated into an invalid schema`() {
+        val first = tool(1)
+        val budget = renderFunctionDeclarations(listOf(first)).length - 1
+
+        assertTrue(toolsWithinBudget(listOf(first, tool(2)), budget).isEmpty())
+    }
 }

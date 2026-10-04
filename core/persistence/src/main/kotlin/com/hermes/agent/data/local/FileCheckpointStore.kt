@@ -54,12 +54,12 @@ class FileCheckpointStore(
         val id = "chk_${timestamp}_${UUID.randomUUID().toString().take(8)}"
         val content = if (file.exists() && file.isFile) {
             try {
-                file.readText(Charsets.UTF_8)
+                file.readBytes()
             } catch (e: IOException) {
-                ""
+                byteArrayOf()
             }
         } else {
-            ""
+            byteArrayOf()
         }
 
         val formattedTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(timestamp))
@@ -67,7 +67,7 @@ class FileCheckpointStore(
         val metaFile = File(checkpointDir, "$id.meta")
 
         try {
-            snapshotFile.writeText(content, Charsets.UTF_8)
+            snapshotFile.writeBytes(content)
             metaFile.writeText("${file.absolutePath}\n$timestamp\n$formattedTime", Charsets.UTF_8)
         } catch (e: IOException) {
             // Ignore write failures to avoid breaking the tool if checkpoint dir has issues
@@ -92,7 +92,8 @@ class FileCheckpointStore(
             val filePath = metaLines.getOrNull(0) ?: return null
             val timestamp = metaLines.getOrNull(1)?.toLongOrNull() ?: 0L
             val formattedTime = metaLines.getOrNull(2) ?: ""
-            val content = snapshotFile.readText(Charsets.UTF_8)
+            val bytes = snapshotFile.readBytes()
+            val content = bytes.toString(Charsets.UTF_8)
 
             FileCheckpoint(
                 id = id,
@@ -100,6 +101,7 @@ class FileCheckpointStore(
                 timestamp = timestamp,
                 formattedTime = formattedTime,
                 content = content,
+                sizeBytes = bytes.size.toLong(),
             )
         } catch (e: Exception) {
             null
@@ -133,7 +135,7 @@ class FileCheckpointStore(
 
         return try {
             targetFile.parentFile?.mkdirs()
-            targetFile.writeText(checkpoint.content, Charsets.UTF_8)
+            targetFile.writeBytes(File(checkpointDir, "$id.snapshot").readBytes())
             Result.success("Restored '${targetFile.name}' to checkpoint $id (${checkpoint.formattedTime})")
         } catch (e: Exception) {
             Result.failure(e)

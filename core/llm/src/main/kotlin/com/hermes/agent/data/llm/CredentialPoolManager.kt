@@ -32,7 +32,7 @@ class CredentialPoolManager @Inject constructor() {
     ): ProviderKeyEntry {
         val normalizedProvider = normalizeProvider(provider)
         val list = providerPools.getOrPut(normalizedProvider) { mutableListOf() }
-        synchronized(list) {
+        val entry = synchronized(list) {
             val existing = list.find { it.apiKey == apiKey }
             if (existing != null) return existing
 
@@ -43,9 +43,10 @@ class CredentialPoolManager @Inject constructor() {
                 alias = alias,
             )
             list.add(entry)
-            syncState()
-            return entry
+            entry
         }
+        syncState()
+        return entry
     }
 
     fun removeKey(provider: String, keyId: String): Boolean {
@@ -141,9 +142,9 @@ class CredentialPoolManager @Inject constructor() {
                     (finalCooldown / 1000),
                     failures,
                 )
-                syncState()
             }
         }
+        syncState()
     }
 
     fun reportKeySuccess(provider: String, apiKey: String) {
@@ -160,9 +161,9 @@ class CredentialPoolManager @Inject constructor() {
                     totalRequests = entry.totalRequests + 1,
                     lastUsedAtMs = now,
                 )
-                syncState()
             }
         }
+        syncState()
     }
 
     private fun normalizeProvider(provider: String): String =

@@ -125,6 +125,31 @@ class FunctionGemmaFormatTest {
     }
 
     @Test
+    fun `unbalanced braces inside strings preserve the full value and later arguments`() {
+        for (text in listOf("Keep } and the rest", "Keep { and the rest")) {
+            val (leftover, calls) = parseFunctionGemmaCalls(
+                "<start_function_call>call:notes{content:<escape>$text<escape>," +
+                    "title:<escape>Example<escape>}<end_function_call>",
+            )
+            assertEquals("", leftover)
+            assertEquals(text, calls.single().arguments["content"]?.jsonPrimitive?.content)
+            assertEquals("Example", calls.single().arguments["title"]?.jsonPrimitive?.content)
+        }
+    }
+
+    @Test
+    fun `nested objects ignore braces inside their string values`() {
+        val (_, calls) = parseFunctionGemmaCalls(
+            "<start_function_call>call:x{opts:{text:<escape>A } literal<escape>,enabled:true}," +
+                "tags:[<escape>{<escape>,<escape>}<escape>]}<end_function_call>",
+        )
+        val opts = calls.single().arguments["opts"] as JsonObject
+        assertEquals("A } literal", opts["text"]?.jsonPrimitive?.content)
+        assertEquals(true, opts["enabled"]?.jsonPrimitive?.booleanOrNull)
+        assertEquals(listOf(JsonPrimitive("{"), JsonPrimitive("}")), calls.single().arguments["tags"] as JsonArray)
+    }
+
+    @Test
     fun `numbers parse as numbers`() {
         val (_, calls) = parseFunctionGemmaCalls(
             "<start_function_call>call:vibrate{duration_ms:500}<end_function_call>",

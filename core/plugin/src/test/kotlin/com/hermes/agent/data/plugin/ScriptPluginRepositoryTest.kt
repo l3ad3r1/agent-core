@@ -10,6 +10,12 @@ import com.hermes.agent.data.plugin.script.ScriptPluginHost
 import com.hermes.agent.data.plugin.script.ScriptPluginManifest
 import com.hermes.agent.data.plugin.script.ScriptToolSpec
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -37,6 +43,7 @@ class ScriptPluginRepositoryTest {
     private class FakeScriptPluginDao : ScriptPluginDao {
         val items = mutableMapOf<String, ScriptPluginEntity>()
         val flow = MutableStateFlow<List<ScriptPluginEntity>>(emptyList())
+        var beforeReadEnabled: suspend () -> Unit = {}
 
         private fun emit() {
             flow.value = items.values.toList()
@@ -46,12 +53,17 @@ class ScriptPluginRepositoryTest {
 
         override suspend fun getAll(): List<ScriptPluginEntity> = items.values.toList()
 
-        override suspend fun getEnabled(): List<ScriptPluginEntity> =
-            items.values.filter { it.enabled }
+        override suspend fun getEnabled(): List<ScriptPluginEntity> {
+            val hook = beforeReadEnabled
+            beforeReadEnabled = {}
+            hook()
+            return items.values.filter { it.enabled }
+        }
 
         override suspend fun getById(id: String): ScriptPluginEntity? = items[id]
 
         override suspend fun upsert(entity: ScriptPluginEntity) {
+            currentCoroutineContext().ensureActive()
             items[entity.id] = entity
             emit()
         }
@@ -173,6 +185,73 @@ class ScriptPluginRepositoryTest {
         assertTrue(result.isFailure)
         assertEquals(builtIn, registry.byName("shell"))
         assertNull(dao.getById("collision"))
+    }
+
+    @Test
+    fun `cancelled updates restore persisted grants and runtime before propagating cancellation`() = runTest {
+        for (local in listOf(false, true)) {
+            val dao = FakeScriptPluginDao()
+            val registry = FakeToolRegistry()
+            val repository = ScriptPluginRepository(dao, ScriptPluginEngine(), registry, FakeScriptPluginHost())
+            val good = sampleManifest("cancel-plugin", "cancel_tool")
+            suspend fun install(manifest: ScriptPluginManifest): Result<Unit> = if (local) {
+                repository.installLocal(
+                    ScriptPluginManifest.json.encodeToString(ScriptPluginManifest.serializer(), manifest),
+                    manifest.permissions.toSet(),
+                ).map { }
+            } else {
+                repository.install(manifest, "https://example.com/m.json")
+            }
+            install(good).getOrThrow()
+            val previous = dao.getById(good.id)
+            val reloading = CompletableDeferred<Unit>()
+            dao.beforeReadEnabled = { reloading.complete(Unit); awaitCancellation() }
+            var returned = false
+            val update = launch {
+                install(good.copy(version = "2.0.0", permissions = listOf("data.write")))
+                returned = true
+            }
+            reloading.await()
+            update.cancelAndJoin()
+
+            assertTrue(update.isCancelled)
+            assertTrue("cancellation must not become a Result", !returned)
+            assertEquals(previous, dao.getById(good.id))
+            assertEquals("result", registry.byName("cancel_tool")?.execute(emptyMap())?.output)
+        }
+    }
+
+    @Test
+    fun `a failed registry update preserves the approved manifest grants and live tool`() = runTest {
+        val dao = FakeScriptPluginDao()
+        val engine = ScriptPluginEngine()
+        val registry = FakeToolRegistry()
+        val repository = ScriptPluginRepository(dao, engine, registry, FakeScriptPluginHost())
+        val good = sampleManifest("update-plugin", "update_tool")
+        repository.install(good, "https://example.com/v1.json").getOrThrow()
+        val previous = dao.getById(good.id)
+
+        val result = repository.install(
+            good.copy(version = "2.0.0", permissions = listOf("data.write"), main = "throw new Error('broken');"),
+            "https://example.com/v2.json",
+        )
+
+        assertTrue(result.isFailure)
+        assertEquals(previous, dao.getById(good.id))
+        assertEquals("result", registry.byName("update_tool")?.execute(emptyMap())?.output)
+    }
+
+    @Test
+    fun `a failed first registry install leaves no persisted row or tool`() = runTest {
+        val dao = FakeScriptPluginDao()
+        val registry = FakeToolRegistry()
+        val repository = ScriptPluginRepository(dao, ScriptPluginEngine(), registry, FakeScriptPluginHost())
+
+        val result = repository.install(sampleManifest().copy(main = "throw new Error('broken');"), "https://example.com/m.json")
+
+        assertTrue(result.isFailure)
+        assertTrue(dao.items.isEmpty())
+        assertTrue(registry.all().isEmpty())
     }
 
     @Test

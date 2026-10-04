@@ -60,6 +60,45 @@ class ScriptPluginEngineTest {
     }
 
     @Test
+    fun `sensitive host APIs are unavailable at load but callable inside tools`() = engineTest {
+        val calls = mutableListOf<String>()
+        val engine = ScriptPluginEngine().also {
+            it.host = object : ScriptPluginHost {
+                override fun log(pluginId: String, message: String) = Unit
+                override fun readData(pluginId: String, collection: String, query: String): String {
+                    calls += "read"; return "[]"
+                }
+                override fun writeData(pluginId: String, collection: String, payload: String): String {
+                    calls += "write"; return "ok"
+                }
+                override fun httpGet(pluginId: String, url: String, allowedHosts: List<String>): String {
+                    calls += "network"; return "ok"
+                }
+            }
+        }
+        val operations = listOf(
+            "hermes.data.read('notes', '')",
+            "hermes.data.write('notes', '{}')",
+            "hermes.http.get('https://example.com')",
+        )
+        operations.forEach { operation ->
+            val failures = engine.reload(listOf(ScriptPluginEngine.PluginSpec(
+                "sensitive", "$operation; hermes.registerTool('run', function() { return 'ok'; });",
+                ScriptPluginPermissions.ALL,
+            )))
+            assertEquals(1, failures.size)
+            assertTrue(calls.isEmpty())
+        }
+        val failures = engine.reload(listOf(ScriptPluginEngine.PluginSpec(
+            "sensitive", "hermes.registerTool('run', function() { ${operations.joinToString(";")}; return 'done'; });",
+            ScriptPluginPermissions.ALL,
+        )))
+        assertTrue(failures.isEmpty())
+        assertEquals("done", engine.execute("sensitive", "run", emptyMap()).getOrThrow())
+        assertEquals(listOf("read", "write", "network"), calls)
+    }
+
+    @Test
     fun `an infinite loop at load time is aborted and reported`() = engineTest {
         val engine = ScriptPluginEngine()
         val failures = engine.reload(listOf(spec("runaway", "while (true) { }")))

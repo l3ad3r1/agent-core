@@ -1,6 +1,7 @@
 package com.hermes.agent.data.local
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -49,6 +50,21 @@ class FileCheckpointStoreTest {
         val result = store.restoreCheckpoint(chk1)
         assertTrue(result.isSuccess)
         assertEquals("V1 Content", targetFile.readText())
+    }
+
+    @Test
+    fun restoreCheckpoint_preservesBinaryBytes() {
+        val store = FileCheckpointStore(tempFolder.newFolder("binary-checkpoints"))
+        val target = tempFolder.newFile("image.bin")
+        val original = byteArrayOf(0x89.toByte(), 0x50, 0x00, 0xff.toByte(), 0xc3.toByte(), 0x28)
+        target.writeBytes(original)
+        val id = store.createCheckpoint(target)
+
+        assertEquals(original.size.toLong(), store.getCheckpoint(id)?.sizeBytes)
+        target.writeText("overwritten")
+
+        assertTrue(store.restoreCheckpoint(id).isSuccess)
+        assertArrayEquals(original, target.readBytes())
     }
 
     @Test

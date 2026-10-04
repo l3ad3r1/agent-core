@@ -1,10 +1,12 @@
 package com.hermes.agent.data.tools
 
+import com.hermes.agent.data.local.FileCheckpointStore
 import com.hermes.agent.domain.settings.SettingsRepository
 import com.hermes.agent.domain.settings.UserSettings
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -44,6 +46,32 @@ class WorkspaceRootsTest {
         val dir = temp.newFolder("workspace")
 
         assertEquals(dir, WorkspaceRoots.resolve(null, settingsWithRoot(dir.path)))
+    }
+
+    @Test
+    fun `file tools write and read in the selected workspace`() = runTest {
+        val selected = temp.newFolder("selected")
+        val repo = settingsWithRoot(selected.absolutePath)
+        val checkpoints = FileCheckpointStore(temp.newFolder("checkpoints"))
+        val writer = WriteFileTool(null, repo, checkpoints, null)
+        val reader = ReadFileTool(null, repo, null)
+
+        assertTrue(writer.execute(mapOf("path" to JsonPrimitive("notes.txt"), "content" to JsonPrimitive("Selected folder"))).success)
+        assertEquals("Selected folder", java.io.File(selected, "notes.txt").readText())
+        assertTrue(reader.execute(mapOf("path" to JsonPrimitive("notes.txt"))).output.contains("Selected folder"))
+    }
+
+    @Test
+    fun `file tools refuse an inaccessible document tree instead of writing elsewhere`() = runTest {
+        val repo = settingsWithRoot("content://com.android.externalstorage.documents/tree/removed-volume%3AMissing")
+        val writer = WriteFileTool(null, repo, FileCheckpointStore(temp.newFolder("checkpoints")), null)
+
+        val error = runCatching {
+            writer.execute(mapOf("path" to JsonPrimitive("notes.txt"), "content" to JsonPrimitive("must not write")))
+        }.exceptionOrNull()
+
+        assertTrue(error is IllegalStateException)
+        assertTrue(error!!.message.orEmpty().contains("cannot be opened"))
     }
 
     private fun settingsWithRoot(root: String): SettingsRepository = mockk {
