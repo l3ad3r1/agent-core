@@ -184,6 +184,10 @@ private fun dotPulse(t: Double, index: Int): Double {
     return clamp(k * 2)
 }
 
+/** The resting face's eyes: the measured size, drawn [REST_EYE_SCALE] larger. */
+private fun restEyes(): Array<EyeCfg> =
+    arrayOf(EyeCfg(EYE_W * REST_EYE_SCALE, EYE_H * REST_EYE_SCALE), EyeCfg(EYE_W * REST_EYE_SCALE, EYE_H * REST_EYE_SCALE))
+
 val STATES: List<StateDef> = listOf(
     StateDef(
         id = StateId.IDLE,
@@ -192,7 +196,7 @@ val STATES: List<StateDef> = listOf(
         blinkIn = false,
         baseFace = true,
         baseBody = true,
-        pose = { Pose(BloubShape.circle(1.0)) },
+        pose = { Pose(BloubShape.circle(1.0), gaze = REST_FACE_GAZE, eyes = restEyes()) },
     ),
 
     StateDef(

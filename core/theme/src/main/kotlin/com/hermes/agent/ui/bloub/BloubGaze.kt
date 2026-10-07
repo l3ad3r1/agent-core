@@ -27,8 +27,29 @@ const val EYE_SPLIT: Double = 15.46
 const val EYE_W: Double = 0.186
 const val EYE_H: Double = 0.412
 
+/**
+ * How much larger than measured the RESTING face's eyes are drawn (the idle pose and every expression, which
+ * only the idle state carries; the video's own states keep their measured eyes).
+ *
+ * The reference is a large hero animation. At the 40-140 dp a phone shows the bot at, eyes of the measured
+ * size are thin slivers, and with the resting head turn (the outer eye is foreshortened) they read as a
+ * squint. Scaling at the source keeps every expression's proportions and tilts as ported, and the eye-fit
+ * table (which is computed from these sizes) keeps the eyes inside every body shape. 1.25 is about the
+ * most the capsule, galet and squircle bodies leave room for with [REST_FACE_GAZE]: `BloubEngineTest` fails above it.
+ */
+const val REST_EYE_SCALE: Double = 1.3
+
 /** Head orientation at rest, fitted on the reference frames. */
 val REST_GAZE: HeadGaze = HeadGaze(yaw = 28.49, pitch = 28.62, roll = -13.0)
+
+/**
+ * The head turn the RESTING face (idle pose and the neutral expression) is shown with. [REST_GAZE] is the
+ * measured pose, turned far enough up and to the right that both eyes sit on the edge of the ball,
+ * foreshortened and slanted: at phone size that reads as a squint. About half the turn keeps a slight
+ * three-quarter look but puts the eyes in the face, open. The roll is raised to keep the reference's signature
+ * backslash lean (about 21 degrees, pinned by `the eyes lean backslash, not slash`). Every other state keeps [REST_GAZE].
+ */
+val REST_FACE_GAZE: HeadGaze = HeadGaze(yaw = 14.0, pitch = 13.0, roll = -19.0)
 
 data class HeadGaze(
     /** yaw, degrees, positive = looking right */

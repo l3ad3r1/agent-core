@@ -51,7 +51,7 @@ class BotExpression(
 
 /** [tilt] in degrees, positive = the top of the capsule leans right. */
 private fun eye(w: Double, h: Double, tilt: Double = 0.0, open: Double = 1.0): EyeCfg =
-    EyeCfg(w, h, open, tilt)
+    EyeCfg(w * REST_EYE_SCALE, h * REST_EYE_SCALE, open, tilt)
 
 /** Both eyes the same, tilts mirrored when [tilt] is given. */
 private fun pair(w: Double, h: Double, tilt: Double = 0.0, open: Double = 1.0): Array<EyeCfg> =
@@ -65,7 +65,7 @@ private fun pair(w: Double, h: Double, tilt: Double = 0.0, open: Double = 1.0): 
  */
 val EXPRESSIONS: List<BotExpression> = listOf(
     // the pose measured frame by frame on the reference video
-    BotExpression(ExpressionId.NEUTRE, REST_GAZE, EYE_SPLIT, arrayOf(eye(EYE_W, EYE_H), eye(EYE_W, EYE_H))),
+    BotExpression(ExpressionId.NEUTRE, REST_FACE_GAZE, EYE_SPLIT, arrayOf(eye(EYE_W, EYE_H), eye(EYE_W, EYE_H))),
     BotExpression(ExpressionId.ATTENTIF, HeadGaze(4.0, 5.0, -4.0), 16.0, pair(0.21, 0.44)),
     BotExpression(ExpressionId.SURPRIS, HeadGaze(3.0, -3.0, 0.0), 19.0, pair(0.45, 0.47)),
     BotExpression(ExpressionId.EXCITE, HeadGaze(6.0, -14.0, 0.0), 19.5, pair(0.4, 0.56, -10.0)),
