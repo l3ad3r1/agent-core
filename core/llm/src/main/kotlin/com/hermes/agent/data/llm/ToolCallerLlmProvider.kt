@@ -27,6 +27,17 @@ internal class ToolCallerAbstained(reason: String) : IOException(reason)
 private const val HANDOFF_THRESHOLD = 0.60
 
 /**
+ * The least EmbeddingGemma similarity at which meaning alone names the tool, and declares it alone.
+ *
+ * Measured on the app's real tool catalogue (63 tools, 30 paraphrased requests): 0.70 accepted
+ * 22 correct picks, 3 wrong ones and 1 of 8 ordinary-chat lines, against 10 correct picks from
+ * word matching. Scores for real requests (0.67-0.81) and small talk (0.61-0.71) overlap, so this
+ * cannot tell them apart alone — it only opens the door; the model's own confidence still decides.
+ * A wrong acceptance costs one wasted on-device attempt; a wrong refusal is the old behaviour.
+ */
+internal const val SEMANTIC_ACCEPT_SCORE = 0.70
+
+/**
  * How many tools the caller is shown.
  *
  * Not the whole catalogue, despite that being the point of a model this small.
@@ -81,7 +92,11 @@ internal fun toolsWithinBudget(tools: List<ToolDescriptor>, maxChars: Int): List
 @Singleton
 class ToolCallerLlmProvider @Inject constructor(
     private val localLlmManager: LocalLlmManager,
+    private val toolIndex: ToolEmbeddingIndex,
 ) : LlmProvider {
+
+    /** Word matching only, as before the semantic index existed. */
+    internal constructor(localLlmManager: LocalLlmManager) : this(localLlmManager, ToolEmbeddingIndex(NoEmbeddings))
 
     override val name: String = "On-device tool caller"
     override val isOnDevice: Boolean = true
@@ -113,15 +128,45 @@ class ToolCallerLlmProvider @Inject constructor(
         val scored = scoreToolsForTurn(tools, turn)
         // Nothing in the request names any tool: the small model would only guess, and on
         // the tablet it guessed wrong or asked a question. Hand the turn on without running it.
-        val lead = scored.first().first.takeIf { toolRelevance(it, turn) > 0.0 }
-            ?: throw ToolCallerAbstained("the request names none of the offered tools")
         // One stray shared word is not a request for the tool: "Install the canvas-design
         // skill from the Skills Hub" matched media_control's "installed music app" and the
         // model, shown only that tool, toggled playback.
-        if (toolCoverage(lead, turn) < MIN_TOOL_COVERAGE) {
-            throw ToolCallerAbstained("the request is mostly about something ${lead.name} does not cover")
+        val wordLead = scored.first().first.takeIf { toolRelevance(it, turn) > 0.0 }
+        val wordRefusal = when {
+            wordLead == null -> "the request names none of the offered tools"
+            toolCoverage(wordLead, turn) < MIN_TOOL_COVERAGE ->
+                "the request is mostly about something ${wordLead.name} does not cover"
+            else -> null
         }
-        val listed = toolsWithinBudget(toolsToShow(scored, MAX_TOOL_CALLER_TOOLS), MAX_TOOL_CALLER_DECLARATION_CHARS)
+
+        // Meaning first. When the request is clearly about one tool, that tool is declared alone:
+        // the 270M model emitted no call at all when shown three (brightness, the time, speaking
+        // aloud, notifications, navigation), and it can only call one tool or decline when shown
+        // one. Where word matching and meaning disagreed on the device catalogue, meaning was the
+        // one that was right ("make the screen brighter": app_analyze_screen by words,
+        // device_settings by meaning), so a confident meaning pick overrides the word lead.
+        val semantic = toolIndex.rank(turn, tools)
+        val confident = semantic?.firstOrNull()?.takeIf { it.second >= SEMANTIC_ACCEPT_SCORE }
+
+        val lead: ToolDescriptor
+        val listed: List<ToolDescriptor>
+        val allowedCalls: Set<String>
+        if (confident != null) {
+            lead = confident.first
+            listed = toolsWithinBudget(listOf(lead), MAX_TOOL_CALLER_DECLARATION_CHARS)
+            allowedCalls = setOf(lead.name)
+            Timber.tag(LOG_TAG).i(
+                "meaning chose %s alone (%.2f)%s", lead.name, confident.second,
+                if (wordLead != null && wordLead.name != lead.name) ", over word match ${wordLead.name}" else "",
+            )
+        } else if (wordRefusal == null) {
+            // Not sure by meaning (or no index yet): the word match, as before, with its close runners-up.
+            lead = wordLead!!
+            listed = toolsWithinBudget(toolsToShow(scored, MAX_TOOL_CALLER_TOOLS), MAX_TOOL_CALLER_DECLARATION_CHARS)
+            allowedCalls = setOf(lead.name)
+        } else {
+            throw ToolCallerAbstained(wordRefusal)
+        }
         if (listed.isEmpty()) throw ToolCallerAbstained("no tool declaration fits the tool caller's context")
         val prompt = buildToolCallerPrompt(messages, listed)
         if (prompt.conversation.isBlank()) throw ToolCallerAbstained("no user turn to act on")
@@ -165,7 +210,11 @@ class ToolCallerLlmProvider @Inject constructor(
             abstain(ToolCallConfidence(0.0, "model returned nothing"), listed.size, elapsedMs)
         }
 
-        val (leftover, calls) = parseFunctionGemmaCalls(answer)
+        val (leftover, parsed) = parseFunctionGemmaCalls(answer)
+        // The model drops arguments the request plainly states ("turn on" -> enabled=true); read
+        // those from the user's words before judging the call.
+        val calls = completeFromRequest(parsed, listed, turn)
+        if (calls != parsed) Timber.tag(LOG_TAG).i("filled from the request: %s", calls.map { it.arguments })
         val confidence = scoreToolCalls(calls, listed, leftover)
 
         if (calls.isEmpty() || confidence.score < HANDOFF_THRESHOLD) {
@@ -173,12 +222,18 @@ class ToolCallerLlmProvider @Inject constructor(
         }
         // A well-formed call to the wrong tool scores 1.0: asked to set the media volume the
         // model called media_control play_pause. Only the tool the request points to is trusted.
-        calls.firstOrNull { it.name != lead.name }?.let { stray ->
+        calls.firstOrNull { it.name !in allowedCalls }?.let { stray ->
             abstain(
                 ToolCallConfidence(0.0, "called '${stray.name}' but the request points to '${lead.name}'"),
                 listed.size,
                 elapsedMs,
             )
+        }
+
+        // A well-formed call can still carry an invented number: for "wake me up at 6:30" the model
+        // called set_alarm with hour=1 and scored 1.00. A time the user never said goes to the cloud.
+        ungroundedTimeArgument(calls, turn)?.let { reason ->
+            abstain(ToolCallConfidence(0.0, reason), listed.size, elapsedMs)
         }
 
         // Step 1 is a measurement exercise: these two lines are what says whether
@@ -373,3 +428,9 @@ private val RANKING_STOPWORDS = setOf(
 
 /** A request that only makes sense with what came before it. */
 private val REFERS_BACK = Regex("""\b(it|that|this|them|those|again|same|other|one)\b""", RegexOption.IGNORE_CASE)
+
+/** Embedder that is never Gemma-backed, so [ToolEmbeddingIndex] stays inert. */
+private object NoEmbeddings : com.hermes.agent.data.memory.EmbeddingService {
+    override val dimension: Int = 0
+    override suspend fun embed(text: String): FloatArray = FloatArray(0)
+}

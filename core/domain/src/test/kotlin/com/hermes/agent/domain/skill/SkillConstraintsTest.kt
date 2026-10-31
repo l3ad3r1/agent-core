@@ -38,6 +38,30 @@ class SkillConstraintsTest {
     }
 
     @Test
+    fun `a rewrite that cuts a long skill roughly in half fails the shrink gate`() {
+        // The Hub's canvas-design skill (about 12,000 characters) came back at about half that.
+        val baseline = "# Skill\n" + "x".repeat(12_000)
+        val halved = "# Skill\n" + "x".repeat(5_900)
+        val res = result(halved, baseline)
+        assertFalse(res.first { it.name == "shrink" }.passed)
+        assertFalse(SkillConstraints.allPass(res))
+    }
+
+    @Test
+    fun `a modest tidy passes the shrink gate`() {
+        val baseline = "# Skill\n" + "x".repeat(5_000)
+        val tidied = "# Skill\n" + "x".repeat(3_800) // about 76 percent
+        assertTrue(result(tidied, baseline).first { it.name == "shrink" }.passed)
+    }
+
+    @Test
+    fun `shrink is not judged for short skills`() {
+        val baseline = "# H\n" + "a".repeat(300)
+        val cut = "# H\n" + "a".repeat(100)
+        assertTrue(result(cut, baseline).first { it.name == "shrink" }.passed)
+    }
+
+    @Test
     fun `body without heading fails structure gate`() {
         val body = "Just some prose with no markdown heading at all, long enough to pass length."
         val res = result(body)

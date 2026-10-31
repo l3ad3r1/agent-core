@@ -38,7 +38,11 @@ sealed class OrchestratorEvent {
         /** How long the model spent producing it, for the "Thought for 6s" label. */
         val reasoningMillis: Long = 0L,
     ) : OrchestratorEvent()
-    data class Failed(val message: String) : OrchestratorEvent()
+    /**
+     * The turn could not be completed. [retryAtMillis] is set when the cause was a rate limit that
+     * said when it lifts, so the chat can offer to retry then.
+     */
+    data class Failed(val message: String, val retryAtMillis: Long? = null) : OrchestratorEvent()
     data class StateChanged(val run: AgentRun) : OrchestratorEvent()
 }
 

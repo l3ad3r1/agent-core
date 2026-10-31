@@ -65,7 +65,7 @@ internal fun renderFunctionDeclarations(tools: List<ToolDescriptor>): String =
                 tool.parameters.sortedBy { it.name }.forEachIndexed { index, parameter ->
                     if (index > 0) append(',')
                     append(parameter.name).append(":{description:")
-                    append(escaped(parameter.description.substringBefore('\n')))
+                    append(escaped(parameter.description.substringBefore('\n') + requirementNote(tool, parameter.name)))
                     parameter.enumValues?.takeIf { parameter.type == ToolParameterType.STRING }?.let { values ->
                         append(",enum:[")
                         append(values.joinToString(",") { escaped(it) })
@@ -87,6 +87,25 @@ internal fun renderFunctionDeclarations(tools: List<ToolDescriptor>): String =
             append(DECL_CLOSE)
         }
     }
+
+/**
+ * " Required when action is flashlight or action is set_dnd." for an argument that
+ * [ToolDescriptor.requiredByAction] names, so the model reads the rule where it writes the value.
+ * The schema cannot carry it (per-action arguments must stay optional), and without it FunctionGemma
+ * called device_control(action=flashlight) with no `enabled` every time. Empty when no action needs it.
+ */
+internal fun requirementNote(tool: ToolDescriptor, parameter: String): String {
+    val whens = tool.requiredByAction.flatMap { (action, needs) ->
+        needs.mapNotNull { need ->
+            val alternatives = need.split('|')
+            if (parameter !in alternatives) return@mapNotNull null
+            val others = alternatives - parameter
+            (if (action == "*") "action is omitted" else "action is $action") +
+                if (others.isEmpty()) "" else " (unless ${others.joinToString(" or ")} is given)"
+        }
+    }
+    return if (whens.isEmpty()) "" else " Required when " + whens.joinToString(" or ") + "."
+}
 
 private fun escaped(value: String) = ESCAPE + value.replace(ESCAPE, " ") + ESCAPE
 

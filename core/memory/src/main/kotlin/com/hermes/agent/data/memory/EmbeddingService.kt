@@ -27,6 +27,19 @@ interface EmbeddingService {
      */
     suspend fun embed(text: String): FloatArray
 
+    /**
+     * True only when vectors come from EmbeddingGemma, the model the tool-routing score
+     * thresholds were measured on. Other embedders (MiniLM, hash vectors) score on a
+     * different scale, so callers that compare against fixed thresholds must check this.
+     */
+    val isGemmaBacked: Boolean get() = false
+
+    /**
+     * Embed search text. Symmetric models ignore the difference; asymmetric ones
+     * (EmbeddingGemma) use a different prefix for queries than for stored text.
+     */
+    suspend fun embedQuery(text: String): FloatArray = embed(text)
+
     /** Batch variant — defaults to sequential embedding. */
     suspend fun embedAll(texts: List<String>): List<FloatArray> =
         texts.map { embed(it) }

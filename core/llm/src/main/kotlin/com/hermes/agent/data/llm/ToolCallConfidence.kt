@@ -45,7 +45,11 @@ data class ToolCallConfidence(
 // estimate until step 2 replaces the scorer with logprobs. Naming them keeps the
 // tuning in one readable place.
 private const val PENALTY_MISSING_REQUIRED = 0.45
-private const val PENALTY_ENUM_VIOLATION = 0.35
+// A value outside a closed list cannot run: media_control(action="skip_song") and speak(action="say")
+// scored 0.65 at 0.35 and were accepted on the device. It must land below the 0.60 hand-off line.
+private const val PENALTY_ENUM_VIOLATION = 0.45
+// Sinks the call below the 0.60 hand-off line on its own: it will return "X is required" when run.
+private const val PENALTY_MISSING_FOR_ACTION = 0.45
 private const val PENALTY_PLACEHOLDER_VALUE = 0.30
 private const val PENALTY_UNKNOWN_ARGUMENT = 0.20
 private const val PENALTY_LOOSE_RECOVERY = 0.20
@@ -121,6 +125,21 @@ private fun scoreOneCall(
     descriptor.parameters
         .filter { it.required && call.arguments[it.name].isAbsent() }
         .forEach { penalise(PENALTY_MISSING_REQUIRED, "required argument '${it.name}' is missing") }
+
+    // The arguments the chosen action needs at execution time, which the schema cannot mark
+    // required. device_control(action=flashlight) with no `enabled` is well-formed and certain to fail.
+    if (descriptor.requiredByAction.isNotEmpty()) {
+        val action = (call.arguments["action"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
+        val needed = descriptor.requiredByAction[action ?: "*"].orEmpty()
+        for (need in needed) {
+            if (need.split('|').all { call.arguments[it].isAbsent() }) {
+                penalise(
+                    PENALTY_MISSING_FOR_ACTION,
+                    "action '${action ?: "(default)"}' needs '${need.replace("|", "' or '")}' but the call left it out",
+                )
+            }
+        }
+    }
 
     // Action-style tools (todo, notes, calendar) deliberately declare every
     // per-action argument optional — see ToolParameter.required — so "nothing

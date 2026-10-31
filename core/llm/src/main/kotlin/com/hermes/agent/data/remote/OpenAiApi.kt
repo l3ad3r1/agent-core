@@ -9,6 +9,7 @@ import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.Header
+import retrofit2.http.Headers
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Url
@@ -32,8 +33,15 @@ import retrofit2.http.Streaming
  */
 interface OpenAiApi {
 
-    /** OpenAI-compatible model catalogue at `<base-url>/models`. */
+    /**
+     * OpenAI-compatible model catalogue at `<base-url>/models`.
+     *
+     * The header asks a Hermes compute relay for every model it can run; without it the relay
+     * lists only `hermes-relay`, so older app builds (whose best-model scoring would jump an
+     * auto-selected profile to Opus) never see the longer list. Other providers ignore it.
+     */
     @GET
+    @Headers("X-Hermes-Relay-Models: all")
     suspend fun models(
         @Url url: String,
         @Header("Authorization") authorization: String?,

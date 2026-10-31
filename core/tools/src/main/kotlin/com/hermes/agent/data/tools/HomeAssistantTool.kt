@@ -64,6 +64,9 @@ class HomeAssistantTool @Inject constructor(
                 type = ToolParameterType.STRING,
                 description = "The action to perform: 'list_entities', 'get_state', 'list_services', 'call_service'.",
                 required = true,
+                // The tool rejects anything else; without the list a small model's action="turn_off"
+                // looked well-formed and was accepted.
+                enumValues = listOf("list_entities", "get_state", "list_services", "call_service"),
             ),
             ToolParameter(
                 name = "domain",
@@ -100,6 +103,10 @@ class HomeAssistantTool @Inject constructor(
         capabilities = setOf("home_assistant", "device_control", "automation"),
         requiresConfirmation = true,
         maxResultSizeChars = 8192,
+        requiredByAction = mapOf(
+            "get_state" to listOf("entity_id"),
+            "call_service" to listOf("domain", "service"),
+        ),
     )
 
     companion object {

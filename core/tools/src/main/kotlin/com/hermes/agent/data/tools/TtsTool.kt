@@ -57,6 +57,8 @@ class TtsTool @Inject constructor(
         ),
         category = "communication",
         capabilities = setOf("voice"),
+        // `action` defaults to speak, so the "*" entry covers a call that leaves it out.
+        requiredByAction = mapOf("speak" to listOf("text"), "*" to listOf("text")),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

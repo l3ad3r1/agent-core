@@ -112,4 +112,33 @@ class ConversationCompressorTest {
         assertTrue("uncovered turn lost on failure", out.contains("message 11"))
         assertTrue(calls >= 2)
     }
+
+    @Test
+    fun `a refusal or error reply never replaces the brief`() = runTest {
+        for (bad in listOf(
+            "I'm sorry, but I can't help with that request.",
+            "\"I cannot summarise this conversation.\"",
+            "[relay error] agy returned no answer",
+            "<!DOCTYPE html><html><body>502 Bad Gateway</body></html>",
+            "{\"error\": {\"message\": \"overloaded\"}}",
+        )) {
+            val router = FakeRouter { n -> if (n == 1) "BRIEF#1" else bad }
+            val c = ConversationCompressor(router)
+            c.brief("conv", msgs(6))
+
+            val out = c.brief("conv", msgs(12))
+            assertNotNull("context dropped for: $bad", out)
+            assertTrue("bad reply replaced the brief: $bad", out!!.startsWith("BRIEF#1"))
+            assertTrue("uncovered turn lost for: $bad", out.contains("message 11"))
+            // The bad text was not cached either: the next look still starts from BRIEF#1.
+            assertTrue(c.brief("conv", msgs(12))!!.startsWith("BRIEF#1"))
+        }
+    }
+
+    @Test
+    fun `a summary that merely mentions an apology is kept`() = runTest {
+        val router = FakeRouter { "The user asked for a refund; the assistant said sorry and opened a ticket." }
+        val c = ConversationCompressor(router)
+        assertTrue(c.brief("conv", msgs(6))!!.startsWith("The user asked"))
+    }
 }

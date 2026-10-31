@@ -43,6 +43,9 @@ object CloudProviderRegistry {
         CloudProviderDefinition("chutes", "Chutes.ai", "Chutes decentralized serverless AI", "https://api.chutes.ai/v1", "default", 0.75, 0.05, 0.65, 0.80, supportsVision = true),
     )
 
+    /** The model id a Hermes compute relay serves its configured default under. */
+    const val RELAY_DEFAULT_MODEL = "hermes-relay"
+
     fun definition(id: String): CloudProviderDefinition? = providers.firstOrNull { it.id == id }
 
     /** Order a provider's live catalog with the saved/curated choice first, then capable chat models. */
@@ -55,6 +58,7 @@ object CloudProviderRegistry {
             when (model) {
                 savedModel -> 10_000
                 definition?.defaultModel -> 9_000
+                RELAY_DEFAULT_MODEL -> 8_000
                 else -> modelQualityScore(model)
             }
         }.thenBy { it.lowercase() },
@@ -65,7 +69,13 @@ object CloudProviderRegistry {
         available: List<String>,
     ): String? = compatibleModels(available).sortedWith(
         compareByDescending<String> { model ->
-            if (definition != null && model == definition.defaultModel) 9_000 else modelQualityScore(model)
+            when {
+                definition != null && model == definition.defaultModel -> 9_000
+                // A Hermes compute relay's own default; otherwise "opus" in a listed id outscores it
+                // and an auto-selected profile would silently move to the heaviest model.
+                model == RELAY_DEFAULT_MODEL -> 8_000
+                else -> modelQualityScore(model)
+            }
         }.thenBy { it.lowercase() },
     ).firstOrNull()
 

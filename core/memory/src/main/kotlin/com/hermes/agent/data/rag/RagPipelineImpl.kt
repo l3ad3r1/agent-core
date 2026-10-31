@@ -138,7 +138,7 @@ class RagPipelineImpl @Inject constructor(
         withContext(dispatchers.io) {
             ensureIndexHydrated()
 
-            val queryVec = runCatching { embeddingService.embed(query) }
+            val queryVec = runCatching { embeddingService.embedQuery(query) }
                 .onFailure { Timber.tag("RagPipeline").w(it, "query embed failed") }
                 .getOrNull()
                 ?: return@withContext emptyList()

@@ -59,6 +59,18 @@ class UsageSignalMinerTest {
     }
 
     @Test
+    fun `contracted refusals count as capability gaps`() {
+        val messages = listOf(
+            msg("user", "Please book a table at Luigi's for 8pm", t = 1),
+            msg("assistant", "I'm unable to make reservations.", t = 2),
+            msg("user", "book a table somewhere nice tomorrow", "c2", 3),
+            msg("assistant", "I'm not able to book tables.", "c2", 4),
+        )
+        val gap = miner.mine(snapshot(messages = messages)).single { it.kind == SignalKind.CAPABILITY_GAP }
+        assertEquals(2, gap.count)
+    }
+
+    @Test
     fun `examples are sanitized and secret-looking ones are dropped`() {
         val calls = listOf(
             call("web_fetch", false, "auth failed for SECRET key", 3),

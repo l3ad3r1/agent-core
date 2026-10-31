@@ -33,6 +33,11 @@ class CommunicationTool @Inject constructor(
         ),
         category = "communication",
         capabilities = setOf("phone"),
+        requiredByAction = mapOf(
+            "dial" to listOf("recipient"),
+            "compose_sms" to listOf("recipient"),
+            "compose_email" to listOf("recipient"),
+        ),
         requiresConfirmation = true,
     )
 

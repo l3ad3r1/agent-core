@@ -1,5 +1,6 @@
 package com.hermes.agent.data.memory
 
+import com.hermes.agent.domain.llm.GeneratedTextGuard
 import com.hermes.agent.domain.llm.LlmMessage
 import com.hermes.agent.domain.repository.MemoryRepository
 import com.hermes.agent.util.DispatcherProvider
@@ -54,7 +55,9 @@ class ConversationLearner @Inject constructor(
             .getOrNull() ?: return@withContext
 
         val raw = response.content.trim()
-        if (raw == "NONE" || raw.isBlank()) return@withContext
+        // A refusal or an error body (the relay reports failures as ordinary reply text) is not a
+        // fact about the user, and used to be saved line by line as if it were.
+        if (raw == "NONE" || raw.isBlank() || !GeneratedTextGuard.isUsable(raw)) return@withContext
 
         val existingContents = runCatching {
             memoryRepository.searchMemories("", limit = 200).map { it.content.lowercase() }
@@ -62,7 +65,7 @@ class ConversationLearner @Inject constructor(
 
         raw.lines()
             .map { it.removePrefix("- ").trim() }
-            .filter { it.length > 8 && it.isNotBlank() }
+            .filter { it.length > 8 && it.isNotBlank() && GeneratedTextGuard.isUsableLine(it) }
             .filterNot { fact -> isDuplicate(fact, existingContents) }
             .take(5)
             .forEach { fact ->

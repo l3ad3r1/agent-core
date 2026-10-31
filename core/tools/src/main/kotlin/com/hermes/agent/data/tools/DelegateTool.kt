@@ -1,5 +1,10 @@
 package com.hermes.agent.data.tools
 
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import com.hermes.agent.domain.llm.LlmMessage
 import com.hermes.agent.data.llm.LlmRouter
 import com.hermes.agent.data.llm.RoutingContext
@@ -66,6 +71,7 @@ class DelegateTool @Inject constructor(
     private val toolCallExecutor: dagger.Lazy<ToolCallExecutor>,
     private val agentTaskRepository: dagger.Lazy<AgentTaskRepository>,
     private val productIdentity: ProductIdentity,
+    private val subagentMonitor: SubagentMonitor = SubagentMonitor(),
 ) : Tool {
 
     override val descriptor = ToolDescriptor(
@@ -150,7 +156,7 @@ class DelegateTool @Inject constructor(
         // endpoint concurrently reliably tripped provider-side timeouts/rate
         // limits on-device (2 of 3 would fail), so we trade wall-clock overlap
         // for reliability — the isolation/decomposition value is unchanged.
-        val results = goals.map { goal -> runSubagent(goal) }
+        val results = goals.map { goal -> runMonitored(goal) }
 
         val output = if (results.size == 1) {
             results.first()
@@ -165,7 +171,28 @@ class DelegateTool @Inject constructor(
      * return its reply text. Mirrors the orchestrator's LLM↔tool loop but with
      * the child toolset and no user-confirmation gate.
      */
-    private suspend fun runSubagent(goal: String): String {
+    /**
+     * Runs one subagent where the chat can see it: listed in [SubagentMonitor] while it works,
+     * steerable, and stoppable on its own. A user stop hands back what it had so far instead of
+     * failing the parent turn; stopping the whole turn still cancels everything.
+     */
+    private suspend fun runMonitored(goal: String): String = coroutineScope {
+        val id = subagentMonitor.start(goal)
+        val partial = StringBuilder()
+        val child = async { runSubagent(goal, id, partial) }
+        subagentMonitor.attach(id, child)
+        try {
+            child.await()
+        } catch (cancelled: CancellationException) {
+            // Only this subagent was stopped while the turn goes on: return its partial work.
+            if (!child.isCancelled || !currentCoroutineContext().isActive) throw cancelled
+            "[stopped by the user] " + partial.toString().trim().ifBlank { "No partial results yet." }.take(MAX_RESULT_CHARS)
+        } finally {
+            subagentMonitor.finish(id)
+        }
+    }
+
+    private suspend fun runSubagent(goal: String, id: String, partial: StringBuilder): String {
         var messages = listOf(
             LlmMessage(
                 role = "system",
@@ -187,7 +214,15 @@ class DelegateTool @Inject constructor(
 
         return runCatching {
             repeat(MAX_TOOL_ROUNDS) {
+                // Anything the user said to this subagent since its last step.
+                subagentMonitor.takeSteering(id).forEach { note ->
+                    messages = messages + LlmMessage(role = "user", content = "Update from the user while you work: $note")
+                }
                 val response = provider.completeWithTools(messages, childTools)
+                if (response.content.isNotBlank()) {
+                    partial.append(response.content.trim()).append("\n")
+                    subagentMonitor.log(id, response.content)
+                }
                 if (response.toolCalls.isEmpty()) {
                     return response.content.trim()
                         .ifBlank { "[subagent returned no output]" }.take(MAX_RESULT_CHARS)
@@ -198,9 +233,13 @@ class DelegateTool @Inject constructor(
                     toolCalls = response.toolCalls,
                 )
                 for (call in response.toolCalls) {
+                    subagentMonitor.log(id, "→ ${call.name} ${call.arguments.values.joinToString(" ") { it.toString() }.take(80)}")
+                    val output = executeChildTool(call)
+                    subagentMonitor.log(id, "← ${call.name}: ${output.take(120)}")
+                    partial.append("${call.name}: ").append(output.take(600)).append("\n")
                     messages = messages + LlmMessage(
                         role = "tool",
-                        content = executeChildTool(call),
+                        content = output,
                         toolCallId = call.id,
                     )
                 }
@@ -208,7 +247,11 @@ class DelegateTool @Inject constructor(
             // Rounds exhausted while still tool-calling: force a final answer.
             provider.complete(messages).content.trim()
                 .ifBlank { "[subagent did not finish]" }.take(MAX_RESULT_CHARS)
-        }.getOrElse { t -> "[subagent failed: ${t.message ?: "unknown error"}]" }
+        }.getOrElse { t ->
+            // A stop (or the turn ending) must reach runMonitored, not read as a failure.
+            if (t is CancellationException) throw t
+            "[subagent failed: ${t.message ?: "unknown error"}]"
+        }
     }
 
     /** Execute a subagent's tool call, enforcing the explicit child allowlist. */

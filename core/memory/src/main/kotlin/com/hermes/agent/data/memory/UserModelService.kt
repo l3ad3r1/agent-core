@@ -1,5 +1,6 @@
 package com.hermes.agent.data.memory
 
+import com.hermes.agent.domain.llm.GeneratedTextGuard
 import com.hermes.agent.domain.llm.LlmMessage
 import com.hermes.agent.domain.repository.MemoryRepository
 import com.hermes.agent.util.DispatcherProvider
@@ -99,7 +100,9 @@ class UserModelService @Inject constructor(
             return@withContext false
         }
 
-        val factList = facts.take(50).joinToString("\n") { "- $it" }
+        // Everything known, within a size budget. It was the first 50 of up to 200 facts, so a long
+        // memory was summarised from a fraction of itself and the rest silently dropped.
+        val factList = factsWithinBudget(facts)
         val response = runCatching {
             llmProvider.complete(
                 listOf(
@@ -115,24 +118,46 @@ class UserModelService @Inject constructor(
             Timber.tag("UserModel").w("rebuild discarded: reply too short (%d chars)", newModel.length)
             return@withContext false
         }
-
-        // Delete old model entry.
-        runCatching {
-            memoryRepository.searchMemories("", limit = 200)
-                .filter { it.content.startsWith(MODEL_PREFIX) }
-                .forEach { memoryRepository.deleteMemory(it.id) }
+        // A refusal or relay error is not a model of the user; keeping the old one is better.
+        if (!GeneratedTextGuard.isUsable(newModel)) {
+            Timber.tag("UserModel").w("rebuild discarded: reply is not a user model")
+            return@withContext false
         }
 
-        // Save new model.
-        runCatching { memoryRepository.addMemory("$MODEL_PREFIX$newModel") }
+        // Save the new model first, and only then retire the old one: a failed save used to leave
+        // the user with no model at all, because the old one had already been deleted.
+        val oldModelIds = runCatching {
+            memoryRepository.searchMemories("", limit = 200)
+                .filter { it.content.startsWith(MODEL_PREFIX) }
+                .map { it.id }
+        }.getOrDefault(emptyList())
+
+        val saved = runCatching { memoryRepository.addMemory("$MODEL_PREFIX$newModel") }
             .onSuccess { Timber.tag("UserModel").i("user model rebuilt (${facts.size} facts)") }
             .onFailure { Timber.tag("UserModel").w(it, "model save failed") }
             .isSuccess
+        if (saved) oldModelIds.forEach { id -> runCatching { memoryRepository.deleteMemory(id) } }
+        saved
+    }
+
+    /** Facts as bullet lines, in the order given, until [FACT_BUDGET_CHARS] is reached. */
+    internal fun factsWithinBudget(facts: List<String>): String {
+        val out = StringBuilder()
+        for (fact in facts) {
+            val line = "- ${fact.take(MAX_FACT_CHARS)}\n"
+            if (out.length + line.length > FACT_BUDGET_CHARS) break
+            out.append(line)
+        }
+        return out.toString().trimEnd()
     }
 
     companion object {
         const val MODEL_PREFIX = "[USER_MODEL] "
         const val UPDATE_EVERY_N = 5
+
+        /** How much fact text one rebuild reads; about 3,000 tokens, far under any model's window. */
+        const val FACT_BUDGET_CHARS = 12_000
+        const val MAX_FACT_CHARS = 400
 
         private val MODEL_SYSTEM = """
             You are a user modelling assistant. Given a list of known facts about a person,

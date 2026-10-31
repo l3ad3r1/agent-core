@@ -17,6 +17,17 @@ object SkillConstraints {
     /** A body must have real content, not a stub. */
     const val MIN_BODY_LENGTH = 50
 
+    /**
+     * A rewrite may not be smaller than this share of the body it replaces. Growth was capped but
+     * shrinking was not, so a rewrite that kept only the part of the skill the model had seen (a
+     * Hub skill of 12 KB came back at about half that, with worked examples and whole sections
+     * gone) passed every gate and replaced the original.
+     */
+    const val MIN_SHRINK_RATIO = 0.7f
+
+    /** Below this many characters a ratio says little (a tidy of a short skill may cut a third), so shrink is not judged. */
+    const val MIN_BASELINE_FOR_SHRINK = 600
+
     /** A description must say something; one or two words cannot describe a skill. */
     const val MIN_DESCRIPTION_LENGTH = 10
 
@@ -53,6 +64,11 @@ object SkillConstraints {
                 "growth",
                 ratio <= MAX_GROWTH_RATIO,
                 "×${"%.2f".format(ratio)} of baseline",
+            )
+            results += Result(
+                "shrink",
+                baselineBody.length < MIN_BASELINE_FOR_SHRINK || ratio >= MIN_SHRINK_RATIO,
+                "×${"%.2f".format(ratio)} of baseline (floor ${"%.2f".format(MIN_SHRINK_RATIO)})",
             )
         }
 

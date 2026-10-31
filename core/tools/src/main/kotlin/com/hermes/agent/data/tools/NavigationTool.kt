@@ -30,6 +30,7 @@ class NavigationTool @Inject constructor(
         category = "device",
         capabilities = setOf("navigation"),
         requiresConfirmation = true,
+        requiredByAction = mapOf("navigate" to listOf("query")),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

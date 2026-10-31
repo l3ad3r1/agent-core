@@ -76,20 +76,22 @@ internal class RoutedProviderChain(
         // chain had stopped offering it anything for the rest of the conversation.
         var resumeFrom = index
         var retriedSame = false
+        // The soonest moment a rate-limited provider said it will answer again, if any did.
+        var soonestReset: Pair<String, Long>? = null
+        fun noteReset(provider: LlmProvider, failure: Throwable) {
+            val at = RateLimitReset.retryAtMillis(failure) ?: return
+            if (soonestReset == null || at < soonestReset!!.second) soonestReset = provider.name to at
+        }
+        // When every provider has failed, a known reset time turns the last error into one that
+        // says when to try again, so the chat can offer to retry then.
+        fun giveUp(last: Throwable): Throwable = soonestReset?.let { (name, at) ->
+            RateLimitedException(RateLimitReset.describe(name, at), at, last)
+        } ?: last
         while (index < providers.size) {
             val provider = providers[index]
             // Reasoning models think for minutes before the first token; the
             // default 30 s cap would fail them over to a weaker model mid-think.
-            val attemptTimeout = if (provider.isOnDevice) {
-                // A phone CPU needs 30-40 s just to read an agent prompt before the first
-                // token (a 1,536-token system prompt took 38 s on a TCL tablet), so the cloud
-                // cap timed every local turn out before it could answer.
-                ON_DEVICE_ATTEMPT_TIMEOUT_MS
-            } else {
-                ReasoningStaleTimeout.floorMillis(provider.model)
-                    ?.coerceAtLeast(PROVIDER_ATTEMPT_TIMEOUT_MS)
-                    ?: PROVIDER_ATTEMPT_TIMEOUT_MS
-            }
+            val attemptTimeout = attemptTimeoutFor(provider)
             try {
                 val result = withTimeout(attemptTimeout) { call(provider) }
                 activeIndex.set(minOf(resumeFrom, index)); answeredIndex.set(index)
@@ -102,11 +104,12 @@ internal class RoutedProviderChain(
                 // One retry on the same provider, but not after a raised limit: a second 90 s
                 // (or 10 min) wait on a provider that is down only delays the fallback.
                 if (!retriedSame && attemptTimeout <= PROVIDER_ATTEMPT_TIMEOUT_MS) { retriedSame = true; continue }
-                if (index == providers.lastIndex) throw checkNotNull(lastFailure)
+                if (index == providers.lastIndex) throw giveUp(checkNotNull(lastFailure))
                 Timber.tag("LlmRouter").w(lastFailure, "%s timed out on %s; trying %s",
                     operation, provider.name, providers[index + 1].name)
             } catch (failure: Throwable) {
                 lastFailure = failure
+                noteReset(provider, failure)
                 when (ApiErrorClassifier.classify(failure)) {
                     FailoverAction.SURFACE -> throw failure
                     FailoverAction.RETRY_SAME -> if (!retriedSame) {
@@ -117,7 +120,7 @@ internal class RoutedProviderChain(
                     }
                     FailoverAction.FALLBACK -> Unit
                 }
-                if (index == providers.lastIndex) throw failure
+                if (index == providers.lastIndex) throw giveUp(failure)
                 Timber.tag("LlmRouter").w(failure, "%s failed on %s; trying %s",
                     operation, provider.name, providers[index + 1].name)
             }
@@ -125,11 +128,22 @@ internal class RoutedProviderChain(
             retriedSame = false
             index++
         }
-        throw checkNotNull(lastFailure)
+        throw giveUp(checkNotNull(lastFailure))
     }
 
     private fun Throwable.isAbstain(): Boolean =
         generateSequence(this) { it.cause }.any { it is ToolCallerAbstained }
+
+    private fun attemptTimeoutFor(provider: LlmProvider): Long = if (provider.isOnDevice) {
+        // A phone CPU needs 30-40 s just to read an agent prompt before the first
+        // token (a 1,536-token system prompt took 38 s on a TCL tablet), so the cloud
+        // cap timed every local turn out before it could answer.
+        ON_DEVICE_ATTEMPT_TIMEOUT_MS
+    } else {
+        ReasoningStaleTimeout.floorMillis(provider.model)
+            ?.coerceAtLeast(PROVIDER_ATTEMPT_TIMEOUT_MS)
+            ?: PROVIDER_ATTEMPT_TIMEOUT_MS
+    }
 
     private fun streamExecute(
         source: (LlmProvider) -> Flow<LlmStreamChunk>,
@@ -140,7 +154,10 @@ internal class RoutedProviderChain(
             var emittedOutput = false
             var retryFailure: Throwable? = null
             try {
-                source(provider).collect { chunk ->
+                source(provider)
+                    .stallGuard(firstMillis = attemptTimeoutFor(provider), betweenMillis = STREAM_STALL_MS)
+                    .cutRepetitionLoops(provider.name)
+                    .collect { chunk ->
                     when (chunk) {
                         is LlmStreamChunk.Delta, is LlmStreamChunk.ToolCallDelta -> {
                             emittedOutput = true
@@ -162,6 +179,13 @@ internal class RoutedProviderChain(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
+                if (failure is StreamStalledException && emittedOutput) {
+                    // The reply started and then stopped. Say so instead of leaving it looking
+                    // finished; the partial text has already been delivered and is kept.
+                    Timber.tag("LlmRouter").w("%s stalled mid-reply after %ds", provider.name, failure.idleMillis / 1_000)
+                    emit(LlmStreamChunk.Error("${provider.name} ${failure.message}; the reply above is incomplete.", failure))
+                    return@flow
+                }
                 if (!emittedOutput && failure.isProviderFailoverFailure()) retryFailure = failure else throw failure
             }
 
@@ -201,6 +225,8 @@ internal class RoutedProviderChain(
     private companion object {
         const val PROVIDER_ATTEMPT_TIMEOUT_MS = 30_000L
         const val ON_DEVICE_ATTEMPT_TIMEOUT_MS = 120_000L
+        /** Silence after a reply has started that means the stream is dead, not slow. */
+        const val STREAM_STALL_MS = 120_000L
         // A provider-specific billing failure must not terminate a routed
         // request: another configured cloud provider (or the final local
         // fallback) may still be available.  CloudLlmProvider wraps HTTP

@@ -50,4 +50,24 @@ class CloudProviderRegistryTest {
         assertEquals("openai/gpt-oss-120b", ordered.first())
         assertFalse(ordered.contains("whisper-large-v3"))
     }
+
+    private val relayCatalog = listOf(
+        "hermes-relay", "gemini-3.8-flash-high", "claude-sonnet-4-6",
+        "claude-opus-4-6-thinking", "gpt-oss-120b-medium",
+    )
+
+    @Test
+    fun `a relay's default stays the automatic pick even when Opus is listed`() {
+        // A custom provider has no registry definition, so only the relay rule keeps "opus" from winning.
+        assertEquals("hermes-relay", CloudProviderRegistry.bestModel(null, relayCatalog))
+        assertEquals("hermes-relay", CloudProviderRegistry.orderModels(null, relayCatalog, savedModel = "").first())
+    }
+
+    @Test
+    fun `a relay model picked by hand stays first`() {
+        assertEquals(
+            "claude-sonnet-4-6",
+            CloudProviderRegistry.orderModels(null, relayCatalog, savedModel = "claude-sonnet-4-6").first(),
+        )
+    }
 }

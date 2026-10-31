@@ -31,6 +31,10 @@ class AlarmTool @Inject constructor(
         ),
         category = "device",
         capabilities = setOf("device_alarm", "deferrable"),
+        requiredByAction = mapOf(
+            "set_alarm" to listOf("hour", "minute"),
+            "set_timer" to listOf("duration_seconds"),
+        ),
         requiresConfirmation = true,
     )
 

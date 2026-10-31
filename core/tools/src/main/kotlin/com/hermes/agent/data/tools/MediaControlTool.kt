@@ -32,6 +32,7 @@ class MediaControlTool @Inject constructor(
         category = "device",
         capabilities = setOf("media"),
         requiresConfirmation = true,
+        requiredByAction = mapOf("play_search" to listOf("query")),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

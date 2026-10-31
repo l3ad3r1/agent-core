@@ -36,6 +36,13 @@ class DeviceControlTool @Inject constructor(
         category = "device",
         capabilities = setOf("device_control"),
         requiresConfirmation = true,
+        requiredByAction = mapOf(
+            "flashlight" to listOf("enabled"),
+            "set_volume" to listOf("level"),
+            "set_ringer_mode" to listOf("mode"),
+            "set_dnd" to listOf("enabled"),
+            "set_brightness" to listOf("level|auto"),
+        ),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

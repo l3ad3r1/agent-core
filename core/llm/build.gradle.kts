@@ -30,6 +30,7 @@ dependencies {
     api(project(":core:util"))
     api(project(":core:domain"))
     api(project(":core:settings"))
+    implementation(project(":core:memory"))
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.work)
     api(libs.androidx.work.runtime.ktx)
@@ -52,5 +53,6 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)
+    testImplementation(libs.okhttp.mockwebserver)
 }
 

@@ -20,7 +20,7 @@ hilt = "2.60.1"
 room = "2.7.0"
 
 # ONNX Runtime (on-device embeddings, core:memory)
-onnxruntime = "1.22.0"
+onnxruntime = "1.31.0"
 
 # Networking
 retrofit = "2.12.0"

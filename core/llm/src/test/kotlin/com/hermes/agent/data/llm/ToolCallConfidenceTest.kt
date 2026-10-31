@@ -85,7 +85,7 @@ class ToolCallConfidenceTest {
             tools,
         )
         assertTrue(clean.score >= THRESHOLD)
-        assertTrue("enum violation must cost more than the gate", violating.score < clean.score)
+        assertTrue("enum violation must cost more than the gate: ${violating.score}", violating.score < THRESHOLD)
         assertTrue(violating.reason.contains("outside create/list/complete"))
     }
 

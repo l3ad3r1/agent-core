@@ -66,6 +66,7 @@ class DeviceSettingsTool @Inject constructor(
         category = "device",
         capabilities = setOf("device_settings", "deferrable"),
         requiresConfirmation = true,
+        requiredByAction = mapOf("set" to listOf("value")),
     )
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult {

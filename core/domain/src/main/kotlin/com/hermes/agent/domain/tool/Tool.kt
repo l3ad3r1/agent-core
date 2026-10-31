@@ -70,6 +70,12 @@ data class ToolParameter(
 /**
  * Mirrors hermes-agent's ToolEntry fields for cross-platform parity.
  *
+ * @property requiredByAction For action-style tools, the arguments each value of `action` needs at
+ *   execution time. [ToolParameter.required] cannot say this (every per-action argument must stay
+ *   optional there), so a call like `device_control(action=flashlight)` looks complete but fails with
+ *   "enabled is required". The on-device tool caller refuses such calls instead of running them.
+ *   An entry written `"a|b"` is satisfied by either; the key `"*"` applies when `action` is omitted.
+ *   Never sent to a provider (the cloud payload is built field by field).
  * @property maxResultSizeChars Output is truncated to this many chars before
  *   being injected into the LLM context. Prevents runaway tool output from
  *   consuming the entire context window.
@@ -87,6 +93,7 @@ data class ToolDescriptor(
     val maxResultSizeChars: Int = 8192,
     val requiresEnv: List<String> = emptyList(),
     val capabilities: Set<String> = setOf(category),
+    val requiredByAction: Map<String, List<String>> = emptyMap(),
 )
 
 /**

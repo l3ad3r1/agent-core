@@ -109,4 +109,81 @@ class UserModelServiceTest {
 
         assertNull(service.currentModel())
     }
+
+    private fun withOldModel() {
+        coEvery { memory.searchMemories(any(), any()) } returns listOf(
+            memory("User's name is Rinu"),
+            memory("User is a software engineer"),
+            memory("User lives in India"),
+            memory("${UserModelService.MODEL_PREFIX}Old model of Rinu."),
+        )
+    }
+
+    @Test
+    fun `a refusal never replaces the existing model`() = runTest(dispatcher) {
+        withOldModel()
+        coEvery { provider.complete(any()) } returns
+            LlmResponse("I'm sorry, but I can't help with building a profile of a person.", 20, "m")
+
+        service.onConversationComplete()
+
+        coVerify(exactly = 0) { memory.addMemory(any()) }
+        coVerify(exactly = 0) { memory.deleteMemory(any()) }
+    }
+
+    @Test
+    fun `a relay error never replaces the existing model`() = runTest(dispatcher) {
+        withOldModel()
+        coEvery { provider.complete(any()) } returns
+            LlmResponse("[relay error] HTTP 429: quota exceeded, retry later", 20, "m")
+
+        service.onConversationComplete()
+
+        coVerify(exactly = 0) { memory.addMemory(any()) }
+        coVerify(exactly = 0) { memory.deleteMemory(any()) }
+    }
+
+    @Test
+    fun `the new model is saved before the old one is deleted`() = runTest(dispatcher) {
+        withOldModel()
+        coEvery { learningState.incrementConversationCount() } returns 5
+        coEvery { learningState.userModelRebuiltAt() } returns 0
+
+        service.onConversationComplete()
+
+        io.mockk.coVerifyOrder {
+            memory.addMemory(match { it.startsWith(UserModelService.MODEL_PREFIX) })
+            memory.deleteMemory(any())
+        }
+    }
+
+    @Test
+    fun `a failed save keeps the old model`() = runTest(dispatcher) {
+        withOldModel()
+        coEvery { memory.addMemory(any()) } throws IllegalStateException("db locked")
+
+        service.onConversationComplete()
+
+        coVerify(exactly = 0) { memory.deleteMemory(any()) }
+    }
+
+    @Test
+    fun `a long memory is read in full up to the budget rather than the first 50 facts`() {
+        val facts = (1..120).map { "Fact number $it about the user" }
+
+        val list = service.factsWithinBudget(facts)
+
+        assertEquals(120, list.lines().size)
+        assert(list.contains("Fact number 120 "))
+    }
+
+    @Test
+    fun `the fact list stops at the budget`() {
+        val facts = List(500) { "x".repeat(300) }
+
+        val list = service.factsWithinBudget(facts)
+
+        assert(list.length <= UserModelService.FACT_BUDGET_CHARS)
+        assert(list.lines().size < 500)
+    }
 }

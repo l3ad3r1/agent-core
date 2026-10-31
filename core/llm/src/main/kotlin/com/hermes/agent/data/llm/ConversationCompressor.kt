@@ -1,4 +1,5 @@
 package com.hermes.agent.data.llm
+import com.hermes.agent.domain.llm.GeneratedTextGuard
 import com.hermes.agent.domain.llm.*
 
 import java.util.concurrent.ConcurrentHashMap
@@ -101,12 +102,15 @@ class ConversationCompressor @Inject constructor(
             // Never drop context on a failed call: the previous brief plus the
             // verbatim tail is still complete, just not compressed.
             return cached?.let { it.text + "\n\n" + renderedTail }
-        }.takeIf { it.isNotBlank() }
+        }.takeIf { isUsableBrief(it) }
             ?: return cached?.let { it.text + "\n\n" + renderedTail }
 
         cache[conversationId] = CachedBrief(older.size, text)
         return text
     }
+
+    /** A reply that is not a summary at all (refusal, relay error, error page) must not replace the brief. */
+    private fun isUsableBrief(text: String): Boolean = GeneratedTextGuard.isUsable(text)
 
     private fun render(messages: List<LlmMessage>): String =
         messages.joinToString("\n") { m -> "${m.role}: ${m.content.take(PER_MESSAGE_CHARS)}" }
@@ -114,6 +118,7 @@ class ConversationCompressor @Inject constructor(
     private companion object {
         /** Below this many dropped turns, losing them is cheaper than a summary. */
         const val MIN_OLDER_MESSAGES = 6
+
 
         /**
          * How many uncovered turns may ride along verbatim before they are

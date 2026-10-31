@@ -190,9 +190,9 @@ class UsageSignalMiner(private val sanitizer: EvidenceSanitizer) {
         private val NON_WORD = Regex("[^a-z ]")
 
         /** "I can't…", "I'm unable to…", "I don't have a tool for…", "no tool is available…". */
-        private val GAP = Regex(
+        internal val GAP = Regex(
             listOf(
-                "\\bi (?:can(?:no|')t|am unable to|'m unable to|am not able to|'m not able to)\\b",
+                "\\bi(?: can(?:no|')t| am unable to|'m unable to| am not able to|'m not able to)\\b",
                 "\\bi (?:do not|don't) have (?:a |an |the )?(?:tool|ability|way|access|capability|integration)",
                 "\\bno (?:suitable |available )?tool\\b",
                 "\\bnot (?:currently )?(?:supported|possible for me)\\b",
