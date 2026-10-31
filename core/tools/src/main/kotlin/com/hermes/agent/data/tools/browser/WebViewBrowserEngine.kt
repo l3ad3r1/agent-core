@@ -42,6 +42,8 @@ import kotlin.coroutines.resume
 class WebViewBrowserEngine(
     private val context: Context,
     private val isAllowedAddress: (InetAddress) -> Boolean = PublicNetworkGuard::isPublicAddress,
+    /** Shares the live view and page with the app so the user can watch and take over. */
+    private val monitor: BrowserSessionMonitor? = null,
 ) : BrowserEngine {
 
     private var webView: WebView? = null
@@ -76,6 +78,7 @@ class WebViewBrowserEngine(
             )
             wv.layout(0, 0, VIEW_WIDTH, VIEW_HEIGHT)
             webView = wv
+            monitor?.opened(wv)
         }
     }
 
@@ -116,6 +119,7 @@ class WebViewBrowserEngine(
         override fun onPageFinished(view: WebView, url: String?) {
             loading = false
             lastActivity.set(System.currentTimeMillis())
+            monitor?.pageChanged(url.orEmpty(), view.title.orEmpty())
         }
     }
 
@@ -176,6 +180,8 @@ class WebViewBrowserEngine(
     override fun close() {
         val wv = webView ?: return
         webView = null
+        // Before destroy: a screen showing the view lets go of it first.
+        monitor?.closed()
         val origins = visitedOrigins.toList()
         visitedOrigins.clear()
         // Not wv.post: a view that was never attached to a window only runs posted work

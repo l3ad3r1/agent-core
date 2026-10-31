@@ -33,7 +33,10 @@ internal object BrowserScripts {
             else if (tag === 'input') kind = (t === 'checkbox' || t === 'radio') ? t :
               (['submit', 'button', 'image', 'reset'].indexOf(t) >= 0 ? 'button' : 'input');
             else kind = 'button';
-            var label = (e.innerText || e.value || e.getAttribute('aria-label') || e.getAttribute('placeholder') ||
+            // Never read what was typed into a secret field: the user may have entered it during Take control.
+            var ac = (e.getAttribute('autocomplete') || '').toLowerCase();
+            var secret = t === 'password' || ac.indexOf('cc-') === 0 || ac === 'one-time-code' || ac.indexOf('password') >= 0;
+            var label = (e.innerText || (secret ? '' : e.value) || e.getAttribute('aria-label') || e.getAttribute('placeholder') ||
               e.getAttribute('title') || e.getAttribute('name') || e.getAttribute('alt') || '').replace(/\s+/g, ' ').trim();
             var ref = 'e' + (++n);
             e.setAttribute('$REF_ATTR', ref);

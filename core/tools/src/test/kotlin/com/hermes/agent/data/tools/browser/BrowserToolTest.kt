@@ -33,7 +33,8 @@ class BrowserToolTest {
     }
 
     private val engine = FakeEngine()
-    private val tool = BrowserTool { engine }
+    private val monitor = BrowserSessionMonitor()
+    private val tool = BrowserTool({ engine }, monitor)
 
     private fun args(vararg pairs: Pair<String, Any>): Map<String, JsonElement> = pairs.associate { (k, v) ->
         k to when (v) { is Boolean -> JsonPrimitive(v); else -> JsonPrimitive(v.toString()) }
@@ -128,5 +129,65 @@ class BrowserToolTest {
         assertEquals("Browser closed.", tool.execute(args("action" to "close")).output)
         assertTrue(engine.closed)
         assertTrue(tool.execute(args("action" to "snapshot")).errorMessage!!.contains("No page is open"))
+    }
+
+    @Test
+    fun `while the user has control every action waits, reading and closing included`() = runTest {
+        engine.page = shop
+        tool.execute(args("action" to "open", "url" to "https://shop.example/search"))
+        monitor.opened(Any())
+        monitor.takeControl()
+        engine.calls.clear()
+
+        for (action in listOf("snapshot", "click", "type", "back", "close", "open")) {
+            val result = tool.execute(args("action" to action, "ref" to "e1", "text" to "x", "url" to "https://x.example"))
+            assertFalse(action, result.success)
+            assertTrue(action, result.errorMessage!!.contains("taken control"))
+        }
+        assertTrue("nothing reached the page", engine.calls.isEmpty())
+        assertFalse("the session was not closed under the user", engine.closed)
+    }
+
+    @Test
+    fun `after a hand-back old refs are dropped until a fresh snapshot`() = runTest {
+        engine.page = shop
+        tool.execute(args("action" to "open", "url" to "https://shop.example/search"))
+        monitor.opened(Any())
+        monitor.takeControl()
+        monitor.handBack()
+
+        val stale = tool.execute(args("action" to "click", "ref" to "e4"))
+        assertFalse(stale.success)
+        assertTrue(stale.errorMessage!!, stale.errorMessage!!.contains("Take a snapshot"))
+        assertFalse("the old Buy now was not clicked", engine.calls.contains("click"))
+
+        tool.execute(args("action" to "snapshot"))
+        assertTrue(tool.execute(args("action" to "click", "ref" to "e4")).success)
+    }
+
+    @Test
+    fun `the monitor tracks a session and ignores control without one`() {
+        val m = BrowserSessionMonitor()
+        m.takeControl()
+        assertEquals(null, m.state.value)
+        m.opened(Any())
+        m.pageChanged("https://a.example/", "A")
+        m.takeControl()
+        assertTrue(m.userInControl)
+        m.handBack()
+        assertFalse(m.userInControl)
+        assertEquals(1, m.handBacks)
+        assertEquals("https://a.example/", m.state.value!!.url)
+        m.closed()
+        assertEquals(null, m.state.value)
+        assertEquals(null, m.view.value)
+    }
+
+    @Test
+    fun `the snapshot never reads secret field values`() {
+        val script = BrowserScripts.SNAPSHOT
+        assertTrue(script.contains("t === 'password'"))
+        assertTrue(script.contains("one-time-code"))
+        assertTrue(script.contains("(secret ? '' : e.value)"))
     }
 }

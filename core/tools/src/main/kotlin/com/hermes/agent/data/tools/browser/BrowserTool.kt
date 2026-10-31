@@ -47,6 +47,7 @@ import javax.inject.Singleton
 @Singleton
 class BrowserTool @Inject constructor(
     private val engines: BrowserEngineFactory,
+    private val monitor: BrowserSessionMonitor = BrowserSessionMonitor(),
 ) : Tool {
 
     override val descriptor = ToolDescriptor(
@@ -95,6 +96,9 @@ class BrowserTool @Inject constructor(
     /** Elements of the last snapshot, by ref: what a click would actually hit. */
     @Volatile private var lastElements: Map<String, Element> = emptyMap()
 
+    /** [BrowserSessionMonitor.handBacks] when [lastElements] was taken. */
+    private var seenHandBacks = 0
+
     override fun requiresConfirmation(arguments: Map<String, JsonElement>): Boolean =
         when (arguments.string("action")) {
             // The page decides what looks like a link (an <a> can carry an onclick that
@@ -113,7 +117,20 @@ class BrowserTool @Inject constructor(
     }
 
     private suspend fun act(arguments: Map<String, JsonElement>): ToolResult {
-        when (val action = arguments.string("action")) {
+        val requested = arguments.string("action")
+        // The user has the browser. Reading and closing are refused too: reading would capture
+        // what they are typing, and closing would pull the page out from under them.
+        if (monitor.userInControl) {
+            return ToolResult.error(
+                "The user has taken control of the browser. Wait for them to hand it back, then take a snapshot.",
+            )
+        }
+        // The user may have moved on while in control; refs from before point at another page.
+        if (monitor.handBacks != seenHandBacks) {
+            seenHandBacks = monitor.handBacks
+            lastElements = emptyMap()
+        }
+        when (val action = requested) {
             "open" -> {
                 val url = arguments.string("url")?.trim().orEmpty()
                 if (!url.startsWith("https://") && !url.startsWith("http://")) {
@@ -182,6 +199,8 @@ class BrowserTool @Inject constructor(
         if (engine == null) return
         idleClose = scope.launch {
             delay(IDLE_CLOSE_MS)
+            // Never close a session the user is using; check again after another idle period.
+            while (monitor.userInControl) delay(IDLE_CLOSE_MS)
             lock.withLock { closeSession() }
         }
     }
@@ -223,7 +242,10 @@ abstract class BrowserToolModule {
 
     companion object {
         @Provides
-        fun provideBrowserEngineFactory(@ApplicationContext context: Context): BrowserEngineFactory =
-            BrowserEngineFactory { WebViewBrowserEngine(context) }
+        fun provideBrowserEngineFactory(
+            @ApplicationContext context: Context,
+            monitor: BrowserSessionMonitor,
+        ): BrowserEngineFactory =
+            BrowserEngineFactory { WebViewBrowserEngine(context, monitor = monitor) }
     }
 }
