@@ -70,4 +70,17 @@ class CloudProviderRegistryTest {
             CloudProviderRegistry.orderModels(null, relayCatalog, savedModel = "claude-sonnet-4-6").first(),
         )
     }
+
+    @Test
+    fun `the Hermes relay is a preset that serves its own default model on port 8643`() {
+        val relay = CloudProviderRegistry.definition(CloudProviderRegistry.RELAY_ID)!!
+        assertEquals(CloudProviderRegistry.RELAY_DEFAULT_MODEL, relay.defaultModel)
+        val uri = java.net.URI(relay.defaultBaseUrl)
+        assertEquals(CloudProviderRegistry.RELAY_PORT, uri.port)
+        assertEquals("/v1", uri.path)
+        // Nothing from one user's network is baked in: the host is a placeholder to replace.
+        assertEquals("your-pc", uri.host)
+        // A relay profile stays off until the user gives it the PC's token.
+        assertEquals(false, CloudProviderRegistry.profile(relay).enabled)
+    }
 }

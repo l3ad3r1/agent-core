@@ -20,6 +20,10 @@ data class CloudProviderDefinition(
 
 object CloudProviderRegistry {
     val providers: List<CloudProviderDefinition> = listOf(
+        // Your own PC lending its model (hermes-compute-relay): no per-token cost, but every call
+        // spawns a CLI there, so it is slow, and it is only up while the PC is awake. The host is
+        // a placeholder; the user enters the PC's LAN or tailnet address.
+        CloudProviderDefinition(RELAY_ID, "Hermes Relay (your PC)", "Your PC's model through hermes-compute-relay", "http://your-pc:$RELAY_PORT/v1", RELAY_DEFAULT_MODEL, 0.93, 0.0, 0.35, 0.85, supportsVision = true),
         CloudProviderDefinition("openai", "OpenAI", "OpenAI's direct API — GPT-5, GPT-4.1, and o-series", "https://api.openai.com/v1", "gpt-4.1-mini", 0.97, 0.25, 0.78, 0.97, supportsVision = true),
         CloudProviderDefinition("nous", "Nous Portal", "Nous Research reasoning and frontier models", "https://portal.nousresearch.com/v1", "hermes-3-llama-3.1-405b", 0.95, 0.10, 0.60, 0.95, supportsVision = true),
         CloudProviderDefinition("nvidia", "NVIDIA NIM", "NVIDIA-hosted and self-hosted NIM models", "https://integrate.api.nvidia.com/v1", "meta/llama-3.3-70b-instruct", 0.88, 0.15, 0.72, 0.90, supportsVision = true),
@@ -45,6 +49,10 @@ object CloudProviderRegistry {
 
     /** The model id a Hermes compute relay serves its configured default under. */
     const val RELAY_DEFAULT_MODEL = "hermes-relay"
+
+    /** The relay's preset id and default port (HERMES_RELAY_PORT; next to the phone's own 8642). */
+    const val RELAY_ID = "hermes-relay"
+    const val RELAY_PORT = 8643
 
     fun definition(id: String): CloudProviderDefinition? = providers.firstOrNull { it.id == id }
 
