@@ -37,6 +37,14 @@ class VoiceOutputManager @Inject constructor(
     @Volatile
     private var ready: Boolean = false
 
+    /**
+     * Voice names to use, best first, matched as prefixes of the engine's voice names
+     * (e.g. "en-gb-x-rjs"). Empty keeps the engine's default voice. Android reports no gender
+     * for a voice, so an app that wants a particular kind of voice names them; see [chooseVoice].
+     */
+    @Volatile
+    var preferredVoices: List<String> = emptyList()
+
     /** True if a TTS engine is available on this device. */
     fun isAvailable(): Boolean = tts != null && ready
 
@@ -53,6 +61,7 @@ class VoiceOutputManager @Inject constructor(
             ready = status == TextToSpeech.SUCCESS
             if (ready) {
                 tts?.language = Locale.US
+                applyPreferredVoice()
                 Timber.tag("VoiceOutput").i("TTS engine ready")
             } else {
                 Timber.tag("VoiceOutput").w("TTS init failed: status=%d", status)
@@ -101,6 +110,22 @@ class VoiceOutputManager @Inject constructor(
         }
     }
 
+    /** Switches to the first installed voice in [preferredVoices]; the default stays otherwise. */
+    private fun applyPreferredVoice() {
+        val engine = tts ?: return
+        if (preferredVoices.isEmpty()) return
+        val voices = runCatching { engine.voices?.toList() }.getOrNull().orEmpty()
+        val choice = chooseVoice(
+            voices.map { VoiceOption(it.name, it.isNetworkConnectionRequired, it.features.orEmpty()) },
+            preferredVoices,
+        ) ?: return
+        voices.firstOrNull { it.name == choice }?.let { voice ->
+            runCatching { engine.voice = voice }
+                .onSuccess { Timber.tag("VoiceOutput").i("Voice: %s", choice) }
+                .onFailure { Timber.tag("VoiceOutput").w(it, "Could not set voice %s", choice) }
+        }
+    }
+
     /** Stop any in-progress speech. */
     fun stop() {
         tts?.stop()
@@ -119,4 +144,22 @@ sealed class VoiceOutputEvent {
     object Start : VoiceOutputEvent()
     object Done : VoiceOutputEvent()
     data class Error(val message: String) : VoiceOutputEvent()
+}
+
+/** What [chooseVoice] needs to know about an engine voice. */
+data class VoiceOption(val name: String, val needsNetwork: Boolean, val features: Set<String> = emptySet())
+
+/**
+ * The voice to use: the first entry of [preferred] (a name prefix) that an available voice matches.
+ * A voice the engine has installed beats one that needs the network, and one the engine reports
+ * as not installed is never picked. Null when nothing matches, so the default stays.
+ */
+fun chooseVoice(available: List<VoiceOption>, preferred: List<String>): String? {
+    val usable = available.filterNot { "notInstalled" in it.features }
+    for (prefix in preferred) {
+        val matches = usable.filter { it.name.startsWith(prefix, ignoreCase = true) }
+        val pick = matches.firstOrNull { !it.needsNetwork } ?: matches.firstOrNull()
+        if (pick != null) return pick.name
+    }
+    return null
 }
