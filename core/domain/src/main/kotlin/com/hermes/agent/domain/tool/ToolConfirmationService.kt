@@ -18,6 +18,8 @@ import javax.inject.Singleton
 data class PendingConfirmation(
     val id: String,
     val call: ToolCall,
+    /** Raised by a background run (routine, watch, delegated task): nobody may be looking at the app. */
+    val background: Boolean = false,
 )
 
 @Singleton
@@ -31,7 +33,7 @@ class ToolConfirmationService @Inject constructor(
     private val _pendingRequest = MutableStateFlow<PendingConfirmation?>(null)
     val pendingRequest: StateFlow<PendingConfirmation?> = _pendingRequest
 
-    suspend fun awaitConfirmation(call: ToolCall): Boolean = requestMutex.withLock {
+    suspend fun awaitConfirmation(call: ToolCall, background: Boolean = false): Boolean = requestMutex.withLock {
         if (call.name in BIOMETRIC_REQUIRED_TOOLS) {
             Timber.tag("ToolConfirmation").i("Requesting device authentication for tool=%s", call.name)
             return@withLock deviceAuthenticationService.authenticate(
@@ -75,7 +77,7 @@ class ToolConfirmationService @Inject constructor(
         }
         val deferred = CompletableDeferred<Boolean>()
         pendingDeferred = deferred
-        val request = PendingConfirmation(UUID.randomUUID().toString(), call)
+        val request = PendingConfirmation(UUID.randomUUID().toString(), call, background)
         _pendingRequest.value = request
         Timber.tag("ToolConfirmation").i("Awaiting request=%s tool=%s", request.id, call.name)
         try {
@@ -85,7 +87,9 @@ class ToolConfirmationService @Inject constructor(
             // is the safe default for a tool that asked for confirmation. The
             // mutex serializes concurrent requests so one turn cannot overwrite
             // another turn's deferred response.
-            val approved = kotlinx.coroutines.withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) {
+            // A background request waits longer: the user is reached by notification, not a dialog.
+            val timeout = if (background) BACKGROUND_CONFIRMATION_TIMEOUT_MS else CONFIRMATION_TIMEOUT_MS
+            val approved = kotlinx.coroutines.withTimeoutOrNull(timeout) {
                 deferred.await()
             } ?: false
             Timber.tag("ToolConfirmation").i(
@@ -121,6 +125,12 @@ class ToolConfirmationService @Inject constructor(
 
     companion object {
         const val CONFIRMATION_TIMEOUT_MS = 60_000L
+
+        /**
+         * How long a background run waits for an answer. Background runs are WorkManager jobs, which
+         * the system stops after about ten minutes, so this leaves room for the rest of the run.
+         */
+        const val BACKGROUND_CONFIRMATION_TIMEOUT_MS = 5 * 60_000L
 
         /**
          * Per-tool allowlist of `action` values that only read.

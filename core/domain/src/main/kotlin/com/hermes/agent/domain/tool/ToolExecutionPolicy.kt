@@ -20,6 +20,7 @@ sealed interface ToolExecutionDecision {
 @Singleton
 class ToolExecutionPolicy @Inject constructor(
     private val authorizationSettings: ToolAuthorizationSettings,
+    private val backgroundApprovals: BackgroundApprovals = BackgroundApprovals(),
 ) {
 
     suspend fun evaluate(
@@ -40,6 +41,9 @@ class ToolExecutionPolicy @Inject constructor(
                 "The '$toolName' tool is never allowed from background runs. " +
                     "Ask again from the chat screen where you can approve it.",
             )
+        // An app that can reach the user outside its screens asks instead of refusing.
+        origin == ExecutionOrigin.BACKGROUND && requiresConfirmation && backgroundApprovals.available ->
+            ToolExecutionDecision.Confirm
         origin == ExecutionOrigin.BACKGROUND && requiresConfirmation ->
             ToolExecutionDecision.Deny(
                 "The '$toolName' tool needs interactive approval and this run " +
