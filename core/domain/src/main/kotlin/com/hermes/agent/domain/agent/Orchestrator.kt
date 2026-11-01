@@ -37,6 +37,12 @@ sealed class OrchestratorEvent {
         val reasoning: String = "",
         /** How long the model spent producing it, for the "Thought for 6s" label. */
         val reasoningMillis: Long = 0L,
+        /** The model that wrote the reply ("" when unknown), for the reply's Info sheet. */
+        val model: String = "",
+        /** Estimated tokens of what was sent to the model (prompt, history, tool results). */
+        val contextTokens: Int = 0,
+        /** Wall time from the request to the finished reply, tools included. */
+        val elapsedMillis: Long = 0L,
     ) : OrchestratorEvent()
     /**
      * The turn could not be completed. [retryAtMillis] is set when the cause was a rate limit that

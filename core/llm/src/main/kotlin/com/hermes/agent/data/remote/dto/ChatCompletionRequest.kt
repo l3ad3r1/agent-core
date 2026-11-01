@@ -24,13 +24,17 @@ import kotlinx.serialization.json.jsonPrimitive
 data class ChatCompletionRequest(
     val model: String,
     val messages: List<ChatMessage>,
-    val temperature: Double = 0.7,
+    val temperature: Double = DEFAULT_TEMPERATURE,
     @SerialName("max_tokens") val maxTokens: Int? = null,
     val stream: Boolean = false,
     /** Reasoning effort for o-series / extended-thinking models.
      *  Mirrors hermes-agent VALID_REASONING_EFFORTS. Null = omit from request. */
     @SerialName("reasoning_effort") val reasoningEffort: String? = null,
-)
+) {
+    companion object {
+        const val DEFAULT_TEMPERATURE = 0.7
+    }
+}
 
 @Serializable
 data class ChatMessage(

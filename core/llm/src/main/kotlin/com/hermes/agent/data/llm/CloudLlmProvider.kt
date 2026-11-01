@@ -16,6 +16,7 @@ import com.hermes.agent.domain.tool.ToolDescriptor
 import com.hermes.agent.util.DispatcherProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -202,6 +203,7 @@ class CloudLlmProvider @Inject constructor(
 
     override suspend fun complete(messages: List<LlmMessage>): LlmResponse {
         val s = settings.current()
+        val overrides = currentCoroutineContext()[GenerationOverrides]
         lastObservedModel = s.selectedModel().cleaned()
         val apiKey = resolveApiKey(s)
         require(apiKey.isNotBlank() || keyOptional()) {
@@ -212,6 +214,8 @@ class CloudLlmProvider @Inject constructor(
             messages = messages.map { it.toDto() },
             stream = false,
             reasoningEffort = s.effectiveReasoningEffort(),
+            temperature = overrides?.temperature ?: ChatCompletionRequest.DEFAULT_TEMPERATURE,
+            maxTokens = overrides?.maxTokens,
         )
         val auth = bearer(apiKey)
         val resp = try {
@@ -238,6 +242,7 @@ class CloudLlmProvider @Inject constructor(
         tools: List<ToolDescriptor>,
     ): LlmToolResponse {
         val s = settings.current()
+        val overrides = currentCoroutineContext()[GenerationOverrides]
         val apiKey = resolveApiKey(s)
         require(apiKey.isNotBlank() || keyOptional()) {
             "Cloud LLM is enabled but no API key is set."
@@ -248,6 +253,7 @@ class CloudLlmProvider @Inject constructor(
             append("\"model\":\"").append(s.selectedModel().cleaned()).append("\",")
             append("\"stream\":false,")
             s.effectiveReasoningEffort()?.let { append("\"reasoning_effort\":\"").append(it).append("\",") }
+            overrides?.let { append(it.jsonFields()) }
             append("\"messages\":")
             append(json.encodeToString(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.map { it.toDto() }))
             if (tools.isNotEmpty()) {
@@ -285,6 +291,7 @@ class CloudLlmProvider @Inject constructor(
 
     override fun stream(messages: List<LlmMessage>): Flow<LlmStreamChunk> = flow {
         val s = settings.current()
+        val overrides = currentCoroutineContext()[GenerationOverrides]
         if (s.activeApiKey().isBlank() && !keyOptional()) {
             emit(LlmStreamChunk.Error("cloud API key not set"))
             return@flow
@@ -295,6 +302,8 @@ class CloudLlmProvider @Inject constructor(
             messages = messages.map { it.toDto() },
             stream = true,
             reasoningEffort = s.effectiveReasoningEffort(),
+            temperature = overrides?.temperature ?: ChatCompletionRequest.DEFAULT_TEMPERATURE,
+            maxTokens = overrides?.maxTokens,
         )
         val auth = bearer(s.activeApiKey())
 
@@ -311,6 +320,7 @@ class CloudLlmProvider @Inject constructor(
 
     fun streamWithModelOverride(messages: List<LlmMessage>, modelOverride: String): Flow<LlmStreamChunk> = flow {
         val s = settings.current()
+        val overrides = currentCoroutineContext()[GenerationOverrides]
         if (s.activeApiKey().isBlank() && !keyOptional()) {
             emit(LlmStreamChunk.Error("cloud API key not set"))
             return@flow
@@ -321,6 +331,8 @@ class CloudLlmProvider @Inject constructor(
             messages = messages.map { it.toDto() },
             stream = true,
             reasoningEffort = s.effectiveReasoningEffort(),
+            temperature = overrides?.temperature ?: ChatCompletionRequest.DEFAULT_TEMPERATURE,
+            maxTokens = overrides?.maxTokens,
         )
         val auth = bearer(s.activeApiKey())
 
@@ -336,6 +348,8 @@ class CloudLlmProvider @Inject constructor(
                     messages = messages.map { it.toDto() },
                     stream = false,
                     reasoningEffort = s.effectiveReasoningEffort(),
+                    temperature = overrides?.temperature ?: ChatCompletionRequest.DEFAULT_TEMPERATURE,
+                    maxTokens = overrides?.maxTokens,
                 )
                 api.completion(chatUrl(s.activeBaseUrl()), auth, req)
             } catch (err: Throwable) {
@@ -356,6 +370,7 @@ class CloudLlmProvider @Inject constructor(
         tools: List<ToolDescriptor>,
     ): Flow<LlmStreamChunk> = flow {
         val s = settings.current()
+        val overrides = currentCoroutineContext()[GenerationOverrides]
         if (s.activeApiKey().isBlank() && !keyOptional()) {
             emit(LlmStreamChunk.Error("cloud API key not set"))
             return@flow
@@ -365,6 +380,7 @@ class CloudLlmProvider @Inject constructor(
             append('{')
             append("\"model\":\"").append(s.selectedModel().cleaned()).append("\",")
             append("\"stream\":true,")
+            overrides?.let { append(it.jsonFields()) }
             append("\"messages\":")
             append(json.encodeToString(kotlinx.serialization.builtins.ListSerializer(ChatMessage.serializer()), messages.map { it.toDto() }))
             if (tools.isNotEmpty()) {
