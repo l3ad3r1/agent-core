@@ -430,7 +430,7 @@ class SettingsRepositoryImpl(
     private fun Preferences.toUserSettings(): UserSettings {
         return UserSettings(
             cloudEnabled = this[Keys.CLOUD_ENABLED] ?: false,
-            cloudApiKey = this.secret(Keys.CLOUD_API_KEY) ?: BuildConfig.CLOUD_API_KEY,
+            cloudApiKey = this.secret(Keys.CLOUD_API_KEY) ?: "",
             cloudBaseUrl = this[Keys.CLOUD_BASE_URL] ?: BuildConfig.CLOUD_BASE_URL,
             cloudModel = this[Keys.CLOUD_MODEL] ?: BuildConfig.CLOUD_MODEL,
             appTheme = this[Keys.APP_THEME] ?: "MIDNIGHT",

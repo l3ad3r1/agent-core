@@ -1,13 +1,6 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
-}
-
-val localProps = Properties().apply {
-    val file = rootProject.file("hermes.local.properties")
-    if (file.exists()) file.inputStream().use(::load)
 }
 
 android {
@@ -16,7 +9,7 @@ android {
 
     defaultConfig {
         minSdk = 29
-        buildConfigField("String", "CLOUD_API_KEY", "\"${localProps.getProperty("hermes.cloudApiKey") ?: ""}\"")
+        // No API key is compiled in. The cloud key comes only from what the user stores in Settings.
         buildConfigField("String", "CLOUD_BASE_URL", "\"${project.findProperty("hermes.cloudBaseUrl") ?: "https://api.openai.com/v1"}\"")
         buildConfigField("String", "CLOUD_MODEL", "\"${project.findProperty("hermes.cloudModel") ?: "gpt-4o-mini"}\"")
     }
