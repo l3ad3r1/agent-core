@@ -46,6 +46,13 @@ class VoiceOutputManager @Inject constructor(
     var preferredVoices: List<String> = emptyList()
 
     /**
+     * Platform-engine speaking rate (1.0 = the engine's normal; lower is slower). Applied on every
+     * [speak], so an app can set it after startup. Hermes keeps 1.0; Jeeves slows its fallback voice.
+     */
+    @Volatile
+    var speechRate: Float = 1.0f
+
+    /**
      * An app's own voice engine, used before the platform one (Jeeves: the Butler's on-device
      * voice). Null keeps the platform engine only, so Hermes is unchanged.
      */
@@ -124,6 +131,7 @@ class VoiceOutputManager @Inject constructor(
         // Every time: the preference may have been set after the engine started, and setting the
         // language later resets the voice to that language's default.
         applyPreferredVoice()
+        runCatching { engine.setSpeechRate(speechRate) }
         if (own == null) trySend(VoiceOutputEvent.Start)
 
         engine.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
