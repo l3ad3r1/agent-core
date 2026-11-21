@@ -74,6 +74,8 @@ class EmbeddingGemmaService @Inject constructor(
             mutex.withLock { runSession(enc) }.also {
                 Timber.tag("GemmaEmbed").d("embedded %d tokens -> dim %d in %d ms", enc.size, it.size, (System.nanoTime() - t0) / 1_000_000)
             }
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (t: Throwable) {
             // A neutral vector scores nothing and leaves retrieval to keywords.
             Timber.tag("GemmaEmbed").w(t, "EmbeddingGemma failed; using a neutral vector")

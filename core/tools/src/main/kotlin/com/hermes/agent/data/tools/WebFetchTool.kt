@@ -102,6 +102,8 @@ class WebFetchTool @Inject constructor(
             // Returned whole: the executor redacts it, then keeps anything past max_chars
             // for read_tool_result, so a stored page is never unredacted.
             ToolResult.ok("URL: $url\n$text", System.currentTimeMillis() - start)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Timber.e(e, "WebFetchTool failed: $url")
             ToolResult.error("Failed to fetch $url: ${e.message}")

@@ -113,6 +113,8 @@ class WebSearchTool @Inject constructor(
 
             ToolResult.ok(output, System.currentTimeMillis() - start)
 
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Timber.e(e, "WebSearchTool failed for query: $query")
             ToolResult.error("Search failed: ${e.message}")

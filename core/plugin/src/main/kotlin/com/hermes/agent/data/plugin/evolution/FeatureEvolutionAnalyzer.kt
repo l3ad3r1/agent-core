@@ -2,6 +2,7 @@ package com.hermes.agent.data.plugin.evolution
 
 import timber.log.Timber
 import java.util.UUID
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * One text completion for the proposal pass. The host routes it to a cloud model
@@ -37,7 +38,7 @@ class FeatureEvolutionAnalyzer(
     }
 
     suspend fun analyze(notify: Boolean): Outcome {
-        val snapshot = runCatching { snapshots.load(WINDOW_MILLIS) }
+        val snapshot = runCatchingCancellable { snapshots.load(WINDOW_MILLIS) }
             .getOrElse { return Outcome.Failed("Could not read usage history: ${it.message}") }
         val signals = miner.mine(snapshot)
         if (signals.isEmpty()) return Outcome.NoSignals

@@ -20,6 +20,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Exposes the product skills library to the LLM.
@@ -154,9 +155,9 @@ class SkillManagerTool @Inject constructor(
                 // STALE/ARCHIVED skills — but flagged skills accrue no usage
                 // signal, so they never climb the improvement queue (audit L2).
                 if (verdict.ok) {
-                    runCatching { skillRepository.recordUse(name) }
+                    runCatchingCancellable { skillRepository.recordUse(name) }
                     // Event-driven evolution: every Nth use schedules a trace-grounded refinement.
-                    runCatching { refineScheduler.onSkillUsed(name) }
+                    runCatchingCancellable { refineScheduler.onSkillUsed(name) }
                 }
                 val output = buildString {
                     if (!verdict.ok) {

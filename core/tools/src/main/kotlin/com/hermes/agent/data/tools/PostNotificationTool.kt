@@ -73,6 +73,8 @@ class PostNotificationTool @Inject constructor(
                 priority = priority,
             )
             ToolResult.ok("Notification posted successfully (id=$notifId, priority=$priority).", System.currentTimeMillis() - start)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             ToolResult.error("Failed to post notification: ${e.message}", System.currentTimeMillis() - start)
         }

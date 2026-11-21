@@ -13,6 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 @Singleton
 class AndroidCalendarEventGateway @Inject constructor(
@@ -23,7 +24,7 @@ class AndroidCalendarEventGateway @Inject constructor(
     override suspend fun createEvent(
         request: CalendarEventRequest,
     ): Result<CreatedCalendarEvent> = withContext(dispatchers.io) {
-        runCatching {
+        runCatchingCancellable {
             requireCalendarPermissions()
             val calendar = findWritableCalendar()
                 ?: error("No writable calendar is available. Add or enable a calendar account first.")

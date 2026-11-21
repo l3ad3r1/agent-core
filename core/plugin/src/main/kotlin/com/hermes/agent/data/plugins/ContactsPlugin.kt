@@ -20,6 +20,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Contacts plugin — Phase 3 sample.
@@ -131,7 +132,7 @@ class ContactsPlugin @Inject constructor(
             val selection = "${ContactsContract.Contacts.DISPLAY_NAME} LIKE ?"
             val args = arrayOf("%$query%")
 
-            return runCatching {
+            return runCatchingCancellable {
                 context.contentResolver.query(
                     ContactsContract.Contacts.CONTENT_URI,
                     projection, selection, args, null,
@@ -155,7 +156,7 @@ class ContactsPlugin @Inject constructor(
             val contactId = arguments["contact_id"]?.extractString()
                 ?: return ToolResult.error("missing required parameter: contact_id")
 
-            return runCatching {
+            return runCatchingCancellable {
                 val phones = mutableListOf<String>()
                 val emails = mutableListOf<String>()
 

@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Installs, enables, and loads script modules.
@@ -97,7 +98,7 @@ class ScriptPluginRepository @Inject constructor(
 
     suspend fun fetchRegistry(url: String = DEFAULT_REGISTRY_URL): Result<List<ScriptPluginRegistryEntry>> =
         withContext(Dispatchers.IO) {
-            runCatching {
+            runCatchingCancellable {
                 val body = httpGet(url)
                 ScriptPluginManifest.json.decodeFromString<ScriptPluginRegistry>(body).plugins
             }
@@ -106,7 +107,7 @@ class ScriptPluginRepository @Inject constructor(
     /** Fetches and validates a manifest without installing it, for the approval prompt. */
     suspend fun fetchManifest(entry: ScriptPluginRegistryEntry): Result<ScriptPluginManifest> =
         withContext(Dispatchers.IO) {
-            runCatching {
+            runCatchingCancellable {
                 require(entry.manifestUrl.startsWith("https://")) {
                     "Module manifests must be served over HTTPS"
                 }

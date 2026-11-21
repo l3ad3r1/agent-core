@@ -8,6 +8,7 @@ import timber.log.Timber
 import kotlin.coroutines.cancellation.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Executes [ToolCall]s emitted by an LLM through the [ToolRegistry].
@@ -59,7 +60,7 @@ class ToolCallExecutor @Inject constructor(
         }
 
         val start = System.currentTimeMillis()
-        val result = runCatching { tool.execute(call.arguments) }
+        val result = runCatchingCancellable { tool.execute(call.arguments) }
             .mapCatching { result ->
                 result.copy(executionMs = result.executionMs + (System.currentTimeMillis() - start))
             }

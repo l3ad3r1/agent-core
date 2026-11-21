@@ -28,6 +28,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Weather plugin.
@@ -127,7 +128,7 @@ class WeatherPlugin internal constructor(
             val city = arguments["city"]?.extractString()?.takeIf { it.isNotBlank() }
                 ?: return here(fahrenheit)
 
-            return runCatching {
+            return runCatchingCancellable {
                 val place = json.parseToJsonElement(
                     fetch(
                         GEOCODE_URL.toHttpUrl().newBuilder()
@@ -168,7 +169,7 @@ class WeatherPlugin internal constructor(
         private suspend fun here(fahrenheit: Boolean): ToolResult {
             val source = deviceWeather
                 ?: return ToolResult.error("Name a city: this app has no weather for the device's location.")
-            val reading = runCatching { source.current() }.getOrNull()
+            val reading = runCatchingCancellable { source.current() }.getOrNull()
                 ?: return ToolResult.error(
                     "Couldn't get the weather where the device is (location off or not permitted). Name a city instead.",
                 )

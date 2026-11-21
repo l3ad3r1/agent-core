@@ -5,6 +5,7 @@ import com.hermes.agent.data.plugin.script.ScriptPluginEngine
 import com.hermes.agent.data.plugin.script.ScriptPluginHost
 import com.hermes.agent.data.plugin.script.ScriptPluginManifest
 import java.util.Collections
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Runs a module's own smoke tests on the phone, in a scratch [ScriptPluginEngine]
@@ -92,7 +93,7 @@ class ModuleSmokeTestRunner(
             return Report(passed, results, problems)
         } finally {
             // Drop the scratch scopes; nothing from the test run is kept.
-            runCatching { engine.reload(emptyList()) }
+            runCatchingCancellable { engine.reload(emptyList()) }
         }
     }
 }

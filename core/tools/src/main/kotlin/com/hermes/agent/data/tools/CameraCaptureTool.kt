@@ -122,6 +122,8 @@ class CameraCaptureTool @Inject constructor(
                 "Facing: $facing"
 
             ToolResult.ok(resultMsg, System.currentTimeMillis() - start)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Timber.tag("CameraTool").e(e, "Camera capture error")
             ToolResult.error("Camera capture failed: ${e.message}", System.currentTimeMillis() - start)

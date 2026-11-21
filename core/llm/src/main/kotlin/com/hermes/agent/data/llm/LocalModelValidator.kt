@@ -47,6 +47,8 @@ object LocalModelValidator {
             }
         } catch (e: InvalidFileFormatException) {
             ModelValidation.Rejected("Invalid GGUF format or unsupported version.")
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Timber.w(e, "GGUF validation failed for file ${file.name}")
             ModelValidation.Rejected(e.message ?: "Failed to read GGUF metadata.")
@@ -64,6 +66,8 @@ object LocalModelValidator {
             } ?: ModelValidation.Rejected("Cannot open custom model stream from URI.")
         } catch (e: InvalidFileFormatException) {
             ModelValidation.Rejected("Invalid GGUF format or unsupported version.")
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Timber.w(e, "GGUF validation failed for URI $uri")
             ModelValidation.Rejected(e.message ?: "Failed to read GGUF metadata from URI.")
@@ -86,6 +90,8 @@ object LocalModelValidator {
             reader.readStructuredMetadata(input)
         } catch (e: InvalidFileFormatException) {
             return ModelValidation.Rejected("Invalid GGUF format or unsupported version.")
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             return ModelValidation.Rejected(e.message ?: "Corrupted GGUF file or header.")
         }

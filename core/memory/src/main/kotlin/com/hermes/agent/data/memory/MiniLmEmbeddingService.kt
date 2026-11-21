@@ -70,6 +70,8 @@ class MiniLmEmbeddingService @Inject constructor(
             ensureLoaded()
             val enc = tokenizer!!.encode(text)
             mutex.withLock { runSession(enc) }
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (t: Throwable) {
             // Never let an embedding failure break memory/RAG. A hash vector would be
             // noise in the model's space; a zero vector scores nothing and leaves

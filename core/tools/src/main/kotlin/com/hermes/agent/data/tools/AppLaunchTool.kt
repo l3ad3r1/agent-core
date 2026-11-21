@@ -20,6 +20,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
+import com.hermes.agent.util.runCatchingCancellable
 
 /** Launches an installed app before the accessibility tools operate on it. */
 @Singleton
@@ -57,7 +58,7 @@ class AppLaunchTool @Inject constructor(
         val intent = context.packageManager.getLaunchIntentForPackage(packageName)
             ?: return ToolResult.error("No launchable app is installed for package $packageName.")
 
-        return runCatching {
+        return runCatchingCancellable {
             snapshots.clear()
             interactionSession.clear()
             context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

@@ -43,6 +43,8 @@ class McpManager @Inject constructor(
                 }
             }
             Timber.d("Registered ${allCachedTools.size} cached MCP tools into ToolRegistry")
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Timber.e(e, "Failed to load cached MCP tools")
         }
@@ -93,6 +95,8 @@ class McpManager @Inject constructor(
 
             Timber.i("Successfully synced ${tools.size} tools from MCP server '${server.name}'")
             Result.success(tools)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Unknown error syncing MCP server"
             mcpRepository.updateServerError(serverId, errorMsg)

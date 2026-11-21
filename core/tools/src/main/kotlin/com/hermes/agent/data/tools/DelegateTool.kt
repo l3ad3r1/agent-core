@@ -30,6 +30,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
+import com.hermes.agent.util.runCatchingCancellable
 
 /** Explicit capabilities granted to isolated delegated agents. */
 internal object DelegateChildCapabilities {
@@ -212,7 +213,7 @@ class DelegateTool @Inject constructor(
             .map { it.descriptor }
             .filter { DelegateChildCapabilities.allows(it.name) }
 
-        return runCatching {
+        return runCatchingCancellable {
             repeat(MAX_TOOL_ROUNDS) {
                 // Anything the user said to this subagent since its last step.
                 subagentMonitor.takeSteering(id).forEach { note ->

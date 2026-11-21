@@ -44,6 +44,8 @@ class SkillsHubClient @Inject constructor(
                         results.add(item)
                     }
                 }
+            } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 Timber.tag("SkillsHubClient").w(t, "Failed to list skills in tap %s", tap.repo)
             }

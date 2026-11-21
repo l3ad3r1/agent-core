@@ -139,12 +139,16 @@ class SearchFilesTool(
                                         }
                                     }
                                 }
+                            } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+                                throw ce
                             } catch (e: Exception) {
                                 // Skip binary or unreadable files
                             }
                         }
                     }
                 }
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             return ToolResult.error("Search error: ${e.message}", System.currentTimeMillis() - startMs)
         }

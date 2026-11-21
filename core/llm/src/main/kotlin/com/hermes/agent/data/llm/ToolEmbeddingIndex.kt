@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Ranks tools by meaning, so "turn on the torch" finds the flashlight tool even though
@@ -36,7 +37,7 @@ class ToolEmbeddingIndex @Inject constructor(
             warmUp(tools)
             return null
         }
-        val query = runCatching { embeddings.embedQuery(turn) }.getOrNull()
+        val query = runCatchingCancellable { embeddings.embedQuery(turn) }.getOrNull()
             ?.takeIf { v -> v.any { it != 0f } } ?: return null
         return tools
             .map { it to dot(query, vectors.getValue(key(it))) }

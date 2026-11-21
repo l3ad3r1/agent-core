@@ -21,6 +21,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * File Manager plugin — Phase 3 sample.
@@ -164,11 +165,11 @@ class FileManagerPlugin @Inject constructor(
             val fileUriStr = arguments["file_uri"]?.extractString()
                 ?: return ToolResult.error("missing required parameter: file_uri")
 
-            return runCatching {
+            return runCatchingCancellable {
                 val uri = Uri.parse(fileUriStr)
                 val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
                 if (!mime.startsWith("text/")) {
-                    return@runCatching ToolResult.error("refuse to read non-text file (mime=$mime)")
+                    return@runCatchingCancellable ToolResult.error("refuse to read non-text file (mime=$mime)")
                 }
                 val text = context.contentResolver.openInputStream(uri)?.use { input ->
                     val bytes = input.readBytes()
@@ -176,7 +177,7 @@ class FileManagerPlugin @Inject constructor(
                         bytes.copyOf(MAX_READ_BYTES)
                     } else bytes
                     String(capped, Charsets.UTF_8)
-                } ?: return@runCatching ToolResult.error("could not open URI")
+                } ?: return@runCatchingCancellable ToolResult.error("could not open URI")
 
                 ToolResult.ok(text)
             }.getOrElse { ToolResult.error(it.message ?: "file_read failed") }

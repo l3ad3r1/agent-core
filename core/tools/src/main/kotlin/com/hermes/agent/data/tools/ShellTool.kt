@@ -23,6 +23,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
+import com.hermes.agent.util.runCatchingCancellable
 
 private const val MAX_OUTPUT_CHARS = 4000
 private const val TIMEOUT_SECONDS = 10L
@@ -93,7 +94,7 @@ class ShellTool @Inject constructor(
                 return@withContext executePrivileged(command, start)
             }
 
-            runCatching {
+            runCatchingCancellable {
                 val process = ProcessBuilder("sh", "-c", command)
                     .redirectErrorStream(true)
                     .start()
@@ -137,7 +138,7 @@ class ShellTool @Inject constructor(
 
                 if (!finished) {
                     process.destroyForcibly()
-                    return@runCatching ToolResult.error(
+                    return@runCatchingCancellable ToolResult.error(
                         message = "command timed out after ${TIMEOUT_SECONDS}s",
                         executionMs = System.currentTimeMillis() - start,
                     )
@@ -172,7 +173,7 @@ class ShellTool @Inject constructor(
      * Run [command] via privileged backend (Shizuku).
      */
     private suspend fun executePrivileged(command: String, start: Long): ToolResult {
-        val s = runCatching { settingsRepository.current() }.getOrNull()
+        val s = runCatchingCancellable { settingsRepository.current() }.getOrNull()
             ?: return ToolResult.error("could not read settings")
 
         if (!s.privilegedShellEnabled) {
@@ -230,7 +231,7 @@ class ShellTool @Inject constructor(
      * local path produces so the LLM sees a consistent transcript.
      */
     private suspend fun executeRemote(command: String, start: Long): ToolResult {
-        val s = runCatching { settingsRepository.current() }.getOrNull()
+        val s = runCatchingCancellable { settingsRepository.current() }.getOrNull()
             ?: return ToolResult.error("could not read remote shell settings")
 
         val config = RemoteTerminalBackend.Config(

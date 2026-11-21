@@ -12,6 +12,7 @@ import timber.log.Timber
 import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * SSH implementation of [RemoteTerminalBackend] using JSch (mwiede fork,
@@ -39,7 +40,7 @@ class SshTerminalBackend @Inject constructor() : RemoteTerminalBackend {
         }
         var session: Session? = null
         var channel: ChannelExec? = null
-        runCatching {
+        runCatchingCancellable {
             val jsch = JSch().apply {
                 hostKeyRepository = FingerprintHostKeyRepository(config.host, config.expectedHostFingerprint, this)
             }

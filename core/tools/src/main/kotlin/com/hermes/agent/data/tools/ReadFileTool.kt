@@ -97,6 +97,8 @@ class ReadFileTool(
 
         val allLines = try {
             file.readLines(Charsets.UTF_8)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             return ToolResult.error("Failed to read file: ${e.message}", System.currentTimeMillis() - startMs)
         }

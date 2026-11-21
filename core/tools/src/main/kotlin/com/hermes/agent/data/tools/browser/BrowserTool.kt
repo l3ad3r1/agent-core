@@ -30,6 +30,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * A real browser for the agent, ported from upstream Hermes' browser tools.
@@ -109,7 +110,7 @@ class BrowserTool @Inject constructor(
 
     override suspend fun execute(arguments: Map<String, JsonElement>): ToolResult = lock.withLock {
         val start = System.currentTimeMillis()
-        val result = runCatching { act(arguments) }.getOrElse { e ->
+        val result = runCatchingCancellable { act(arguments) }.getOrElse { e ->
             ToolResult.error("Browser ${arguments.string("action") ?: ""} failed: ${e.message ?: e.javaClass.simpleName}")
         }
         scheduleIdleClose()

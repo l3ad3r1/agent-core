@@ -5,6 +5,7 @@ import com.hermes.agent.data.plugin.script.ScriptModuleDigest
 import com.hermes.agent.data.plugin.script.ScriptPluginManifest
 import com.hermes.agent.data.plugin.script.ScriptPluginPermissions
 import java.util.UUID
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Delivers an approved evolution module on the fly: validate on the phone,
@@ -69,7 +70,7 @@ class EvolutionModuleInstaller(
      * Installs the module the user approved. [approvedSha256] is the digest shown on
      * the review screen; bytes that no longer match it are refused.
      */
-    suspend fun install(proposalId: String, approvedSha256: String): Result<EvolutionProposal> = runCatching {
+    suspend fun install(proposalId: String, approvedSha256: String): Result<EvolutionProposal> = runCatchingCancellable {
         val review = review(proposalId).getOrThrow()
         val p = review.proposal
         require(p.status == ProposalStatus.READY) { "Only a proposal that is ready can be installed (it is ${p.status.label})" }
@@ -124,7 +125,7 @@ class EvolutionModuleInstaller(
      * pinned bytes and grants), or removes the module when there is none, which also
      * restores any built-in it overrode.
      */
-    suspend fun rollback(proposalId: String): Result<EvolutionProposal> = runCatching {
+    suspend fun rollback(proposalId: String): Result<EvolutionProposal> = runCatchingCancellable {
         val p = store.get(proposalId) ?: error("Proposal not found")
         require(p.status == ProposalStatus.INSTALLED) { "Only an installed proposal can be rolled back" }
         val moduleId = p.moduleId ?: error("This proposal has no installed module")
@@ -169,7 +170,7 @@ class EvolutionModuleInstaller(
     }
 
     /** Files an app change (with the reviewed spec when there is one) to the self-repair repo. */
-    suspend fun fileAppChange(proposalId: String, filer: AppChangeFiler): Result<EvolutionProposal> = runCatching {
+    suspend fun fileAppChange(proposalId: String, filer: AppChangeFiler): Result<EvolutionProposal> = runCatchingCancellable {
         val p = store.get(proposalId) ?: error("Proposal not found")
         require(p.kind == ProposalKind.APP_CHANGE) { "Only an app change is filed to the repair repo" }
         require(filer.isConfigured) { "Set up self-repair reports first (Settings → Advanced → Self-repair)" }
@@ -192,7 +193,7 @@ class EvolutionModuleInstaller(
     }
 
     /** The user installed the test build that carries an app change. */
-    suspend fun markAppChangeInstalled(proposalId: String): Result<EvolutionProposal> = runCatching {
+    suspend fun markAppChangeInstalled(proposalId: String): Result<EvolutionProposal> = runCatchingCancellable {
         val p = store.get(proposalId) ?: error("Proposal not found")
         require(p.kind == ProposalKind.APP_CHANGE && p.issueUrl != null) { "Only a filed app change can be marked installed" }
         store.transition(p.id, ProposalStatus.INSTALLED, "Marked installed from the test build", clock())

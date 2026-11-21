@@ -75,6 +75,8 @@ class ClarifyTool @Inject constructor(
         return try {
             val answer = bus.ask(question, choices)
             ToolResult.ok(answer.ifBlank { "(no answer)" }, System.currentTimeMillis() - start)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (t: Throwable) {
             ToolResult.error(
                 t.message ?: "clarification was cancelled", System.currentTimeMillis() - start,

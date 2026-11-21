@@ -8,6 +8,7 @@ import com.hermes.agent.domain.tool.ToolRegistry
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * In-process [PluginSandbox] implementation.
@@ -32,7 +33,7 @@ class InProcessPluginSandbox @Inject constructor(
     override val name: String = "InProcess"
 
     override suspend fun load(plugin: Plugin, context: PluginContext): PluginLifecycleResult {
-        return runCatching {
+        return runCatchingCancellable {
             val result = plugin.onLoad(context)
             when (result) {
                 is PluginLifecycleResult.Success -> {
@@ -52,15 +53,15 @@ class InProcessPluginSandbox @Inject constructor(
     }
 
     override suspend fun suspend_(plugin: Plugin): PluginLifecycleResult =
-        runCatching { plugin.onSuspend() }
+        runCatchingCancellable { plugin.onSuspend() }
             .getOrElse { PluginLifecycleResult.Failure(it.message ?: "suspend failed") }
 
     override suspend fun resume(plugin: Plugin): PluginLifecycleResult =
-        runCatching { plugin.onResume() }
+        runCatchingCancellable { plugin.onResume() }
             .getOrElse { PluginLifecycleResult.Failure(it.message ?: "resume failed") }
 
     override suspend fun unload(plugin: Plugin): PluginLifecycleResult {
-        return runCatching {
+        return runCatchingCancellable {
             // Unregister tools first so no new invocations arrive mid-teardown.
             plugin.tools().forEach { toolRegistry.unregister(it.descriptor.name) }
             plugin.onUnload()

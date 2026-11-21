@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import timber.log.Timber
+import com.hermes.agent.util.runCatchingCancellable
 
 @Singleton
 class KanbanTaskProcessor @Inject constructor(
@@ -36,7 +37,7 @@ class KanbanTaskProcessor @Inject constructor(
             append(ticket.title)
             if (ticket.body.isNotBlank()) append("\n\n${ticket.body}")
         }
-        val result = runCatching {
+        val result = runCatchingCancellable {
             val events = orchestrator.run(
                 conversationId = "kanban-${ticket.id}",
                 userMessage = prompt,
@@ -55,7 +56,7 @@ class KanbanTaskProcessor @Inject constructor(
 
         kanbanRepository.complete(ticket.id, result)
         onCompleted(ticket)
-        runCatching {
+        runCatchingCancellable {
             val args: Map<String, JsonElement> = mapOf(
                 "message" to JsonPrimitive("Completed ticket ${ticket.id}: ${ticket.title}"),
             )

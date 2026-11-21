@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Real-time fact extractor — the first half of the closed learning loop.
@@ -41,7 +42,7 @@ class ConversationLearner @Inject constructor(
     ) = withContext(dispatchers.io) {
         if (!llmProvider.isAvailable()) return@withContext
 
-        val response = runCatching {
+        val response = runCatchingCancellable {
             llmProvider.complete(
                 listOf(
                     LlmMessage(role = "system", content = EXTRACTION_SYSTEM),
@@ -59,7 +60,7 @@ class ConversationLearner @Inject constructor(
         // fact about the user, and used to be saved line by line as if it were.
         if (raw == "NONE" || raw.isBlank() || !GeneratedTextGuard.isUsable(raw)) return@withContext
 
-        val existingContents = runCatching {
+        val existingContents = runCatchingCancellable {
             memoryRepository.searchMemories("", limit = 200).map { it.content.lowercase() }
         }.getOrDefault(emptyList())
 
@@ -69,7 +70,7 @@ class ConversationLearner @Inject constructor(
             .filterNot { fact -> isDuplicate(fact, existingContents) }
             .take(5)
             .forEach { fact ->
-                runCatching { memoryRepository.addMemory(fact) }
+                runCatchingCancellable { memoryRepository.addMemory(fact) }
                     .onSuccess { Timber.tag("ConversationLearner").d("learned: $fact") }
                     .onFailure { Timber.tag("ConversationLearner").w(it, "save failed") }
             }

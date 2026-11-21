@@ -554,6 +554,8 @@ class LocalLlmManager @Inject constructor(
                 if (alsoToolCaller) residentToolCallerEngine?.cleanUp()
                 persist()
             }
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (error: Exception) {
             Timber.e(error, "Could not %s", action)
             downloadCoordinator.reportError(

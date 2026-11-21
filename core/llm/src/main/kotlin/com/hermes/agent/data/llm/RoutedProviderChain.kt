@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeout
 import retrofit2.HttpException
 import timber.log.Timber
+import com.hermes.agent.util.runCatchingCancellable
 
 /** Ordered model-router result with automatic failover before output begins. */
 internal class RoutedProviderChain(
@@ -62,7 +63,7 @@ internal class RoutedProviderChain(
     ): Flow<LlmStreamChunk> = streamExecute { it.streamWithTools(messages, tools) }
 
     override suspend fun isAvailable(): Boolean = providers.any { provider ->
-        runCatching { provider.isAvailable() }.getOrDefault(false)
+        runCatchingCancellable { provider.isAvailable() }.getOrDefault(false)
     }
 
     private suspend fun <T> execute(

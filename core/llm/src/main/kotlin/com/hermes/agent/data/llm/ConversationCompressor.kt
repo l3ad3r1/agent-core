@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import timber.log.Timber
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Automatic context-window compression for long conversations.
@@ -90,7 +91,7 @@ class ConversationCompressor @Inject constructor(
             LlmMessage(role = "system", content = instructions),
             LlmMessage(role = "user", content = body.take(TRANSCRIPT_CHARS)),
         )
-        val text = runCatching {
+        val text = runCatchingCancellable {
             // Background work: on the local engine this keeps the summary off the
             // conversation's KV lane, so the next chat turn still finds its
             // prefix cached. Providers that do not care simply ignore it.

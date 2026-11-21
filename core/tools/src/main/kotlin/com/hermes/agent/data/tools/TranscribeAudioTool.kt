@@ -164,6 +164,8 @@ class TranscribeAudioTool @Inject constructor(
                     ToolResult.ok(text, System.currentTimeMillis() - start)
                 }
             }
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             ToolResult.error(e.message ?: "audio transcription request failed", System.currentTimeMillis() - start)
         }

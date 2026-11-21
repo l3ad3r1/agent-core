@@ -140,6 +140,8 @@ class ImageGenerationTool @Inject constructor(
                     )
                 }
             }
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             ToolResult.error(e.message ?: "image generation request failed", System.currentTimeMillis() - start)
         }

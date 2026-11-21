@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Honcho-style dialectic user modelling.
@@ -45,11 +46,11 @@ class UserModelService @Inject constructor(
      * unavailable is retried on the next conversation rather than lost.
      */
     suspend fun onConversationComplete() {
-        val count = runCatching { learningState.incrementConversationCount() }.getOrNull() ?: return
-        val lastRebuiltAt = runCatching { learningState.userModelRebuiltAt() }.getOrDefault(0)
+        val count = runCatchingCancellable { learningState.incrementConversationCount() }.getOrNull() ?: return
+        val lastRebuiltAt = runCatchingCancellable { learningState.userModelRebuiltAt() }.getOrDefault(0)
         if (count - lastRebuiltAt >= UPDATE_EVERY_N) {
             if (rebuild()) {
-                runCatching { learningState.setUserModelRebuiltAt(count) }
+                runCatchingCancellable { learningState.setUserModelRebuiltAt(count) }
             }
         }
     }
@@ -59,7 +60,7 @@ class UserModelService @Inject constructor(
      * Strips the [MODEL_PREFIX] before returning.
      */
     suspend fun currentModel(): String? = withContext(dispatchers.io) {
-        runCatching {
+        runCatchingCancellable {
             // Direct prefix lookup — the old path embedded an empty query and
             // vector-searched 200 memories per message just to find this row.
             memoryRepository.newestMemoryWithPrefix(MODEL_PREFIX)
@@ -77,7 +78,7 @@ class UserModelService @Inject constructor(
     suspend fun forceRebuild(): Boolean {
         val ok = rebuild()
         if (ok) {
-            runCatching { learningState.setUserModelRebuiltAt(learningState.conversationCount()) }
+            runCatchingCancellable { learningState.setUserModelRebuiltAt(learningState.conversationCount()) }
         }
         return ok
     }
@@ -89,7 +90,7 @@ class UserModelService @Inject constructor(
             return@withContext false
         }
 
-        val facts = runCatching {
+        val facts = runCatchingCancellable {
             memoryRepository.searchMemories("", limit = 200)
                 .filter { !it.content.startsWith(MODEL_PREFIX) }
                 .map { it.content }
@@ -103,7 +104,7 @@ class UserModelService @Inject constructor(
         // Everything known, within a size budget. It was the first 50 of up to 200 facts, so a long
         // memory was summarised from a fraction of itself and the rest silently dropped.
         val factList = factsWithinBudget(facts)
-        val response = runCatching {
+        val response = runCatchingCancellable {
             llmProvider.complete(
                 listOf(
                     LlmMessage(role = "system", content = MODEL_SYSTEM),
@@ -126,17 +127,17 @@ class UserModelService @Inject constructor(
 
         // Save the new model first, and only then retire the old one: a failed save used to leave
         // the user with no model at all, because the old one had already been deleted.
-        val oldModelIds = runCatching {
+        val oldModelIds = runCatchingCancellable {
             memoryRepository.searchMemories("", limit = 200)
                 .filter { it.content.startsWith(MODEL_PREFIX) }
                 .map { it.id }
         }.getOrDefault(emptyList())
 
-        val saved = runCatching { memoryRepository.addMemory("$MODEL_PREFIX$newModel") }
+        val saved = runCatchingCancellable { memoryRepository.addMemory("$MODEL_PREFIX$newModel") }
             .onSuccess { Timber.tag("UserModel").i("user model rebuilt (${facts.size} facts)") }
             .onFailure { Timber.tag("UserModel").w(it, "model save failed") }
             .isSuccess
-        if (saved) oldModelIds.forEach { id -> runCatching { memoryRepository.deleteMemory(id) } }
+        if (saved) oldModelIds.forEach { id -> runCatchingCancellable { memoryRepository.deleteMemory(id) } }
         saved
     }
 

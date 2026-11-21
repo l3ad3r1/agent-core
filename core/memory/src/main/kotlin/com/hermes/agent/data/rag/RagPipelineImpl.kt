@@ -23,6 +23,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Phase 2 [RagPipeline] implementation.
@@ -73,7 +74,7 @@ class RagPipelineImpl @Inject constructor(
         val now = System.currentTimeMillis()
 
         // 2. Embed each chunk.
-        val embeddings = runCatching { embeddingService.embedAll(chunkTexts) }
+        val embeddings = runCatchingCancellable { embeddingService.embedAll(chunkTexts) }
             .onFailure { Timber.tag("RagPipeline").w(it, "batch embed failed") }
             .getOrDefault(List(chunkTexts.size) { FloatArray(embeddingService.dimension) })
 
@@ -138,7 +139,7 @@ class RagPipelineImpl @Inject constructor(
         withContext(dispatchers.io) {
             ensureIndexHydrated()
 
-            val queryVec = runCatching { embeddingService.embedQuery(query) }
+            val queryVec = runCatchingCancellable { embeddingService.embedQuery(query) }
                 .onFailure { Timber.tag("RagPipeline").w(it, "query embed failed") }
                 .getOrNull()
                 ?: return@withContext emptyList()
@@ -231,7 +232,7 @@ class RagPipelineImpl @Inject constructor(
             val chunks = chunkDao.getByDocument(doc.id)
             if (chunks.isEmpty()) continue
             // Recompute embeddings (Phase 2: not persisted).
-            val embeddings = runCatching {
+            val embeddings = runCatchingCancellable {
                 embeddingService.embedAll(chunks.map { it.text })
             }.getOrDefault(List(chunks.size) { FloatArray(embeddingService.dimension) })
             chunks.forEachIndexed { i, chunk ->

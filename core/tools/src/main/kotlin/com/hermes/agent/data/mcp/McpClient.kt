@@ -138,11 +138,15 @@ class McpClient(
             }
             try {
                 sendJsonRpcNotification(notifPayload)
+            } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+                throw ce
             } catch (e: Exception) {
                 Timber.w(e, "Optional notification 'notifications/initialized' failed")
             }
 
             Result.success(Unit)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Result.failure(Exception(sanitizeErrorMessage(e.message ?: "Failed to initialize MCP client"), e))
         }
@@ -198,6 +202,8 @@ class McpClient(
             }
 
             Result.success(definitions)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Result.failure(Exception(sanitizeErrorMessage(e.message ?: "Failed to list MCP tools"), e))
         }
@@ -260,6 +266,8 @@ class McpClient(
             } else {
                 Result.success(finalOutput)
             }
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Result.failure(Exception(sanitizeErrorMessage(e.message ?: "MCP tool call execution error"), e))
         }

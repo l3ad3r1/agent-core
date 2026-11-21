@@ -181,6 +181,8 @@ class SettingsRepositoryImpl(
                 stale.forEach { key -> prefs[key]?.let { prefs[key] = secretCipher.encrypt(secretCipher.decrypt(it)) } }
             }
             Timber.tag("Settings").i("Encrypted %d credential(s) previously stored in clear text", stale.size)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (t: Throwable) {
             // Never let this break settings; reads work either way.
             Timber.tag("Settings").e(t, "Could not migrate credentials at rest")

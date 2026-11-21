@@ -20,6 +20,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Cross-session conversation search with LLM summarization.
@@ -90,7 +91,7 @@ class ConversationSearchTool @Inject constructor(
 
         // Summarise with LLM if available; otherwise return raw snippets.
         val summary = if (llmProvider.isAvailable()) {
-            runCatching {
+            runCatchingCancellable {
                 llmProvider.complete(
                     listOf(
                         LlmMessage(role = "system", content = SUMMARISE_SYSTEM),

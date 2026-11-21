@@ -7,6 +7,7 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 sealed class RoutingDecision {
     abstract val provider: LlmProvider
@@ -264,7 +265,7 @@ class HybridLlmRouter @Inject constructor(
         }
 
     private suspend fun available(provider: LlmProvider): Boolean =
-        runCatching { provider.isAvailable() }
+        runCatchingCancellable { provider.isAvailable() }
             .onFailure { Timber.tag("LlmRouter").w(it, "Availability check failed for %s", provider.name) }
             .getOrDefault(false)
 

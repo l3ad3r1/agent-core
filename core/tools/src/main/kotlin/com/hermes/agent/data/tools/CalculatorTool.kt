@@ -15,6 +15,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * Arithmetic calculator. Phase 1 of the calculator evaluates a restricted
@@ -53,7 +54,7 @@ class CalculatorTool @Inject constructor() : Tool {
         val expr = arguments["expression"]?.extractString()
             ?: return ToolResult.error("missing required parameter: expression")
 
-        return runCatching { evaluate(expr) }
+        return runCatchingCancellable { evaluate(expr) }
             .map { v ->
                 ToolResult.ok(
                     output = formatNumber(v),

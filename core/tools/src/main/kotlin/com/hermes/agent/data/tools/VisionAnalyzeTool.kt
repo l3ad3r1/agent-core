@@ -127,6 +127,8 @@ class VisionAnalyzeTool @Inject constructor(
                     ToolResult.ok(jsonOutput, System.currentTimeMillis() - start)
                 }
             }
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Timber.tag("VisionAnalyzeTool").e(e, "Vision analysis failed for input: %s", imageInput)
             ToolResult.error("Vision analysis failed: ${e.message ?: e.javaClass.simpleName}", System.currentTimeMillis() - start)

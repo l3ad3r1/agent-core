@@ -152,6 +152,8 @@ class HomeAssistantTool @Inject constructor(
                     System.currentTimeMillis() - start,
                 )
             }
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             Timber.e(e, "HomeAssistantTool failed on action $action")
             ToolResult.error("Home Assistant request failed: ${e.message ?: e.javaClass.simpleName}", System.currentTimeMillis() - start)

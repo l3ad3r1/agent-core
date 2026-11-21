@@ -104,6 +104,8 @@ class ScriptPluginEngine @Inject constructor() {
                         RunGuard.end(cx)
                         Context.exit()
                     }
+                } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+                    throw ce
                 } catch (t: Throwable) {
                     Timber.tag(TAG).w(t, "Module %s failed to load", spec.id)
                     failures += "${spec.id}: ${t.message ?: "failed to load"}"
@@ -154,6 +156,8 @@ class ScriptPluginEngine @Inject constructor() {
                     RunGuard.end(cx)
                     Context.exit()
                 }
+            } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 Result.failure(Exception(t.message ?: "Module tool failed"))
             }

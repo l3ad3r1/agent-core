@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hermes.agent.util.runCatchingCancellable
 
 /**
  * gRPC-oriented [PluginSandbox] for remotely hosted plugins.
@@ -44,7 +45,7 @@ class GrpcPluginSandbox @Inject constructor(
                 recoverable = true,
             )
         }
-        val result = runCatching { transport.load(plugin, context) }
+        val result = runCatchingCancellable { transport.load(plugin, context) }
             .getOrElse { return failure(plugin, "load", it) }
         if (result !is PluginLifecycleResult.Success) return result
 
@@ -56,11 +57,13 @@ class GrpcPluginSandbox @Inject constructor(
             }
             mutex.withLock { activeTransports[plugin.manifest.id] = transport }
             result
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (throwable: Throwable) {
             registeredTools.forEach { toolName ->
-                runCatching { toolRegistry.unregister(toolName) }
+                runCatchingCancellable { toolRegistry.unregister(toolName) }
             }
-            runCatching { transport.unload(plugin) }
+            runCatchingCancellable { transport.unload(plugin) }
                 .onFailure { Timber.tag("GrpcSandbox").w(it, "Rollback unload failed") }
             failure(plugin, "tool registration", throwable)
         }
@@ -68,13 +71,13 @@ class GrpcPluginSandbox @Inject constructor(
 
     override suspend fun suspend_(plugin: Plugin): PluginLifecycleResult {
         val transport = activeTransport(plugin) ?: return notLoaded(plugin)
-        return runCatching { transport.suspend_(plugin) }
+        return runCatchingCancellable { transport.suspend_(plugin) }
             .getOrElse { failure(plugin, "suspend", it) }
     }
 
     override suspend fun resume(plugin: Plugin): PluginLifecycleResult {
         val transport = activeTransport(plugin) ?: return notLoaded(plugin)
-        return runCatching { transport.resume(plugin) }
+        return runCatchingCancellable { transport.resume(plugin) }
             .getOrElse { failure(plugin, "resume", it) }
     }
 
@@ -90,7 +93,7 @@ class GrpcPluginSandbox @Inject constructor(
             }
             .onFailure { cleanupFailure = it }
 
-        val unloadResult = runCatching { transport.unload(plugin) }
+        val unloadResult = runCatchingCancellable { transport.unload(plugin) }
             .getOrElse { failure(plugin, "unload", it) }
         mutex.withLock { activeTransports.remove(plugin.manifest.id) }
         return cleanupFailure?.let { failure(plugin, "tool cleanup", it) } ?: unloadResult
@@ -100,7 +103,7 @@ class GrpcPluginSandbox @Inject constructor(
 
     private suspend fun availableTransport(): GrpcPluginTransport? {
         for (transport in transports) {
-            val available = runCatching { transport.isAvailable() }
+            val available = runCatchingCancellable { transport.isAvailable() }
                 .onFailure {
                     Timber.tag("GrpcSandbox").w(it, "Availability probe failed for %s", transport.name)
                 }

@@ -100,6 +100,8 @@ class WriteFileTool(
         try {
             file.parentFile?.mkdirs()
             file.writeText(content, Charsets.UTF_8)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             return ToolResult.error("Failed to write file '$pathStr': ${e.message}", System.currentTimeMillis() - startMs)
         }

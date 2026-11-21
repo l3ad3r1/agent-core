@@ -106,6 +106,8 @@ class PatchFileTool(
 
         val originalContent = try {
             file.readText(Charsets.UTF_8)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             return ToolResult.error("Failed to read file '$pathStr': ${e.message}", System.currentTimeMillis() - startMs)
         }
@@ -125,6 +127,8 @@ class PatchFileTool(
         // 3. Write modified content
         try {
             file.writeText(patchResult.newContent, Charsets.UTF_8)
+        } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
+            throw ce
         } catch (e: Exception) {
             return ToolResult.error("Failed to write patched file '$pathStr': ${e.message}", System.currentTimeMillis() - startMs)
         }
