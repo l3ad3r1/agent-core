@@ -50,6 +50,24 @@ internal object ApiErrorClassifier {
         "prompt is too long", "input is too long", "maximum allowed input length",
     )
 
+    private val OVERLOADED = listOf(
+        "overloaded", "http 503", "http 529", "service unavailable", "server is busy",
+        "temporarily unavailable", "at capacity", "try again later",
+    )
+
+    /**
+     * A provider that is up but shedding load (HTTP 503 / Anthropic-style 529 "overloaded").
+     * Unlike a dead endpoint, this usually clears within seconds, so it is worth waiting out
+     * rather than dropping to a much weaker model (hermes-agent `agent.auto_recovery_cycles`).
+     */
+    fun isOverloaded(t: Throwable): Boolean {
+        val chain = generateSequence<Throwable>(t) { it.cause }.toList()
+        val status = chain.filterIsInstance<HttpException>().firstOrNull()?.code()
+        if (status == 503 || status == 529) return true
+        val msg = chain.mapNotNull { it.message }.joinToString(" ").lowercase()
+        return OVERLOADED.any(msg::contains)
+    }
+
     fun classify(t: Throwable): FailoverAction {
         val chain = generateSequence<Throwable>(t) { it.cause }.toList()
         val msg = chain.mapNotNull { it.message }.joinToString(" ").lowercase()

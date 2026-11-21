@@ -58,9 +58,7 @@ class OutputRedactor @Inject constructor(
         }
 
         // Layer 2: credential-shaped patterns.
-        for ((pattern, label) in PATTERNS) {
-            out = pattern.replace(out) { "[redacted:$label]" }
-        }
+        out = maskShapes(out)
         return out
     }
 
@@ -69,14 +67,59 @@ class OutputRedactor @Inject constructor(
          *  text (e.g. a 4-char key would redact random substrings). */
         private const val MIN_SECRET_LENGTH = 8
 
-        private val PATTERNS: List<Pair<Regex, String>> = listOf(
+        /**
+         * Pattern layer, usable without settings (and from tests). Order matters: whole private-key
+         * blocks first, then shapes where only the secret part is masked (connection-string
+         * passwords, `key = value` assignments), then bare token shapes.
+         */
+        fun maskShapes(text: String): String {
+            if (text.isBlank()) return text
+            var out = PRIVATE_KEY_BLOCK.replace(text) { "[redacted:private-key]" }
+            // scheme://user:PASSWORD@host — keep scheme, user and host so the line still reads.
+            out = CONNECTION_PASSWORD.replace(out) { m -> "${m.groupValues[1]}[redacted:password]@" }
+            // password=..., "api_key": "...", client_secret: '...' — keep the name, mask the value.
+            out = SECRET_ASSIGNMENT.replace(out) { m -> "${m.groupValues[1]}[redacted:secret]" }
+            for ((pattern, label) in TOKEN_SHAPES) {
+                out = pattern.replace(out) { "[redacted:$label]" }
+            }
+            return out
+        }
+
+        /** PEM / OpenSSH private keys of any algorithm (RSA, EC, DSA, ENCRYPTED, OPENSSH...). */
+        private val PRIVATE_KEY_BLOCK = Regex(
+            """-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----[\s\S]*?-----END ([A-Z0-9]+ )*PRIVATE KEY-----""",
+        )
+
+        /** `postgres://app:hunter22@db`, `mongodb+srv://u:p@cluster`, `redis://:pw@host`. */
+        private val CONNECTION_PASSWORD = Regex("""\b([a-z][a-z0-9+.-]{1,20}://[^\s:/@]*:)([^\s@/]{3,})@""")
+
+        /**
+         * A credential-named key followed by `=` or `:` and a value: group 1 is the name and
+         * separator (kept), group 2 the value (masked). Bare `token=` is left alone (too common in
+         * ordinary text and URLs), and placeholders ($VAR, ***, <key>, {...}) are not secrets.
+         */
+        private val SECRET_ASSIGNMENT = Regex(
+            """(?i)(["']?\b(?:password|passwd|pwd|passphrase|secret|client[_-]?secret|api[_-]?key|apikey|""" +
+                """access[_-]?token|auth[_-]?token|refresh[_-]?token|private[_-]?key|secret[_-]?key)\b["']?""" +
+                """\s*[:=]\s*["']?)(?![${'$'}*<{\[\s"'])([^\s"',;]{6,})""",
+        )
+
+        private val TOKEN_SHAPES: List<Pair<Regex, String>> = listOf(
+            Regex("""\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}""") to "jwt",
             Regex("""sk-[A-Za-z0-9_-]{16,}""") to "api-key",
-            Regex("""ghp_[A-Za-z0-9]{20,}""") to "github-token",
+            Regex("""\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,}""") to "stripe-key",
+            Regex("""\bgh[pousr]_[A-Za-z0-9]{20,}""") to "github-token",
             Regex("""github_pat_[A-Za-z0-9_]{20,}""") to "github-token",
+            Regex("""\bglpat-[A-Za-z0-9_-]{20,}""") to "gitlab-token",
             Regex("""xox[bapr]-[A-Za-z0-9-]{10,}""") to "slack-token",
             Regex("""AIza[A-Za-z0-9_-]{30,}""") to "google-api-key",
             Regex("""nvapi-[A-Za-z0-9_-]{20,}""") to "nvidia-api-key",
+            Regex("""\bhf_[A-Za-z0-9]{30,}""") to "huggingface-token",
+            Regex("""\bgsk_[A-Za-z0-9]{40,}""") to "groq-api-key",
+            Regex("""\bxai-[A-Za-z0-9]{40,}""") to "xai-api-key",
+            Regex("""\b\d{8,10}:AA[A-Za-z0-9_-]{33}\b""") to "telegram-bot-token",
             Regex("""AKIA[A-Z0-9]{16}""") to "aws-access-key",
+            Regex("""(?i)\bAccountKey=[A-Za-z0-9+/=]{40,}""") to "azure-storage-key",
             Regex("""(?i)bearer\s+[A-Za-z0-9._~+/=-]{20,}""") to "bearer-token",
         )
     }

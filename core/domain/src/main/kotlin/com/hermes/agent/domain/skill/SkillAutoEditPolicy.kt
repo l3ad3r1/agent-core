@@ -12,10 +12,12 @@ import com.hermes.agent.domain.model.Skill
  *   way). Re-installing is how those are updated.
  * - A skill changed in the last [COOLDOWN_MS], by anyone, is left alone. Two "weekly" passes an
  *   hour apart each rewrote the previous pass's output, compounding what the first one lost.
+ * - A skill the user locked ([Skill.pinned]) is never rewritten automatically (hermes-agent's
+ *   `curator lock`). Lifecycle archiving already skips it; the user can still edit it by hand.
  */
 object SkillAutoEditPolicy {
     const val COOLDOWN_MS = 6L * 24 * 60 * 60 * 1000
 
     fun mayAutoEdit(skill: Skill, now: Long = System.currentTimeMillis()): Boolean =
-        !skill.isBuiltIn && skill.sourceUrl == null && now - skill.updatedAt >= COOLDOWN_MS
+        !skill.isBuiltIn && !skill.pinned && skill.sourceUrl == null && now - skill.updatedAt >= COOLDOWN_MS
 }

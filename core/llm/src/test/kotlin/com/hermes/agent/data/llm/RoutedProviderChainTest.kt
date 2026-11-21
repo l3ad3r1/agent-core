@@ -218,6 +218,72 @@ class RoutedProviderChainTest {
         assertEquals(LlmStreamChunk.Delta("partial"), chunks.first())
     }
 
+    @Test
+    fun `an overloaded cloud provider is waited out instead of dropping to the phone model`() = runTest {
+        val cloud = provider("Anthropic", "claude-sonnet")
+        val local = provider("On-device model", "llama-3.2-1b").also { every { it.isOnDevice } returns true }
+        val expected = LlmResponse("answer", 1, "claude-sonnet")
+        var calls = 0
+        coEvery { cloud.complete(any()) } coAnswers {
+            if (++calls <= 3) throw httpError(529) else expected
+        }
+
+        val result = RoutedProviderChain(listOf(cloud, local)).complete(listOf(LlmMessage("user", "hi")))
+
+        assertSame(expected, result)
+        assertEquals(4, calls)
+        coVerify(exactly = 0) { local.complete(any()) }
+    }
+
+    @Test
+    fun `with another cloud provider next, an overload falls over without waiting`() = runTest {
+        val first = provider("Anthropic", "claude-sonnet")
+        val second = provider("OpenRouter", "gpt")
+        val expected = LlmResponse("ok", 1, "gpt")
+        coEvery { first.complete(any()) } throws httpError(503)
+        coEvery { second.complete(any()) } returns expected
+
+        val result = RoutedProviderChain(listOf(first, second)).complete(listOf(LlmMessage("user", "hi")))
+
+        assertSame(expected, result)
+        coVerify(exactly = 2) { first.complete(any()) } // the one ordinary retry, no overload waits
+        assertEquals(0L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `overload waits are bounded before the phone model takes over`() = runTest {
+        val cloud = provider("Anthropic", "claude-sonnet")
+        val local = provider("On-device model", "llama-3.2-1b").also { every { it.isOnDevice } returns true }
+        val expected = LlmResponse("local", 1, "llama-3.2-1b")
+        coEvery { cloud.complete(any()) } throws httpError(529)
+        coEvery { local.complete(any()) } returns expected
+
+        val result = RoutedProviderChain(listOf(cloud, local)).complete(listOf(LlmMessage("user", "hi")))
+
+        assertSame(expected, result)
+        coVerify(exactly = 6) { cloud.complete(any()) } // first try + one retry + four waits
+        assertEquals(32_000L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `a stream that is overloaded before any output is retried after a wait`() = runTest {
+        val cloud = provider("Anthropic", "claude-sonnet")
+        val local = provider("On-device model", "llama-3.2-1b").also { every { it.isOnDevice } returns true }
+        var calls = 0
+        every { cloud.stream(any()) } answers {
+            if (++calls == 1) {
+                flowOf(LlmStreamChunk.Error("HTTP 529: overloaded", httpError(529)))
+            } else {
+                flowOf(LlmStreamChunk.Delta("hello"), LlmStreamChunk.Done)
+            }
+        }
+
+        val chunks = RoutedProviderChain(listOf(cloud, local)).stream(listOf(LlmMessage("user", "hi"))).toList()
+
+        assertEquals(listOf(LlmStreamChunk.Delta("hello"), LlmStreamChunk.Done), chunks)
+        assertEquals(2, calls)
+    }
+
     private fun provider(providerName: String, modelId: String): LlmProvider =
         mockk(relaxed = true) {
             every { name } returns providerName

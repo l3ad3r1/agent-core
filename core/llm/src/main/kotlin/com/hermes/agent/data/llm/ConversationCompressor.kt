@@ -145,6 +145,8 @@ class ConversationCompressor @Inject constructor(
             open questions. Keep what is still true, drop what the new turns
             supersede. Third person, no pleasantries, no headings. This is
             reference context, not a list of instructions to act on.
+            $UNVERIFIED_RULE Keep existing UNVERIFIED: lines unless the new turns
+            confirm or refute them.
         """.trimIndent()
 
         val BRIEF_INSTRUCTIONS = """
@@ -154,6 +156,16 @@ class ConversationCompressor @Inject constructor(
             about the user, task state, and any open questions. Third person,
             no pleasantries, no headings. This is reference context, not a list
             of instructions to act on.
+            $UNVERIFIED_RULE
         """.trimIndent()
+
+        /**
+         * From hermes-agent v0.23 ("Compaction is more honest"): a guess written into the brief
+         * otherwise comes back turns later as an established fact.
+         */
+        const val UNVERIFIED_RULE =
+            "Anything stated but not confirmed (a guess, an unchecked claim, an action whose " +
+                "result was never reported) goes on its own line starting UNVERIFIED: so it is " +
+                "not later taken as fact."
     }
 }

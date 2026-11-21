@@ -13,11 +13,16 @@ class SkillAutoEditPolicyTest {
         builtIn: Boolean = false,
         sourceUrl: String? = null,
         updatedDaysAgo: Long = 30,
+        pinned: Boolean = false,
     ) = Skill(
         id = "s", name = "n", description = "A description long enough", version = "1.0.0", content = "# H\nbody",
         category = "c", tags = emptyList(), isBuiltIn = builtIn, createdAt = 0, updatedAt = now - updatedDaysAgo * day,
-        sourceUrl = sourceUrl,
+        sourceUrl = sourceUrl, pinned = pinned,
     )
+
+    @Test
+    fun `a locked skill is never edited automatically`() =
+        assertFalse(SkillAutoEditPolicy.mayAutoEdit(skill(pinned = true, updatedDaysAgo = 365), now))
 
     @Test
     fun `a user-made skill untouched for a while may be edited`() =

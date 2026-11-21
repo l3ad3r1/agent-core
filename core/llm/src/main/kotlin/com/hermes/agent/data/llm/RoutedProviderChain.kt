@@ -7,6 +7,7 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeout
@@ -77,6 +78,7 @@ internal class RoutedProviderChain(
         // chain had stopped offering it anything for the rest of the conversation.
         var resumeFrom = index
         var retriedSame = false
+        var overloadWaits = 0
         // The soonest moment a rate-limited provider said it will answer again, if any did.
         var soonestReset: Pair<String, Long>? = null
         fun noteReset(provider: LlmProvider, failure: Throwable) {
@@ -118,6 +120,15 @@ internal class RoutedProviderChain(
                         Timber.tag("LlmRouter").w(failure, "%s hit a transient error on %s; retrying once",
                             operation, provider.name)
                         continue
+                    } else {
+                        val wait = overloadWaitMillis(failure, index, overloadWaits)
+                        if (wait != null) {
+                            overloadWaits++
+                            Timber.tag("LlmRouter").w("%s: %s is overloaded; waiting %ds (%d/%d)",
+                                operation, provider.name, wait / 1_000, overloadWaits, OVERLOAD_BACKOFF_MS.size)
+                            delay(wait)
+                            continue
+                        }
                     }
                     FailoverAction.FALLBACK -> Unit
                 }
@@ -127,9 +138,23 @@ internal class RoutedProviderChain(
             }
             if (resumeFrom == index && lastFailure?.isAbstain() != true) resumeFrom = index + 1
             retriedSame = false
+            overloadWaits = 0
             index++
         }
         throw giveUp(checkNotNull(lastFailure))
+    }
+
+    /**
+     * How long to wait before asking an overloaded provider again, or null to move on now.
+     * Waiting only pays when the alternative is the phone's own small model (or nothing): with
+     * another cloud provider next in line, falling over is faster and nearly as good.
+     */
+    private fun overloadWaitMillis(failure: Throwable, index: Int, waitsSoFar: Int): Long? {
+        if (waitsSoFar >= OVERLOAD_BACKOFF_MS.size) return null
+        if (!ApiErrorClassifier.isOverloaded(failure)) return null
+        if (providers[index].isOnDevice) return null
+        if (providers.drop(index + 1).any { !it.isOnDevice }) return null
+        return OVERLOAD_BACKOFF_MS[waitsSoFar]
     }
 
     private fun Throwable.isAbstain(): Boolean =
@@ -150,7 +175,9 @@ internal class RoutedProviderChain(
         source: (LlmProvider) -> Flow<LlmStreamChunk>,
     ): Flow<LlmStreamChunk> = flow {
         var resumeFrom = activeIndex.get() // see execute: an abstain does not move this on
-        for (index in activeIndex.get() until providers.size) {
+        var index = activeIndex.get()
+        var overloadWaits = 0
+        while (index < providers.size) {
             val provider = providers[index]
             var emittedOutput = false
             var retryFailure: Throwable? = null
@@ -192,6 +219,15 @@ internal class RoutedProviderChain(
 
             val failure = retryFailure
             if (failure == null) return@flow
+            // Nothing has reached the user yet, so an overloaded provider can be asked again.
+            val wait = overloadWaitMillis(failure, index, overloadWaits)
+            if (wait != null) {
+                overloadWaits++
+                Timber.tag("LlmRouter").w("Stream: %s is overloaded; waiting %ds (%d/%d)",
+                    provider.name, wait / 1_000, overloadWaits, OVERLOAD_BACKOFF_MS.size)
+                delay(wait)
+                continue
+            }
             if (resumeFrom == index && !failure.isAbstain()) resumeFrom = index + 1
             if (index == providers.lastIndex) {
                 emit(LlmStreamChunk.Error(failure.message ?: "All routed providers failed.", failure))
@@ -203,6 +239,8 @@ internal class RoutedProviderChain(
                 provider.name,
                 providers[index + 1].name,
             )
+            overloadWaits = 0
+            index++
         }
     }
 
@@ -228,6 +266,8 @@ internal class RoutedProviderChain(
         const val ON_DEVICE_ATTEMPT_TIMEOUT_MS = 120_000L
         /** Silence after a reply has started that means the stream is dead, not slow. */
         const val STREAM_STALL_MS = 120_000L
+        /** Waits before re-asking an overloaded provider (about 30 s in all), then fall over. */
+        val OVERLOAD_BACKOFF_MS = longArrayOf(2_000L, 5_000L, 10_000L, 15_000L)
         // A provider-specific billing failure must not terminate a routed
         // request: another configured cloud provider (or the final local
         // fallback) may still be available.  CloudLlmProvider wraps HTTP
