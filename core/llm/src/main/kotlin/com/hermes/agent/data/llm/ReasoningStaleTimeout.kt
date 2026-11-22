@@ -49,9 +49,11 @@ internal object ReasoningStaleTimeout {
         "grok-4.5" to 300_000L,
         "grok-4.6" to 300_000L,
         "gemini-2.5-pro" to 240_000L,
-        // The PC relay (hermes-compute-relay) runs a whole agent CLI per turn: 20-40 s
-        // is normal, and a turn carrying tools and an image took 38 s.
-        "hermes-relay" to 90_000L,
+        // The compute relay (hermes-compute-relay) runs a whole agent CLI per turn: 15-40 s
+        // is normal, but a tool-heavy turn (~20k chars, 23-33 tools) on Gemini 3.8 Flash High
+        // took 130-165 s on op8. The relay gives up at 180 s and says so in the reply, and it
+        // sends a keep-alive every 10 s, so wait just past that instead of cutting off answers.
+        "hermes-relay" to 190_000L,
     ).sortedByDescending { it.first.length }
 
     /**

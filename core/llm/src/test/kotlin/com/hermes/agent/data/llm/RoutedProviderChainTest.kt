@@ -70,7 +70,7 @@ class RoutedProviderChainTest {
         val started = testScheduler.currentTime
         assertEquals(fallback, RoutedProviderChain(listOf(down, local)).complete(messages))
         assertEquals("a dead relay is tried once", 1, calls)
-        assertEquals(90_000L, testScheduler.currentTime - started)
+        assertEquals(190_000L, testScheduler.currentTime - started)
     }
 
     @Test
