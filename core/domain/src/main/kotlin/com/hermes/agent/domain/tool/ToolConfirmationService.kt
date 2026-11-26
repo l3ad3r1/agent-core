@@ -26,6 +26,7 @@ data class PendingConfirmation(
 class ToolConfirmationService @Inject constructor(
     private val authorizationSettings: ToolAuthorizationSettings,
     private val deviceAuthenticationService: DeviceAuthenticationService,
+    private val homeAssistantGuard: HomeAssistantControlGuard = HomeAssistantControlGuard.ID_ONLY,
 ) {
     private val requestMutex = Mutex()
     private var pendingDeferred: CompletableDeferred<Boolean>? = null
@@ -59,9 +60,12 @@ class ToolConfirmationService @Inject constructor(
         // is on - a wrong light is an annoyance, a wrong lock is not.
         if (isHomeAssistantControl(call) && authorizationSettings.autoApproveHomeAssistantControl()) {
             val domain = homeAssistantDomainOf(call)
-            if (domain != null && domain in HIGH_RISK_HA_DOMAINS) {
+            if (isHighRiskHomeAssistantCall(call, domain)) {
                 Timber.tag("ToolConfirmation")
                     .i("Confirming high-risk HA domain=%s despite auto-approve", domain)
+            } else if (homeAssistantGuardSaysAsk(call)) {
+                Timber.tag("ToolConfirmation")
+                    .i("Confirming HA call on a protected target despite auto-approve")
             } else {
                 Timber.tag("ToolConfirmation")
                     .i("Auto-approved HA control domain=%s", domain ?: "unknown")
@@ -123,6 +127,16 @@ class ToolConfirmationService @Inject constructor(
         }
     }
 
+    /** Fails closed: a guard that throws means the call asks. */
+    private suspend fun homeAssistantGuardSaysAsk(call: ToolCall): Boolean = try {
+        homeAssistantGuard.mustAsk(call)
+    } catch (ce: kotlinx.coroutines.CancellationException) {
+        throw ce
+    } catch (e: Exception) {
+        Timber.tag("ToolConfirmation").w(e, "HA guard failed; asking")
+        true
+    }
+
     companion object {
         const val CONFIRMATION_TIMEOUT_MS = 60_000L
 
@@ -143,7 +157,9 @@ class ToolConfirmationService @Inject constructor(
          * added later) still stops for a human.
          */
         val READ_ONLY_ACTIONS: Map<String, Set<String>> = mapOf(
-            "home_assistant" to setOf("list_entities", "get_state", "list_services"),
+            // list_places and render_template only read too: a template can't change state.
+            // assist is deliberately absent - one sentence can unlock a door.
+            "home_assistant" to setOf("list_entities", "get_state", "list_services", "list_places", "render_template"),
         )
 
         val AUTO_APPROVABLE_PHONE_TOOLS = setOf(
@@ -170,6 +186,28 @@ class ToolConfirmationService @Inject constructor(
          * door or a disarmed alarm is a security event, not a wrong light.
          */
         val HIGH_RISK_HA_DOMAINS = setOf("lock", "alarm_control_panel", "cover", "vacuum")
+
+        /**
+         * Calls that keep asking even with HA auto-approve on.
+         *
+         * A call aimed at a whole place (`area` - an area, floor or label - with no
+         * entity_id) fans out to devices nobody named: "switch off the infrastructure
+         * switches" reaches the router and the Pi, which the dashboard's own
+         * ask-before-off rule never sees. The generic `homeassistant.turn_on/off/toggle`
+         * reaches every domain its target holds, so it is only as safe as that entity.
+         */
+        fun isHighRiskHomeAssistantCall(call: ToolCall, domain: String? = homeAssistantDomainOf(call)): Boolean {
+            if (domain != null && domain in HIGH_RISK_HA_DOMAINS) return true
+            val names = { key: String ->
+                (call.arguments[key] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+            }
+            if (names("area") != null && names("entity_id") == null) return true
+            if (domain != "homeassistant") return false
+            val entityDomain = (call.arguments["entity_id"] as? JsonPrimitive)?.contentOrNull
+                ?.substringBefore('.', "")?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+                ?: return true
+            return entityDomain in HIGH_RISK_HA_DOMAINS
+        }
 
         /** True for a home_assistant call whose action changes state. */
         fun isHomeAssistantControl(call: ToolCall): Boolean {

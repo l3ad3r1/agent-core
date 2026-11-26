@@ -104,7 +104,7 @@ class HomeAssistantToolTest {
     }
 
     @Test
-    fun `list_entities filters by domain and area`() = runTest {
+    fun `list_entities falls back to name matching when the place index is unavailable`() = runTest {
         val statesJson = """
             [
                 {
@@ -125,6 +125,8 @@ class HomeAssistantToolTest {
             ]
         """.trimIndent()
 
+        // An HA too old for the place template answers it with an error.
+        server.enqueue(MockResponse().setResponseCode(400).setBody("UndefinedError: 'labels' is undefined"))
         server.enqueue(MockResponse().setResponseCode(200).setBody(statesJson))
 
         val repo = FakeSettingsRepository(
@@ -148,6 +150,7 @@ class HomeAssistantToolTest {
         assertFalse(result.output.contains("kitchen_ceiling"))
         assertFalse(result.output.contains("switch.heater"))
 
+        assertEquals("/api/template", server.takeRequest().path)
         val recorded = server.takeRequest()
         assertEquals("/api/states", recorded.path)
         assertEquals("Bearer test-token-123", recorded.getHeader("Authorization"))

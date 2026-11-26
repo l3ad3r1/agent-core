@@ -15,6 +15,7 @@ import dagger.multibindings.IntoSet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -34,11 +35,17 @@ import javax.inject.Singleton
 /**
  * Home Assistant tool for smart home integration via REST API.
  *
- * Exposes 4 actions behind a single tool descriptor:
- *  - list_entities: filter entities by domain (light, switch, climate, sensor) or area
+ * Exposes these actions behind a single tool descriptor:
+ *  - list_entities: filter entities by domain (light, switch, climate, sensor) or place
  *  - get_state: fetch detailed state and attributes of a single entity_id
  *  - list_services: list available services per domain
- *  - call_service: execute a service on target entity with optional parameters
+ *  - call_service: execute a service on an entity, or on every entity in a place
+ *  - list_places: the areas, floors and labels the house is organised by
+ *  - render_template: answer a question from live state with one Jinja render
+ *  - assist: hand a sentence to Home Assistant's own Assist (conversation agent)
+ *
+ * A "place" is an area, floor or label, resolved through [HomeAssistantPlaces] - the same
+ * device-aware lookup HA's Android companion app does with its registries.
  */
 @Singleton
 class HomeAssistantTool @Inject constructor(
@@ -56,17 +63,21 @@ class HomeAssistantTool @Inject constructor(
     override val descriptor = ToolDescriptor(
         name = "home_assistant",
         description = "Control smart home devices, inspect entity states, and list available services via Home Assistant. " +
-            "Actions: 'list_entities' (filter by domain or area), 'get_state' (read state by entity_id), " +
-            "'list_services' (discover available actions per domain), 'call_service' (turn on/off, adjust climate, etc.).",
+            "Actions: 'list_places' (the areas, floors and labels - call this first to learn room names), " +
+            "'list_entities' (filter by domain and/or place), 'get_state' (read state by entity_id), " +
+            "'list_services' (discover available actions per domain), " +
+            "'call_service' (turn on/off, adjust climate, etc. on an entity_id, or on a whole place via 'area'), " +
+            "'render_template' (answer counts/summaries from live state with one Jinja template), " +
+            "'assist' (pass a plain sentence to Home Assistant's own voice assistant).",
         parameters = listOf(
             ToolParameter(
                 name = "action",
                 type = ToolParameterType.STRING,
-                description = "The action to perform: 'list_entities', 'get_state', 'list_services', 'call_service'.",
+                description = "The action to perform: " + ACTIONS.joinToString(", ") { "'$it'" } + ".",
                 required = true,
                 // The tool rejects anything else; without the list a small model's action="turn_off"
                 // looked well-formed and was accepted.
-                enumValues = listOf("list_entities", "get_state", "list_services", "call_service"),
+                enumValues = ACTIONS,
             ),
             ToolParameter(
                 name = "domain",
@@ -77,7 +88,9 @@ class HomeAssistantTool @Inject constructor(
             ToolParameter(
                 name = "area",
                 type = ToolParameterType.STRING,
-                description = "Area or room name to filter by (e.g. 'living room', 'kitchen', 'bedroom') for list_entities.",
+                description = "A place: area, floor or label name (e.g. 'living room', 'first floor', 'Hyderabad Flat'). " +
+                    "Filters list_entities; for call_service it targets every matching entity in that place " +
+                    "(combine with domain, e.g. domain='light' service='turn_off' area='terrace').",
                 required = false,
             ),
             ToolParameter(
@@ -98,6 +111,19 @@ class HomeAssistantTool @Inject constructor(
                 description = "Additional service parameters as JSON object string (e.g. '{\"brightness\": 255}' or '{\"temperature\": 22}').",
                 required = false,
             ),
+            ToolParameter(
+                name = "template",
+                type = ToolParameterType.STRING,
+                description = "Jinja2 template for render_template, e.g. " +
+                    "\"{{ states.light | selectattr('state','eq','on') | list | count }}\".",
+                required = false,
+            ),
+            ToolParameter(
+                name = "text",
+                type = ToolParameterType.STRING,
+                description = "The sentence for assist, e.g. 'turn off the terrace lights'.",
+                required = false,
+            ),
         ),
         category = "automation",
         capabilities = setOf("home_assistant", "device_control", "automation"),
@@ -106,10 +132,23 @@ class HomeAssistantTool @Inject constructor(
         requiredByAction = mapOf(
             "get_state" to listOf("entity_id"),
             "call_service" to listOf("domain", "service"),
+            "render_template" to listOf("template"),
+            "assist" to listOf("text"),
         ),
     )
 
     companion object {
+        val ACTIONS = listOf(
+            "list_places", "list_entities", "get_state", "list_services", "call_service",
+            "render_template", "assist",
+        )
+
+        /** Places change rarely; one render serves a whole conversation's worth of lookups. */
+        private const val PLACES_TTL_MS = 60_000L
+        private const val MAX_TEMPLATE_OUTPUT_CHARS = 4_000
+        private const val MAX_TEMPLATE_INPUT_CHARS = 4_000
+        private const val MAX_ASSIST_TEXT_CHARS = 500
+
         private val ENTITY_ID_RE = Regex("^[a-z_][a-z0-9_]*\\.[a-z0-9_]+$")
         private val SERVICE_NAME_RE = Regex("^[a-z][a-z0-9_]*$")
 
@@ -147,8 +186,11 @@ class HomeAssistantTool @Inject constructor(
                 "get_state" -> handleGetState(baseUrl, token, arguments, start)
                 "list_services" -> handleListServices(baseUrl, token, arguments, start)
                 "call_service" -> handleCallService(baseUrl, token, arguments, start)
+                "list_places" -> handleListPlaces(baseUrl, token, start)
+                "render_template" -> handleRenderTemplate(baseUrl, token, arguments, start)
+                "assist" -> handleAssist(baseUrl, token, arguments, start)
                 else -> ToolResult.error(
-                    "Unknown action '$action'. Expected 'list_entities', 'get_state', 'list_services', or 'call_service'.",
+                    "Unknown action '$action'. Expected one of: ${ACTIONS.joinToString(", ")}.",
                     System.currentTimeMillis() - start,
                 )
             }
@@ -168,6 +210,21 @@ class HomeAssistantTool @Inject constructor(
     ): ToolResult {
         val domainFilter = arguments["domain"]?.str()?.lowercase()?.trim()?.takeIf { it.isNotBlank() }
         val areaFilter = arguments["area"]?.str()?.lowercase()?.trim()?.takeIf { it.isNotBlank() }
+
+        // A real place lookup when the server can render the index; otherwise (an HA
+        // older than labels/floors, or a failed render) the old name-substring match.
+        var placeLabel: String? = null
+        val placeEntities: Set<String>? = areaFilter?.let { query ->
+            val places = loadPlaces(baseUrl, token) ?: return@let null
+            when (val r = places.resolve(query)) {
+                is HomeAssistantPlaces.Resolution.Found -> {
+                    placeLabel = describe(r.place)
+                    places.entitiesOf(r.place)
+                }
+                is HomeAssistantPlaces.Resolution.Ambiguous -> return ambiguous(query, r, start)
+                HomeAssistantPlaces.Resolution.None -> return unknownPlace(query, places, start)
+            }
+        }
 
         val request = Request.Builder()
             .url("$baseUrl/api/states")
@@ -200,8 +257,10 @@ class HomeAssistantTool @Inject constructor(
                 continue
             }
 
-            // Filter by area
-            if (areaFilter != null) {
+            // Filter by place
+            if (placeEntities != null) {
+                if (entityId !in placeEntities) continue
+            } else if (areaFilter != null) {
                 val matchesArea = friendlyNameRaw.lowercase().contains(areaFilter) || areaRaw.lowercase().contains(areaFilter)
                 if (!matchesArea) continue
             }
@@ -217,7 +276,7 @@ class HomeAssistantTool @Inject constructor(
         }
 
         val output = buildString {
-            appendLine("Found ${entities.size} Home Assistant entities:")
+            appendLine("Found ${entities.size} Home Assistant entities${placeLabel?.let { " in $it" }.orEmpty()}:")
             entities.forEach { e ->
                 appendLine("• ${e["entity_id"]} [${e["state"]}] - ${e["friendly_name"]}")
             }
@@ -368,6 +427,25 @@ class HomeAssistantTool @Inject constructor(
         if (entityId != null) {
             payloadMap["entity_id"] = JsonPrimitive(entityId)
         }
+        // Targeting a place hands the fan-out to HA itself: light.turn_off with an area_id
+        // touches only that area's lights, devices included.
+        var placeLabel: String? = null
+        val areaQuery = arguments["area"]?.str()?.trim()?.takeIf { it.isNotBlank() }
+        if (areaQuery != null && entityId == null) {
+            val places = loadPlaces(baseUrl, token)
+                ?: return ToolResult.error(
+                    "Could not look up places on this Home Assistant; pass an entity_id instead.",
+                    System.currentTimeMillis() - start,
+                )
+            when (val r = places.resolve(areaQuery)) {
+                is HomeAssistantPlaces.Resolution.Found -> {
+                    payloadMap[r.place.kind.targetKey] = JsonPrimitive(r.place.id)
+                    placeLabel = describe(r.place)
+                }
+                is HomeAssistantPlaces.Resolution.Ambiguous -> return ambiguous(areaQuery, r, start)
+                HomeAssistantPlaces.Resolution.None -> return unknownPlace(areaQuery, places, start)
+            }
+        }
 
         val requestBody = JsonObject(payloadMap).toString().toRequestBody(JSON_MEDIA_TYPE)
 
@@ -386,10 +464,190 @@ class HomeAssistantTool @Inject constructor(
         }
 
         return ToolResult.ok(
-            "Service $domain.$service called successfully${if (entityId != null) " on $entityId" else ""}. Result: $responseBody",
+            "Service $domain.$service called successfully" +
+                (entityId?.let { " on $it" } ?: placeLabel?.let { " on $it" }).orEmpty() +
+                ". Result: ${responseBody.take(2_000)}",
             System.currentTimeMillis() - start,
         )
     }
+
+    private fun handleListPlaces(baseUrl: String, token: String, start: Long): ToolResult {
+        val places = loadPlaces(baseUrl, token, force = true)
+            ?: return ToolResult.error(
+                "Could not read areas, floors and labels from Home Assistant (needs HA 2024.4 or newer).",
+                System.currentTimeMillis() - start,
+            )
+        val output = buildString {
+            // Totals up front: a small model listing floors from the tree below once said
+            // "three floors" for four.
+            appendLine(
+                "Home Assistant places: ${places.floors.size} floors, ${places.areas.size} areas, " +
+                    "${places.labels.size} labels (use the name or id as 'area').",
+            )
+            if (places.floors.isNotEmpty()) {
+                appendLine("Floors: ${places.floors.joinToString(", ") { safe(it.name) }}")
+            }
+            val areasById = places.areas.associateBy { it.id }
+            places.floors.forEach { floor ->
+                appendLine("Floor ${safe(floor.name)} [${floor.id}]: ${places.entitiesOf(floor).size} entities")
+                floor.areaIds.mapNotNull { areasById[it] }.forEach { area ->
+                    appendLine("  • Area ${safe(area.name)} [${area.id}]: ${area.entityIds.size} entities")
+                }
+            }
+            val floorless = places.areas.filter { a -> places.floors.none { a.id in it.areaIds } }
+            if (floorless.isNotEmpty()) {
+                appendLine("Areas without a floor:")
+                floorless.forEach { appendLine("  • Area ${safe(it.name)} [${it.id}]: ${it.entityIds.size} entities") }
+            }
+            if (places.labels.isNotEmpty()) {
+                appendLine("Labels:")
+                places.labels.forEach { appendLine("  • Label ${safe(it.name)} [${it.id}]: ${it.entityIds.size} entities") }
+            }
+        }.trimEnd()
+        return ToolResult.ok(output, System.currentTimeMillis() - start)
+    }
+
+    private fun handleRenderTemplate(
+        baseUrl: String,
+        token: String,
+        arguments: Map<String, JsonElement>,
+        start: Long,
+    ): ToolResult {
+        val template = arguments["template"]?.str()?.trim().orEmpty()
+        if (template.isBlank()) {
+            return ToolResult.error("Missing required parameter: 'template'", System.currentTimeMillis() - start)
+        }
+        if (template.length > MAX_TEMPLATE_INPUT_CHARS) {
+            return ToolResult.error("Template too long (max $MAX_TEMPLATE_INPUT_CHARS characters).", System.currentTimeMillis() - start)
+        }
+        val rendered = when (val r = renderTemplate(baseUrl, token, template)) {
+            is Rendered.Ok -> r.text
+            is Rendered.Failed -> return ToolResult.error("Template failed: ${r.reason}", System.currentTimeMillis() - start)
+        }
+        // Rendered text can quote any entity name or attribute, so it is screened like one.
+        if (!SkillGuard.vet(rendered).ok) {
+            return ToolResult.error("Template output withheld: it failed the untrusted-content screen.", System.currentTimeMillis() - start)
+        }
+        val clipped = if (rendered.length > MAX_TEMPLATE_OUTPUT_CHARS) {
+            rendered.take(MAX_TEMPLATE_OUTPUT_CHARS) + "\n[truncated - narrow the template]"
+        } else {
+            rendered
+        }
+        return ToolResult.ok(clipped.ifBlank { "(empty result)" }, System.currentTimeMillis() - start)
+    }
+
+    /**
+     * Assist can act on anything HA exposes to it, and its sentence names no domain the
+     * high-risk check could read, so ToolConfirmationService always asks before it runs.
+     */
+    private fun handleAssist(
+        baseUrl: String,
+        token: String,
+        arguments: Map<String, JsonElement>,
+        start: Long,
+    ): ToolResult {
+        val text = arguments["text"]?.str()?.trim().orEmpty()
+        if (text.isBlank()) {
+            return ToolResult.error("Missing required parameter: 'text'", System.currentTimeMillis() - start)
+        }
+        if (text.length > MAX_ASSIST_TEXT_CHARS) {
+            return ToolResult.error("Text too long for assist (max $MAX_ASSIST_TEXT_CHARS characters).", System.currentTimeMillis() - start)
+        }
+        val body = JsonObject(mapOf("text" to JsonPrimitive(text))).toString().toRequestBody(JSON_MEDIA_TYPE)
+        val request = Request.Builder()
+            .url("$baseUrl/api/conversation/process")
+            .header("Authorization", "Bearer $token")
+            .post(body)
+            .build()
+        val responseBody = client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                return ToolResult.error("Assist failed: HTTP ${response.code} ${response.message}", System.currentTimeMillis() - start)
+            }
+            response.body?.string().orEmpty()
+        }
+        val root = runCatching { json.parseToJsonElement(responseBody).jsonObject }.getOrNull()
+            ?: return ToolResult.error("Invalid JSON response from Assist", System.currentTimeMillis() - start)
+        val resp = root["response"] as? JsonObject
+        val speech = ((resp?.get("speech") as? JsonObject)?.get("plain") as? JsonObject)
+            ?.get("speech")?.str().orEmpty()
+        val type = resp?.get("response_type")?.str().orEmpty()
+        val data = resp?.get("data") as? JsonObject
+        fun targets(key: String) = (data?.get(key) as? JsonArray).orEmpty().mapNotNull { t ->
+            val o = t as? JsonObject
+            o?.get("name")?.str() ?: o?.get("id")?.str()
+        }
+        val output = buildString {
+            appendLine("Assist ($type): ${safe(speech).ifBlank { "(no reply)" }}")
+            targets("success").takeIf { it.isNotEmpty() }
+                ?.let { appendLine("Acted on: ${it.joinToString(", ") { t -> safe(t) }}") }
+            targets("failed").takeIf { it.isNotEmpty() }
+                ?.let { appendLine("Failed on: ${it.joinToString(", ") { t -> safe(t) }}") }
+        }.trimEnd()
+        return if (type == "error") {
+            ToolResult.error(output, System.currentTimeMillis() - start)
+        } else {
+            ToolResult.ok(output, System.currentTimeMillis() - start)
+        }
+    }
+
+    private sealed interface Rendered {
+        data class Ok(val text: String) : Rendered
+        data class Failed(val reason: String) : Rendered
+    }
+
+    private fun renderTemplate(baseUrl: String, token: String, template: String): Rendered {
+        val body = JsonObject(mapOf("template" to JsonPrimitive(template))).toString().toRequestBody(JSON_MEDIA_TYPE)
+        val request = Request.Builder()
+            .url("$baseUrl/api/template")
+            .header("Authorization", "Bearer $token")
+            .post(body)
+            .build()
+        return client.newCall(request).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (response.isSuccessful) {
+                Rendered.Ok(text)
+            } else {
+                // HA answers a bad template with 400 and its error message in the body.
+                Rendered.Failed("HTTP ${response.code} ${text.take(300)}".trim())
+            }
+        }
+    }
+
+    @Volatile
+    private var placesCache: Triple<String, Long, HomeAssistantPlaces>? = null
+
+    private fun loadPlaces(baseUrl: String, token: String, force: Boolean = false): HomeAssistantPlaces? {
+        val now = System.currentTimeMillis()
+        placesCache?.let { (url, at, places) ->
+            if (!force && url == baseUrl && now - at < PLACES_TTL_MS) return places
+        }
+        val rendered = runCatching { renderTemplate(baseUrl, token, HomeAssistantPlaces.INDEX_TEMPLATE) }
+            .onFailure { Timber.w(it, "HA place index render failed") }
+            .getOrNull() as? Rendered.Ok ?: return null
+        val places = HomeAssistantPlaces.parse(rendered.text) ?: return null
+        placesCache = Triple(baseUrl, now, places)
+        return places
+    }
+
+    private fun describe(place: HomeAssistantPlaces.Place): String =
+        "${place.kind.name.lowercase()} '${safe(place.name)}' [${place.id}]"
+
+    private fun ambiguous(
+        query: String,
+        r: HomeAssistantPlaces.Resolution.Ambiguous,
+        start: Long,
+    ): ToolResult = ToolResult.error(
+        "'$query' matches several places: ${r.candidates.joinToString(", ") { describe(it) }}. Pass one of these ids as 'area'.",
+        System.currentTimeMillis() - start,
+    )
+
+    private fun unknownPlace(query: String, places: HomeAssistantPlaces, start: Long): ToolResult {
+        val known = (places.areas + places.floors + places.labels).joinToString(", ") { safe(it.name) }
+        return ToolResult.error("No area, floor or label matches '$query'. Known places: $known.", System.currentTimeMillis() - start)
+    }
+
+    /** Names come from the user's HA and can carry injected text; screen them as friendly_name is. */
+    private fun safe(s: String): String = if (SkillGuard.vet(s).ok) s else "[unverified name]"
 
     private fun JsonElement.str(): String? = (this as? JsonPrimitive)?.contentOrNull
 }
